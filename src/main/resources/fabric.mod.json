@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "nouvelle-terre-bridge",
+  "version": "${version}",
+  "name": "NouvelleTerreBridge",
+  "description": "Pont temps réel entre le serveur Minecraft Nouvelle Terre et son bot Discord",
+  "authors": ["Nouvelle Terre Staff"],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/nouvelle-terre-bridge/icon.png",
+  "environment": "server",
+  "entrypoints": {
+    "main": [
+      "com.nouvelleterrebridge.NouvelleTerreBridge"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "fabric-api": "*",
+    "minecraft": "~1.20.1"
+  },
+  "suggests": {
+    "cadmus": "*"
+  }
+}
