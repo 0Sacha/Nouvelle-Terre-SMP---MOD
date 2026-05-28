@@ -1,6 +1,6 @@
 // Build Gradle pour le mod NouvelleTerreBridge (Fabric 1.20.1)
 plugins {
-	id 'fabric-loom' version '1.4-SNAPSHOT'
+	id 'fabric-loom' version '1.6.12'
 	id 'maven-publish'
 }
 
