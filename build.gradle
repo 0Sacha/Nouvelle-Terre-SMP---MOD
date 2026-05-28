@@ -12,13 +12,6 @@ base {
 }
 
 repositories {
-	maven {
-		name = "Modrinth"
-		url = "https://api.modrinth.com/maven"
-		content {
-			includeGroup "maven.modrinth"
-		}
-	}
 }
 
 dependencies {
@@ -32,8 +25,7 @@ dependencies {
 		exclude group: 'org.jetbrains.kotlin'
 	}
 
-	// Intégration Cadmus pour les territoires
-	modCompileOnly "maven.modrinth:cadmus:${project.cadmus_version}"
+	// Note: Cadmus integration is handled via reflection at runtime (no compile-time dependency needed)
 }
 
 processResources {
