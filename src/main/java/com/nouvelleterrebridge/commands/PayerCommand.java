@@ -9,9 +9,6 @@ import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 
-/**
- * Commande /payer <joueur> <montant> — vire des Shards à un autre joueur.
- */
 public class PayerCommand {
 
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
@@ -40,12 +37,13 @@ public class PayerCommand {
             return 0;
         }
 
-        EconomyManager.transfer(expediteur, destinataire, montant, (success, message) -> {
+        joueur.sendMessage(Text.literal("§e⏳ Virement en cours..."));
+
+        EconomyManager.transfer(expediteur, destinataire, montant, source.getServer(), (success, message) -> {
             if (success) {
                 joueur.sendMessage(Text.literal(
                     String.format("§a✅ Tu as envoyé §f§l%d 💎§a à §f%s§a.", montant, destinataire)
                 ));
-                // Notifie le destinataire s'il est en ligne
                 ServerPlayerEntity dest = source.getServer().getPlayerManager().getPlayer(destinataire);
                 if (dest != null) {
                     dest.sendMessage(Text.literal(

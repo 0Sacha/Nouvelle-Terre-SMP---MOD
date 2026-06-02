@@ -119,4 +119,21 @@ public class EventDispatcher {
     public static boolean isBotEnLigne() {
         return botEnLigne;
     }
+
+    /** Expose le client HTTP partagé pour les autres modules. */
+    public static HttpClient getHttpClient() {
+        return httpClient;
+    }
+
+    /** Retourne la base de l'URL du bot (sans /event). */
+    public static String getBotBase() {
+        String url = config.getBotUrl();
+        if (url.endsWith("/event")) url = url.substring(0, url.length() - 6);
+        if (url.endsWith("/")) url = url.substring(0, url.length() - 1);
+        return url;
+    }
+
+    public static String getSecret() {
+        return config.getSharedSecret();
+    }
 }

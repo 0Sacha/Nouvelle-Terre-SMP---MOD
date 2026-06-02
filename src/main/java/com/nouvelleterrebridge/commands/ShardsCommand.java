@@ -4,24 +4,18 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.nouvelleterrebridge.economy.EconomyManager;
+import com.nouvelleterrebridge.http.EventDispatcher;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 
-/**
- * Commande /shards — gestion admin des Shards en jeu (niveau op 2+).
- * Syntaxe :
- *   /shards give <joueur> <montant>
- *   /shards take <joueur> <montant>
- *   /shards check <joueur>
- */
 public class ShardsCommand {
 
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
         dispatcher.register(
             CommandManager.literal("shards")
-                .requires(source -> source.hasPermissionLevel(2)) // op niveau 2+
+                .requires(source -> source.hasPermissionLevel(2))
                 .then(CommandManager.literal("give")
                     .then(CommandManager.argument("joueur", StringArgumentType.word())
                         .then(CommandManager.argument("montant", IntegerArgumentType.integer(1))
@@ -50,10 +44,8 @@ public class ShardsCommand {
     private static int executerGive(ServerCommandSource source, String cible, int montant) {
         EconomyManager.reward(cible, montant, "admin give");
         source.sendFeedback(() -> Text.literal(
-            String.format("§a✅ §f+%d 💎§a donnés à §f%s§a.", montant, cible)
+            String.format("§a✅ +%d 💎 donnés à %s.", montant, cible)
         ), true);
-
-        // Notifie le joueur s'il est en ligne
         ServerPlayerEntity joueurCible = source.getServer().getPlayerManager().getPlayer(cible);
         if (joueurCible != null) {
             joueurCible.sendMessage(Text.literal(
@@ -68,18 +60,18 @@ public class ShardsCommand {
         data.put("player", cible);
         data.put("amount", montant);
         data.put("description", "admin take");
-        com.nouvelleterrebridge.http.EventDispatcher.envoyer("ECONOMY_DEDUCT", data);
-
+        EventDispatcher.envoyer("ECONOMY_DEDUCT", data);
         source.sendFeedback(() -> Text.literal(
-            String.format("§c✅ §f-%d 💎§c retirés à §f%s§c.", montant, cible)
+            String.format("§c✅ -%d 💎 retirés à %s.", montant, cible)
         ), true);
         return 1;
     }
 
     private static int executerCheck(ServerCommandSource source, String cible) {
-        EconomyManager.getBalance(cible, (solde) -> {
+        source.sendFeedback(() -> Text.literal("§e⏳ Récupération du solde de " + cible + "..."), false);
+        EconomyManager.getBalance(cible, source.getServer(), (solde) -> {
             if (solde < 0) {
-                source.sendError(Text.literal("§cImpossible de récupérer le solde de " + cible));
+                source.sendFeedback(() -> Text.literal("§cImpossible de récupérer le solde de " + cible), false);
             } else {
                 source.sendFeedback(() -> Text.literal(
                     String.format("§6💰 Solde de §f%s§6 : §f§l%d 💎", cible, solde)

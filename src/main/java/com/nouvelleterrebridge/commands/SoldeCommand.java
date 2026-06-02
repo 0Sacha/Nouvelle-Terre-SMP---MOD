@@ -7,9 +7,6 @@ import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 
-/**
- * Commande /solde — affiche le solde de Shards du joueur.
- */
 public class SoldeCommand {
 
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
@@ -26,13 +23,14 @@ public class SoldeCommand {
         }
 
         String pseudo = joueur.getName().getString();
+        joueur.sendMessage(Text.literal("§e⏳ Récupération de ton solde..."));
 
-        EconomyManager.getBalance(pseudo, (solde) -> {
+        EconomyManager.getBalance(pseudo, source.getServer(), (solde) -> {
             if (solde < 0) {
                 joueur.sendMessage(Text.literal("§cErreur : impossible de récupérer ton solde."));
             } else {
                 joueur.sendMessage(Text.literal(
-                    String.format("§6💰 Ton solde : §f§l%d §6Shards 💎", solde)
+                    String.format("§6💰 Ton solde : §f§l%d 💎 §6Shards", solde)
                 ));
             }
         });

@@ -4,117 +4,119 @@ import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
 import com.nouvelleterrebridge.http.EventDispatcher;
+import net.minecraft.server.MinecraftServer;
 
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 /**
  * Gère les interactions économiques avec le bot Discord.
- * Interroge les endpoints /economy/* du bot via HTTP.
+ * Utilise le client HTTP partagé d'EventDispatcher.
  */
 public class EconomyManager {
 
     private static final Gson GSON = new Gson();
-    private static HttpClient httpClient;
 
     public static void init() {
-        httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(5))
-                .build();
-    }
-
-    private static String getBotBase() {
-        // Retire /event de l'URL complète pour obtenir la base
-        String url = NouvelleTerreBridge.config.getBotUrl();
-        if (url.endsWith("/event")) url = url.substring(0, url.length() - 6);
-        if (url.endsWith("/")) url = url.substring(0, url.length() - 1);
-        return url;
-    }
-
-    private static String getSecret() {
-        return NouvelleTerreBridge.config.getSharedSecret();
+        // Rien à initialiser, on utilise EventDispatcher.getHttpClient()
     }
 
     /**
-     * Récupère le solde d'un joueur. Callback reçoit -1 en cas d'erreur.
+     * Récupère le solde d'un joueur de façon asynchrone.
+     * Le callback est exécuté sur le thread serveur.
      */
-    public static void getBalance(String pseudo, Consumer<Integer> callback) {
-        String url = getBotBase() + "/economy/balance/" + pseudo;
+    public static void getBalance(String pseudo, MinecraftServer server, Consumer<Integer> callback) {
+        String url = EventDispatcher.getBotBase() + "/economy/balance/" + pseudo;
+        NouvelleTerreBridge.LOGGER.info("[EconomyManager] GET {}", url);
+
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
-                .timeout(Duration.ofSeconds(5))
-                .header("X-Secret", getSecret())
+                .timeout(Duration.ofSeconds(10))
+                .header("X-Secret", EventDispatcher.getSecret())
                 .GET()
                 .build();
 
-        httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+        EventDispatcher.getHttpClient()
+                .sendAsync(request, HttpResponse.BodyHandlers.ofString())
                 .thenAccept(response -> {
+                    NouvelleTerreBridge.LOGGER.info("[EconomyManager] Réponse balance {} : HTTP {}", pseudo, response.statusCode());
+                    int solde;
                     try {
                         if (response.statusCode() == 200) {
                             JsonObject json = GSON.fromJson(response.body(), JsonObject.class);
-                            callback.accept(json.get("solde").getAsInt());
+                            solde = json.get("solde").getAsInt();
                         } else {
-                            callback.accept(-1);
+                            NouvelleTerreBridge.LOGGER.warn("[EconomyManager] Réponse inattendue : {} — {}", response.statusCode(), response.body());
+                            solde = -1;
                         }
                     } catch (Exception e) {
-                        callback.accept(-1);
+                        NouvelleTerreBridge.LOGGER.error("[EconomyManager] Erreur parsing : {}", e.getMessage());
+                        solde = -1;
                     }
+                    final int soldeFinal = solde;
+                    // Exécute le callback sur le thread serveur
+                    server.execute(() -> callback.accept(soldeFinal));
                 })
                 .exceptionally(e -> {
-                    callback.accept(-1);
+                    NouvelleTerreBridge.LOGGER.error("[EconomyManager] Erreur HTTP getBalance : {}", e.getMessage());
+                    server.execute(() -> callback.accept(-1));
                     return null;
                 });
     }
 
     /**
      * Effectue un virement entre deux joueurs.
-     * Callback reçoit (success, message).
      */
-    public static void transfer(String de, String vers, int montant, BiConsumer<Boolean, String> callback) {
-        String url = getBotBase() + "/economy/transfer";
+    public static void transfer(String de, String vers, int montant, MinecraftServer server, BiConsumer<Boolean, String> callback) {
+        String url = EventDispatcher.getBotBase() + "/economy/transfer";
         JsonObject body = new JsonObject();
-        body.addProperty("secret", getSecret());
+        body.addProperty("secret", EventDispatcher.getSecret());
         body.addProperty("de", de);
         body.addProperty("vers", vers);
         body.addProperty("montant", montant);
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
-                .timeout(Duration.ofSeconds(5))
+                .timeout(Duration.ofSeconds(10))
                 .header("Content-Type", "application/json")
+                .header("X-Secret", EventDispatcher.getSecret())
                 .POST(HttpRequest.BodyPublishers.ofString(GSON.toJson(body)))
                 .build();
 
-        httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+        EventDispatcher.getHttpClient()
+                .sendAsync(request, HttpResponse.BodyHandlers.ofString())
                 .thenAccept(response -> {
                     try {
                         JsonObject json = GSON.fromJson(response.body(), JsonObject.class);
                         if (response.statusCode() == 200 && json.has("success") && json.get("success").getAsBoolean()) {
-                            callback.accept(true, "OK");
+                            server.execute(() -> callback.accept(true, "OK"));
                         } else {
                             String raison = json.has("raison") ? json.get("raison").getAsString() : "Erreur inconnue";
-                            callback.accept(false, raison);
+                            server.execute(() -> callback.accept(false, raison));
                         }
                     } catch (Exception e) {
-                        callback.accept(false, "Erreur de communication avec le bot.");
+                        NouvelleTerreBridge.LOGGER.error("[EconomyManager] Erreur transfer : {}", e.getMessage());
+                        server.execute(() -> callback.accept(false, "Erreur de communication."));
                     }
                 })
                 .exceptionally(e -> {
-                    callback.accept(false, "Bot inaccessible.");
+                    NouvelleTerreBridge.LOGGER.error("[EconomyManager] Erreur HTTP transfer : {}", e.getMessage());
+                    server.execute(() -> callback.accept(false, "Bot inaccessible."));
                     return null;
                 });
     }
 
     /**
-     * Envoie une récompense de Shards à un joueur.
+     * Envoie une récompense via EventDispatcher (déjà fonctionnel).
      */
     public static void reward(String pseudo, int montant, String description) {
-        java.util.Map<String, Object> data = new java.util.HashMap<>();
+        Map<String, Object> data = new HashMap<>();
         data.put("player", pseudo);
         data.put("amount", montant);
         data.put("description", description);
