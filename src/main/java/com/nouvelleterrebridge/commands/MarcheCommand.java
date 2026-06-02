@@ -319,6 +319,14 @@ public class MarcheCommand {
             annonce.id, annonce.quantity, nomItem
         )));
 
+        // Notifie Discord
+        Map<String, Object> data = new HashMap<>();
+        data.put("seller", annonce.seller);
+        data.put("item", annonce.item);
+        data.put("quantity", annonce.quantity);
+        data.put("id", annonce.id);
+        EventDispatcher.envoyer("SALE_CANCELLED", data);
+
         return 1;
     }
 
