@@ -3,7 +3,12 @@ package com.nouvelleterrebridge;
 import com.nouvelleterrebridge.commands.AchatCommand;
 import com.nouvelleterrebridge.commands.ConflitCommand;
 import com.nouvelleterrebridge.commands.EventNarratifCommand;
+import com.nouvelleterrebridge.commands.PayerCommand;
+import com.nouvelleterrebridge.commands.SoldeCommand;
 import com.nouvelleterrebridge.commands.VenteCommand;
+import com.nouvelleterrebridge.economy.EconomyManager;
+import com.nouvelleterrebridge.economy.KillRewards;
+import com.nouvelleterrebridge.economy.PlaytimeTracker;
 import com.nouvelleterrebridge.events.PlayerEvents;
 import com.nouvelleterrebridge.events.ServerEvents;
 import com.nouvelleterrebridge.events.TerritoryEvents;
@@ -40,10 +45,15 @@ public class NouvelleTerreBridge implements ModInitializer {
         // Initialisation du dispatcher HTTP
         EventDispatcher.init(config);
 
+        // Initialisation de l'économie
+        EconomyManager.init();
+
         // Enregistrement des écouteurs d'événements
         ServerEvents.register();
         PlayerEvents.register();
         TerritoryEvents.register();
+        KillRewards.register();
+        PlaytimeTracker.register();
 
         // Enregistrement des commandes Minecraft
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
@@ -51,6 +61,8 @@ public class NouvelleTerreBridge implements ModInitializer {
             AchatCommand.register(dispatcher);
             ConflitCommand.register(dispatcher);
             EventNarratifCommand.register(dispatcher);
+            SoldeCommand.register(dispatcher);
+            PayerCommand.register(dispatcher);
         });
 
         LOGGER.info("[NouvelleTerreBridge] Mod initialisé avec succès.");

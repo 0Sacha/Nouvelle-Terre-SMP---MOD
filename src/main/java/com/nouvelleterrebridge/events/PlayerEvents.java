@@ -1,6 +1,7 @@
 package com.nouvelleterrebridge.events;
 
 import com.nouvelleterrebridge.NouvelleTerreBridge;
+import com.nouvelleterrebridge.economy.PlaytimeTracker;
 import com.nouvelleterrebridge.http.EventDispatcher;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -44,6 +45,7 @@ public class PlayerEvents {
         // Déconnexion d'un joueur
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             ServerPlayerEntity joueur = handler.getPlayer();
+            PlaytimeTracker.onPlayerLeave(joueur.getUuid());
             Map<String, Object> data = new HashMap<>();
             data.put("player", joueur.getName().getString());
             data.put("uuid", joueur.getUuidAsString());
