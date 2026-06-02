@@ -82,6 +82,28 @@ public class MarketManager {
     }
 
     /**
+     * Met à jour la quantité d'une annonce (pour achat partiel).
+     * Si newQuantity <= 0, supprime l'annonce.
+     */
+    public synchronized void updateQuantity(int id, int newQuantity) {
+        if (newQuantity <= 0) {
+            removeListing(id);
+            return;
+        }
+        annonces.stream().filter(l -> l.id == id).findFirst()
+                .ifPresent(l -> { l.quantity = newQuantity; save(); });
+    }
+
+    /**
+     * Trouve une annonce par vendeur + item (insensible à la casse).
+     */
+    public synchronized Optional<MarketListing> getBySellerAndItem(String seller, String itemId) {
+        return annonces.stream()
+                .filter(l -> l.seller.equalsIgnoreCase(seller) && l.item.equalsIgnoreCase(itemId))
+                .findFirst();
+    }
+
+    /**
      * Retourne toutes les annonces d'un vendeur donné.
      */
     public synchronized List<MarketListing> getBySeller(String seller) {
