@@ -124,6 +124,7 @@ public class MarcheCommand {
         data.put("item", itemId);
         data.put("quantity", quantite);
         data.put("price", prix);
+        data.put("id", annonce.id);
         EventDispatcher.envoyer("SALE_POSTED", data);
         return 1;
     }
@@ -244,6 +245,7 @@ public class MarcheCommand {
             data.put("item", annonce.item);
             data.put("quantity", quantite);
             data.put("total", total);
+            data.put("id", annonce.id);
             EventDispatcher.envoyer("SALE_COMPLETED", data);
         });
         return 1;
