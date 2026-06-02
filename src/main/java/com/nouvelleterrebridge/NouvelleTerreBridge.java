@@ -4,6 +4,7 @@ import com.nouvelleterrebridge.commands.AchatCommand;
 import com.nouvelleterrebridge.commands.ConflitCommand;
 import com.nouvelleterrebridge.commands.EventNarratifCommand;
 import com.nouvelleterrebridge.commands.PayerCommand;
+import com.nouvelleterrebridge.commands.ShardsCommand;
 import com.nouvelleterrebridge.commands.SoldeCommand;
 import com.nouvelleterrebridge.commands.VenteCommand;
 import com.nouvelleterrebridge.economy.EconomyManager;
@@ -63,6 +64,7 @@ public class NouvelleTerreBridge implements ModInitializer {
             EventNarratifCommand.register(dispatcher);
             SoldeCommand.register(dispatcher);
             PayerCommand.register(dispatcher);
+            ShardsCommand.register(dispatcher);
         });
 
         LOGGER.info("[NouvelleTerreBridge] Mod initialisé avec succès.");

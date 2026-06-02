@@ -44,11 +44,11 @@ public class EconomyManager {
      * Récupère le solde d'un joueur. Callback reçoit -1 en cas d'erreur.
      */
     public static void getBalance(String pseudo, Consumer<Integer> callback) {
-        String url = getBotBase() + "/economy/balance/" + pseudo + "?secret=" + getSecret();
-        // Pour un GET, on passe le secret en query param
+        String url = getBotBase() + "/economy/balance/" + pseudo;
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .timeout(Duration.ofSeconds(5))
+                .header("X-Secret", getSecret())
                 .GET()
                 .build();
 
