@@ -71,6 +71,11 @@ public class LocalEconomy {
         EventDispatcher.envoyer("ECONOMY_REWARD", data);
     }
 
+    /** Retourne true si le joueur a déjà eu un solde enregistré. */
+    public synchronized boolean estConnu(String pseudo) {
+        return soldes.containsKey(pseudo.toLowerCase());
+    }
+
     /** Retire des shards à un joueur (ne passe pas en négatif). */
     public synchronized void removeShards(String pseudo, int montant) {
         String key = pseudo.toLowerCase();

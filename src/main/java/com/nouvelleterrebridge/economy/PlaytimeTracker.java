@@ -53,18 +53,19 @@ public class PlaytimeTracker {
             ticksDepuisRecompense.put(uuid, ticksR);
 
             // Salaire métier (toutes les heures)
+            // addShards envoie déjà ECONOMY_REWARD pour synchroniser le bot.
+            // ECONOMY_SALARY est envoyé séparément SANS montant pour que le bot
+            // affiche uniquement la notification dans #système sans re-créditer.
             int ticksS = ticksDepuisSalaire.getOrDefault(uuid, 0) + 1;
             if (ticksS >= TICKS_SALAIRE) {
                 ticksS = 0;
-                // Le salaire précis dépend du métier stocké dans la DB du bot.
-                // On envoie ECONOMY_SALARY ; le bot applique le bon montant côté Discord.
-                // Localement on applique le salaire de base en attendant la synchro des métiers.
+                LocalEconomy.getInstance().addShards(pseudo, SALAIRE_BASE);
                 java.util.Map<String, Object> data = new java.util.HashMap<>();
                 data.put("player", pseudo);
                 data.put("amount", SALAIRE_BASE);
                 data.put("metier", "");
+                data.put("notificationOnly", true);
                 com.nouvelleterrebridge.http.EventDispatcher.envoyer("ECONOMY_SALARY", data);
-                LocalEconomy.getInstance().addShards(pseudo, SALAIRE_BASE);
                 NouvelleTerreBridge.LOGGER.info("[PlaytimeTracker] Salaire versé à {} ({} shards).", pseudo, SALAIRE_BASE);
             }
             ticksDepuisSalaire.put(uuid, ticksS);

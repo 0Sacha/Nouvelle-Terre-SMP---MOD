@@ -7,7 +7,6 @@ import com.nouvelleterrebridge.commands.MarcheCommand;
 import com.nouvelleterrebridge.commands.PayerCommand;
 import com.nouvelleterrebridge.commands.ShardsCommand;
 import com.nouvelleterrebridge.commands.SoldeCommand;
-import com.nouvelleterrebridge.economy.EconomyManager;
 import com.nouvelleterrebridge.economy.KillRewards;
 import com.nouvelleterrebridge.economy.PlaytimeTracker;
 import com.nouvelleterrebridge.events.PlayerEvents;
@@ -45,9 +44,6 @@ public class NouvelleTerreBridge implements ModInitializer {
 
         // Initialisation du dispatcher HTTP
         EventDispatcher.init(config);
-
-        // Initialisation de l'économie
-        EconomyManager.init();
 
         // Enregistrement des écouteurs d'événements
         ServerEvents.register();

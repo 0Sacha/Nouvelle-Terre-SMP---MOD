@@ -28,8 +28,8 @@ import java.util.Optional;
  *  /vendre <qté> <prix>                 — vend l'item en main
  *  /marche [page]                       — liste les annonces
  *  /acheter <vendeur> <qté> <item>      — achète chez un vendeur
- *  /mesventes                           — voir ses annonces actives
- *  /annuler <item>                      — annuler sa propre annonce
+ *  /annonces                           — voir ses annonces actives
+ *  /retirer <item>                      — annuler sa propre annonce
  */
 public class MarcheCommand {
 
@@ -98,15 +98,15 @@ public class MarcheCommand {
                             )))))
         );
 
-        // /mesventes
+        // /annonces
         dispatcher.register(
-            CommandManager.literal("mesventes")
+            CommandManager.literal("annonces")
                 .executes(ctx -> executerMesVentes(ctx.getSource()))
         );
 
-        // /annuler <item|id> — autocomplétion sur les propres annonces du joueur
+        // /retirer <item|id> — autocomplétion sur les propres annonces du joueur
         dispatcher.register(
-            CommandManager.literal("annuler")
+            CommandManager.literal("retirer")
                 .then(CommandManager.argument("item", StringArgumentType.greedyString())
                     .suggests((ctx, builder) -> {
                         if (!(ctx.getSource().getEntity() instanceof ServerPlayerEntity joueur))
@@ -246,7 +246,7 @@ public class MarcheCommand {
         MarketListing annonce = opt.get();
 
         if (annonce.seller.equalsIgnoreCase(pseudo)) {
-            joueur.sendMessage(Text.literal("§cTu ne peux pas acheter ta propre annonce. Utilise §f/annuler " + nomItem));
+            joueur.sendMessage(Text.literal("§cTu ne peux pas acheter ta propre annonce. Utilise §f/retirer " + nomItem));
             return 0;
         }
         if (quantite > annonce.quantity) {
@@ -310,7 +310,7 @@ public class MarcheCommand {
         return 1;
     }
 
-    // ── /mesventes ────────────────────────────────────────────────────────────
+    // ── /annonces ────────────────────────────────────────────────────────────
 
     private static int executerMesVentes(ServerCommandSource source) {
         if (!(source.getEntity() instanceof ServerPlayerEntity joueur)) {
@@ -322,7 +322,7 @@ public class MarcheCommand {
             joueur.sendMessage(Text.literal("§eAucune annonce active. Utilise §f/vendre <qté> <prix>§e.")); return 1;
         }
 
-        joueur.sendMessage(Text.literal("§6═══ Tes ventes ══ §7/annuler <id>§6 ═══"));
+        joueur.sendMessage(Text.literal("§6═══ Tes annonces ══ §7/retirer <id|item>§6 ═══"));
         for (MarketListing a : miennes) {
             String nom = FrenchItemNames.toDisplay(a.item);
             joueur.sendMessage(Text.literal(String.format(
@@ -333,7 +333,7 @@ public class MarcheCommand {
         return 1;
     }
 
-    // ── /annuler <item|id> ────────────────────────────────────────────────────
+    // ── /retirer <item|id> ────────────────────────────────────────────────────
 
     private static int executerAnnuler(ServerCommandSource source, String itemInput) {
         if (!(source.getEntity() instanceof ServerPlayerEntity joueur)) {
@@ -343,7 +343,7 @@ public class MarcheCommand {
         String pseudo = joueur.getName().getString();
         Optional<MarketListing> opt = Optional.empty();
 
-        // Support de l'ID numérique : /annuler 10
+        // Support de l'ID numérique : /retirer 10
         try {
             int id = Integer.parseInt(itemInput.trim());
             opt = MarketManager.getInstance().getListing(id);
@@ -361,7 +361,7 @@ public class MarcheCommand {
             String itemId = FrenchItemNames.toMinecraftId(itemInput);
             if (itemId == null) {
                 joueur.sendMessage(Text.literal(
-                    String.format("§cItem §f%s §cinconnu. Utilise §f/mesventes §cpour voir tes annonces.", itemInput)));
+                    String.format("§cItem §f%s §cinconnu. Utilise §f/annonces §cpour voir tes annonces.", itemInput)));
                 return 0;
             }
             opt = MarketManager.getInstance().getBySellerAndItem(pseudo, itemId);
@@ -376,7 +376,7 @@ public class MarcheCommand {
                     opt = adminOpt;
                 } else {
                     joueur.sendMessage(Text.literal(
-                        String.format("§cTu n'as pas d'annonce pour §f%s§c. Utilise §f/mesventes§c.", FrenchItemNames.toDisplay(itemId))));
+                        String.format("§cTu n'as pas d'annonce pour §f%s§c. Utilise §f/annonces§c.", FrenchItemNames.toDisplay(itemId))));
                     return 0;
                 }
             }

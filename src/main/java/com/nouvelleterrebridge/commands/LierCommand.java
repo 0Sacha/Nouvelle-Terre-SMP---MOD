@@ -24,7 +24,7 @@ public class LierCommand {
 
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
         dispatcher.register(
-            CommandManager.literal("lier")
+            CommandManager.literal("discord")
                 .executes(ctx -> executerLier(ctx.getSource()))
         );
     }
@@ -49,11 +49,11 @@ public class LierCommand {
                     Text.literal("§7Cliquer pour copier")))
             );
 
-        joueur.sendMessage(
-            Text.literal("§6🔗 Code de liaison : ")
-                .append(codeCliquable)
-                .append(Text.literal("\n§7Tape §f/link <code> §7dans Discord. §eValide 10 min."))
-        );
+        joueur.sendMessage(Text.literal(SoldeCommand.SEP_GOLD));
+        joueur.sendMessage(Text.literal("    §6§l🔗 §f§lLiaison Discord"));
+        joueur.sendMessage(Text.literal("  §7Ton code : ").append(codeCliquable));
+        joueur.sendMessage(Text.literal("  §7Tape §f/link <code> §7sur Discord. §eValide 10 min."));
+        joueur.sendMessage(Text.literal(SoldeCommand.SEP_GOLD));
         return 1;
     }
 }

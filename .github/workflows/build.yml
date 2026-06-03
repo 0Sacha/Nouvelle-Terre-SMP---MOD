@@ -1,13 +1,17 @@
-name: Compiler NouvelleTerreBridge
+name: Compiler & Publier NouvelleTerreBridge
 
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Récupérer le code
         uses: actions/checkout@v4
@@ -18,17 +22,28 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Installer Gradle 8.8
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: '8.8'
-
       - name: Compiler le mod
-        run: gradle build
+        uses: gradle/actions/setup-gradle@v3
 
-      - name: Uploader le JAR
-        uses: actions/upload-artifact@v4
+      - run: ./gradlew build --no-daemon
+
+      - name: Lire la version du mod
+        id: version
+        run: |
+          VERSION=$(grep '^mod_version' gradle.properties | cut -d'=' -f2 | tr -d ' ')
+          SHA=$(git rev-parse --short HEAD)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION-$SHA" >> $GITHUB_OUTPUT
+
+      - name: Créer la Release GitHub
+        uses: softprops/action-gh-release@v2
         with:
-          name: nouvelle-terre-bridge
-          path: build/libs/nouvelle-terre-bridge-1.0.0.jar
-          retention-days: 30
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "NouvelleTerreBridge ${{ steps.version.outputs.version }} (${{ steps.version.outputs.sha }})"
+          body: |
+            Build automatique depuis le commit `${{ steps.version.outputs.sha }}`.
+
+            **Installation :** dépose `nouvelle-terre-bridge-${{ steps.version.outputs.version }}.jar` dans le dossier `mods/` du serveur.
+          files: build/libs/nouvelle-terre-bridge-${{ steps.version.outputs.version }}.jar
+          make_latest: true

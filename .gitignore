@@ -1,0 +1,15 @@
+# Build
+build/
+.gradle/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Le wrapper JAR est volontairement inclus dans le repo
+# (ne pas ajouter gradle-wrapper.jar ici)

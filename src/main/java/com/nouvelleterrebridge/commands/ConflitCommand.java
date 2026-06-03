@@ -2,6 +2,7 @@ package com.nouvelleterrebridge.commands;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.suggestion.SuggestionProvider;
 import com.nouvelleterrebridge.http.EventDispatcher;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
@@ -18,10 +19,22 @@ import java.util.Map;
  */
 public class ConflitCommand {
 
+    private static final SuggestionProvider<ServerCommandSource> JOUEURS_EN_LIGNE =
+        (ctx, builder) -> {
+            String moi = ctx.getSource().getName();
+            ctx.getSource().getServer().getPlayerManager().getPlayerList()
+                .stream()
+                .map(p -> p.getName().getString())
+                .filter(name -> !name.equalsIgnoreCase(moi))
+                .forEach(builder::suggest);
+            return builder.buildFuture();
+        };
+
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
         dispatcher.register(
             CommandManager.literal("conflit")
                 .then(CommandManager.argument("cible", StringArgumentType.word())
+                    .suggests(JOUEURS_EN_LIGNE)
                     .then(CommandManager.argument("raison", StringArgumentType.greedyString())
                         .executes(ctx -> executerConflit(ctx.getSource(),
                             StringArgumentType.getString(ctx, "cible"),
