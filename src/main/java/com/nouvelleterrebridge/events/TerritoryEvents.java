@@ -29,16 +29,8 @@ public class TerritoryEvents {
     }
 
     private static void enregistrerCallbackCadmus() {
-        // Point d'intégration avec Cadmus
-        // À adapter selon la version exacte de l'API Cadmus utilisée
-        try {
-            Class<?> cadmusApi = Class.forName("fr.adrien1106.cadmus.api.CadmusEvents");
-            NouvelleTerreBridge.LOGGER.info("[TerritoryEvents] API Cadmus trouvée, enregistrement des callbacks...");
-            // L'enregistrement concret se fait dans CadmusIntegration pour isoler la dépendance
-            CadmusIntegration.register();
-        } catch (ClassNotFoundException e) {
-            NouvelleTerreBridge.LOGGER.warn("[TerritoryEvents] API Cadmus introuvable ({})", e.getMessage());
-        }
+        // Cadmus détecté mais intégration non implémentée pour l'instant
+        NouvelleTerreBridge.LOGGER.info("[TerritoryEvents] Cadmus détecté — intégration à implémenter.");
     }
 
     /**
