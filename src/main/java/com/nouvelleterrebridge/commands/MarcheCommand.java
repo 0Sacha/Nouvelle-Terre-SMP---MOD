@@ -14,37 +14,43 @@ import net.minecraft.registry.Registries;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
+import net.minecraft.text.*;
+import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
  * Toutes les commandes du marché (HDV) regroupées sous /marche.
  *
- *   /marche [page]                           → liste les annonces
- *   /marche vendre <qte> <prix>              → vendre l'item en main
- *   /marche acheter <vendeur> <qte> <item>   → acheter
- *   /marche annonces                         → voir ses propres annonces
- *   /marche retirer <item|id>                → annuler et récupérer ses items
+ *   /marche                       → liste des vendeurs actifs (cliquables)
+ *   /marche <joueur>              → boutique d'un vendeur (items + boutons acheter)
+ *   /marche vendre <qte> <prix>   → vendre l'item en main
+ *   /marche acheter <qte> <item>  → acheter au meilleur prix
+ *   /marche annonces              → voir ses propres annonces
+ *   /marche retirer <id>          → retirer une annonce et récupérer ses items
  */
 public class MarcheCommand {
-
-    private static final int PAR_PAGE = 6;
 
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
         dispatcher.register(
             CommandManager.literal("marche")
 
-                // /marche [page]
-                .executes(ctx -> executerListe(ctx.getSource(), 1))
-                .then(CommandManager.argument("page", IntegerArgumentType.integer(1))
-                    .executes(ctx -> executerListe(
-                        ctx.getSource(), IntegerArgumentType.getInteger(ctx, "page"))))
+                // /marche → accueil : liste des vendeurs
+                .executes(ctx -> executerAccueil(ctx.getSource()))
+
+                // /marche <joueur> → boutique du joueur (autocomplétion sur vendeurs actifs)
+                .then(CommandManager.argument("joueur", StringArgumentType.word())
+                    .suggests((ctx, builder) -> {
+                        MarketManager.getInstance().getAll().stream()
+                            .map(l -> l.seller).distinct()
+                            .forEach(builder::suggest);
+                        return builder.buildFuture();
+                    })
+                    .executes(ctx -> executerBoutique(
+                        ctx.getSource(),
+                        StringArgumentType.getString(ctx, "joueur"))))
 
                 // /marche vendre <qte> <prix>
                 .then(CommandManager.literal("vendre")
@@ -61,10 +67,9 @@ public class MarcheCommand {
                         .then(CommandManager.argument("item", StringArgumentType.greedyString())
                             .suggests((ctx, builder) -> {
                                 String pseudo = ctx.getSource().getName();
-                                // Une suggestion par item distinct dispo sur le marché (pas ses propres annonces)
                                 MarketManager.getInstance().getAll().stream()
                                     .filter(l -> !l.seller.equalsIgnoreCase(pseudo))
-                                    .collect(java.util.stream.Collectors.toMap(
+                                    .collect(Collectors.toMap(
                                         l -> l.item,
                                         l -> l,
                                         (a, b) -> a.pricePerUnit <= b.pricePerUnit ? a : b
@@ -73,8 +78,7 @@ public class MarcheCommand {
                                         String nom = FrenchItemNames.toDisplay(l.item);
                                         boolean nomResout = l.item.equals(FrenchItemNames.toMinecraftId(nom));
                                         String valeur = nomResout ? nom.toLowerCase() : l.item;
-                                        String tip = nom + " · " + l.pricePerUnit + "💎/u (meilleur prix)";
-                                        builder.suggest(valeur, Text.literal(tip));
+                                        builder.suggest(valeur, Text.literal(nom + " · " + l.pricePerUnit + "💎/u"));
                                     });
                                 return builder.buildFuture();
                             })
@@ -94,11 +98,9 @@ public class MarcheCommand {
                             if (!(ctx.getSource().getEntity() instanceof ServerPlayerEntity joueur))
                                 return builder.buildFuture();
                             String pseudo = joueur.getName().getString();
-                            // Une suggestion par annonce : l'ID numérique, tooltip = détails lisibles
                             for (MarketListing l : MarketManager.getInstance().getBySeller(pseudo)) {
                                 String nom = FrenchItemNames.toDisplay(l.item);
-                                String tip = "#" + l.id + " · " + l.quantity + "x " + nom
-                                             + " · " + l.pricePerUnit + "💎/u";
+                                String tip = "#" + l.id + " · " + l.quantity + "x " + nom + " · " + l.pricePerUnit + "💎/u";
                                 builder.suggest(String.valueOf(l.id), Text.literal(tip));
                             }
                             return builder.buildFuture();
@@ -109,35 +111,94 @@ public class MarcheCommand {
         );
     }
 
-    // ── /marche [page] ────────────────────────────────────────────────────────
+    // ── /marche → accueil : liste des vendeurs ────────────────────────────────
 
-    private static int executerListe(ServerCommandSource source, int page) {
+    private static int executerAccueil(ServerCommandSource source) {
         List<MarketListing> toutes = MarketManager.getInstance().getAll();
+
         if (toutes.isEmpty()) {
             source.sendFeedback(() -> Text.literal("§e📦 Le marché est vide pour le moment."), false);
             return 1;
         }
 
-        int total = (int) Math.ceil(toutes.size() / (double) PAR_PAGE);
-        int p = Math.min(Math.max(page, 1), total);
-        List<MarketListing> slice = toutes.subList((p - 1) * PAR_PAGE, Math.min(p * PAR_PAGE, toutes.size()));
+        // Grouper par vendeur
+        Map<String, List<MarketListing>> parVendeur = toutes.stream()
+            .collect(Collectors.groupingBy(l -> l.seller));
 
-        source.sendFeedback(() -> Text.literal(String.format(
-            "§6═══ Marché (%d/%d) ══ §7/marche acheter <vendeur> <qté> <item>§6 ═══", p, total
-        )), false);
+        source.sendFeedback(() -> Text.literal(EconomieCommand.SEP_GOLD), false);
+        source.sendFeedback(() -> Text.literal("      §6§l🏪 §f§lMarché de Nouvelle Terre"), false);
+        source.sendFeedback(() -> Text.literal(EconomieCommand.SEP_GOLD), false);
 
-        for (MarketListing a : slice) {
-            String nom = FrenchItemNames.toDisplay(a.item);
-            source.sendFeedback(() -> Text.literal(String.format(
-                "§e%s §7| §f%dx %s §7| §f%d 💎§7/u §7| total §f%d 💎",
-                a.seller, a.quantity, nom, a.pricePerUnit, a.getTotal()
-            )), false);
+        parVendeur.entrySet().stream()
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(entry -> {
+                String vendeur = entry.getKey();
+                int nbAnnonces = entry.getValue().size();
+                int nbItems = entry.getValue().stream().mapToInt(l -> l.quantity).sum();
+
+                MutableText nomCliquable = Text.literal("§f§l" + vendeur)
+                    .styled(s -> s
+                        .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+                            Text.literal("§7Cliquer pour voir la boutique de §f" + vendeur)))
+                        .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND,
+                            "/marche " + vendeur)));
+
+                source.sendFeedback(() -> Text.literal("  §6🏪 ")
+                    .append(nomCliquable)
+                    .append(Text.literal(String.format("  §8— §7%d annonce%s · %d item%s",
+                        nbAnnonces, nbAnnonces > 1 ? "s" : "",
+                        nbItems, nbItems > 1 ? "s" : ""))), false);
+            });
+
+        source.sendFeedback(() -> Text.literal(EconomieCommand.SEP_GOLD), false);
+        return 1;
+    }
+
+    // ── /marche <joueur> → boutique d'un vendeur ──────────────────────────────
+
+    private static int executerBoutique(ServerCommandSource source, String vendeur) {
+        List<MarketListing> annonces = MarketManager.getInstance().getBySeller(vendeur);
+
+        if (annonces.isEmpty()) {
+            source.sendFeedback(() -> Text.literal(
+                "§e" + vendeur + " n'a aucune annonce active."), false);
+            return 1;
         }
 
-        if (p < total) {
-            final int suivante = p + 1;
-            source.sendFeedback(() -> Text.literal("§7Page suivante : §f/marche " + suivante), false);
+        source.sendFeedback(() -> Text.literal(EconomieCommand.SEP_GOLD), false);
+        source.sendFeedback(() -> Text.literal("    §6§l🏪 §f§lBoutique de §6§l" + vendeur), false);
+        source.sendFeedback(() -> Text.literal(EconomieCommand.SEP_GOLD), false);
+
+        String acheteur = source.getName();
+
+        for (MarketListing l : annonces) {
+            String nom = FrenchItemNames.toDisplay(l.item);
+            boolean nomResout = l.item.equals(FrenchItemNames.toMinecraftId(nom));
+            String valeurAchat = nomResout ? nom.toLowerCase() : l.item;
+
+            // Bouton [ACHETER] cliquable → pré-remplit /marche acheter 1 <item>
+            MutableText bouton = Text.literal(" §a[ACHETER]")
+                .styled(s -> s
+                    .withBold(true)
+                    .withColor(Formatting.GREEN)
+                    .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+                        Text.literal("§7Cliquer pour acheter §f" + nom + "\n§7Prix : §f" + l.pricePerUnit + "💎/u")))
+                    .withClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND,
+                        "/marche acheter 1 " + valeurAchat)));
+
+            boolean estMoi = vendeur.equalsIgnoreCase(acheteur);
+            MutableText ligne = Text.literal(String.format(
+                "  §8#%d §7%dx §f§l%s §7· §f%d💎§7/u §8(total §f%d💎§8)",
+                l.id, l.quantity, nom, l.pricePerUnit, l.getTotal()
+            ));
+
+            if (!estMoi) ligne = ligne.append(bouton);
+
+            final MutableText ligneFinal = ligne;
+            source.sendFeedback(() -> ligneFinal, false);
         }
+
+        source.sendFeedback(() -> Text.literal(EconomieCommand.SEP_GOLD), false);
         return 1;
     }
 
@@ -170,9 +231,9 @@ public class MarcheCommand {
         )));
 
         source.getServer().getPlayerManager().broadcast(Text.literal(String.format(
-            "§6[Marché] §e%s §7vend §f%dx %s §7· §f%d💎/u — §f/marche acheter %s %d %s",
+            "§6[Marché] §e%s §7vend §f%dx %s §7· §f%d💎/u — §f/marche %s",
             joueur.getName().getString(), quantite, nomItem, prix,
-            joueur.getName().getString(), quantite, nomItem.toLowerCase()
+            joueur.getName().getString()
         )), false);
 
         Map<String, Object> data = new HashMap<>();
@@ -185,8 +246,7 @@ public class MarcheCommand {
         return 1;
     }
 
-    // ── /marche acheter <item> <qte> ─────────────────────────────────────────
-    // Achète automatiquement chez le(s) vendeur(s) le moins cher.
+    // ── /marche acheter <qte> <item> ─────────────────────────────────────────
 
     private static int executerAcheter(ServerCommandSource source, String itemInput, int quantiteVoulue) {
         if (!(source.getEntity() instanceof ServerPlayerEntity joueur)) {
@@ -203,11 +263,10 @@ public class MarcheCommand {
 
         String nomItem = FrenchItemNames.toDisplay(itemId);
 
-        // Collecte toutes les annonces pour cet item (sauf les siennes), triées par prix croissant
         List<MarketListing> annonces = MarketManager.getInstance().getAll().stream()
             .filter(l -> l.item.equalsIgnoreCase(itemId) && !l.seller.equalsIgnoreCase(pseudo))
-            .sorted(java.util.Comparator.comparingInt(l -> l.pricePerUnit))
-            .collect(java.util.stream.Collectors.toList());
+            .sorted(Comparator.comparingInt(l -> l.pricePerUnit))
+            .collect(Collectors.toList());
 
         if (annonces.isEmpty()) {
             joueur.sendMessage(Text.literal(String.format(
@@ -215,7 +274,6 @@ public class MarcheCommand {
             return 0;
         }
 
-        // Calcule le stock total dispo et le coût total au meilleur prix
         int stockTotal = annonces.stream().mapToInt(l -> l.quantity).sum();
         if (stockTotal < quantiteVoulue) {
             joueur.sendMessage(Text.literal(String.format(
@@ -224,38 +282,33 @@ public class MarcheCommand {
             return 0;
         }
 
-        // Calcul du coût réel (peut traverser plusieurs vendeurs)
         int coutTotal = 0;
-        int restantACalculer = quantiteVoulue;
+        int restantCalc = quantiteVoulue;
         for (MarketListing l : annonces) {
-            int pris = Math.min(restantACalculer, l.quantity);
+            int pris = Math.min(restantCalc, l.quantity);
             coutTotal += pris * l.pricePerUnit;
-            restantACalculer -= pris;
-            if (restantACalculer == 0) break;
+            restantCalc -= pris;
+            if (restantCalc == 0) break;
         }
 
         LocalEconomy eco = LocalEconomy.getInstance();
-        int solde = eco.getBalance(pseudo);
-        if (solde < coutTotal) {
+        if (eco.getBalance(pseudo) < coutTotal) {
             joueur.sendMessage(Text.literal(String.format(
                 "§c❌ Solde insuffisant — tu as §f%d💎§c, il te faut §f%d💎§c.",
-                solde, coutTotal)));
+                eco.getBalance(pseudo), coutTotal)));
             return 0;
         }
 
-        // Exécute les achats vendeur par vendeur
         Item itemObj = Registries.ITEM.get(Identifier.tryParse(itemId));
         int restantADonner = quantiteVoulue;
 
         for (MarketListing annonce : annonces) {
             if (restantADonner <= 0) break;
-
             int pris = Math.min(restantADonner, annonce.quantity);
             int cout = pris * annonce.pricePerUnit;
 
             eco.transfer(pseudo, annonce.seller, cout);
 
-            // Donne les items
             int aDistribuer = pris;
             while (aDistribuer > 0) {
                 int sz = Math.min(aDistribuer, itemObj.getMaxCount());
@@ -267,19 +320,14 @@ public class MarcheCommand {
             int nouvelleQte = annonce.quantity - pris;
             MarketManager.getInstance().updateQuantity(annonce.id, nouvelleQte);
 
-            // Notifie le vendeur s'il est connecté
-            final String vendeur = annonce.seller;
-            final int prisFinal = pris;
-            final int coutFinal = cout;
-            ServerPlayerEntity vend = source.getServer().getPlayerManager().getPlayer(vendeur);
+            ServerPlayerEntity vend = source.getServer().getPlayerManager().getPlayer(annonce.seller);
             if (vend != null) vend.sendMessage(Text.literal(String.format(
                 "§a💰 §f%s§a t'a acheté §f%dx %s§a pour §f%d💎§a !%s Solde : §f%d💎§a.",
-                pseudo, prisFinal, nomItem, coutFinal,
+                pseudo, pris, nomItem, cout,
                 nouvelleQte > 0 ? " §7(§f" + nouvelleQte + " restants§7)" : " §7(stock épuisé)",
-                eco.getBalance(vendeur)
+                eco.getBalance(annonce.seller)
             )));
 
-            // Sync Discord
             Map<String, Object> data = new HashMap<>();
             data.put("seller", annonce.seller);
             data.put("buyer", pseudo);
@@ -296,7 +344,6 @@ public class MarcheCommand {
             "§a✅ Tu as acheté §f%dx %s §apour §f%d💎§a au total. Solde restant : §f%d💎§a.",
             quantiteVoulue, nomItem, coutTotal, eco.getBalance(pseudo)
         )));
-
         return 1;
     }
 
@@ -306,25 +353,11 @@ public class MarcheCommand {
         if (!(source.getEntity() instanceof ServerPlayerEntity joueur)) {
             source.sendError(Text.literal("Commande réservée aux joueurs.")); return 0;
         }
-
-        List<MarketListing> miennes = MarketManager.getInstance().getBySeller(joueur.getName().getString());
-        if (miennes.isEmpty()) {
-            joueur.sendMessage(Text.literal(
-                "§eAucune annonce active. Utilise §f/marche vendre <qté> <prix>§e.")); return 1;
-        }
-
-        joueur.sendMessage(Text.literal("§6═══ Tes annonces ══ §7/marche retirer <id|item>§6 ═══"));
-        for (MarketListing a : miennes) {
-            String nom = FrenchItemNames.toDisplay(a.item);
-            joueur.sendMessage(Text.literal(String.format(
-                "§7#§f%d §7| §f%dx %s §7| §f%d💎§7/u §7| total §f%d💎",
-                a.id, a.quantity, nom, a.pricePerUnit, a.getTotal()
-            )));
-        }
-        return 1;
+        // Redirige vers la boutique du joueur lui-même
+        return executerBoutique(source, joueur.getName().getString());
     }
 
-    // ── /marche retirer <item|id> ─────────────────────────────────────────────
+    // ── /marche retirer <id> ──────────────────────────────────────────────────
 
     private static int executerRetirer(ServerCommandSource source, String cibleInput) {
         if (!(source.getEntity() instanceof ServerPlayerEntity joueur)) {
