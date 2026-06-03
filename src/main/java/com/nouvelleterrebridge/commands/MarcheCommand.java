@@ -55,29 +55,29 @@ public class MarcheCommand {
                                 IntegerArgumentType.getInteger(ctx, "quantite"),
                                 IntegerArgumentType.getInteger(ctx, "prix"))))))
 
-                // /marche acheter <item> <qte>
+                // /marche acheter <qte> <item>
                 .then(CommandManager.literal("acheter")
-                    .then(CommandManager.argument("item", StringArgumentType.greedyString())
-                        .suggests((ctx, builder) -> {
-                            String pseudo = ctx.getSource().getName();
-                            // Une suggestion par item distinct dispo sur le marché (pas ses propres annonces)
-                            MarketManager.getInstance().getAll().stream()
-                                .filter(l -> !l.seller.equalsIgnoreCase(pseudo))
-                                .collect(java.util.stream.Collectors.toMap(
-                                    l -> l.item,
-                                    l -> l,
-                                    (a, b) -> a.pricePerUnit <= b.pricePerUnit ? a : b // garde le moins cher
-                                ))
-                                .values().forEach(l -> {
-                                    String nom = FrenchItemNames.toDisplay(l.item);
-                                    boolean nomResout = l.item.equals(FrenchItemNames.toMinecraftId(nom));
-                                    String valeur = nomResout ? nom.toLowerCase() : l.item;
-                                    String tip = nom + " · " + l.pricePerUnit + "💎/u (meilleur prix)";
-                                    builder.suggest(valeur, Text.literal(tip));
-                                });
-                            return builder.buildFuture();
-                        })
-                        .then(CommandManager.argument("quantite", IntegerArgumentType.integer(1))
+                    .then(CommandManager.argument("quantite", IntegerArgumentType.integer(1))
+                        .then(CommandManager.argument("item", StringArgumentType.greedyString())
+                            .suggests((ctx, builder) -> {
+                                String pseudo = ctx.getSource().getName();
+                                // Une suggestion par item distinct dispo sur le marché (pas ses propres annonces)
+                                MarketManager.getInstance().getAll().stream()
+                                    .filter(l -> !l.seller.equalsIgnoreCase(pseudo))
+                                    .collect(java.util.stream.Collectors.toMap(
+                                        l -> l.item,
+                                        l -> l,
+                                        (a, b) -> a.pricePerUnit <= b.pricePerUnit ? a : b
+                                    ))
+                                    .values().forEach(l -> {
+                                        String nom = FrenchItemNames.toDisplay(l.item);
+                                        boolean nomResout = l.item.equals(FrenchItemNames.toMinecraftId(nom));
+                                        String valeur = nomResout ? nom.toLowerCase() : l.item;
+                                        String tip = nom + " · " + l.pricePerUnit + "💎/u (meilleur prix)";
+                                        builder.suggest(valeur, Text.literal(tip));
+                                    });
+                                return builder.buildFuture();
+                            })
                             .executes(ctx -> executerAcheter(
                                 ctx.getSource(),
                                 StringArgumentType.getString(ctx, "item"),
