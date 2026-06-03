@@ -21,6 +21,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * Toutes les commandes du marché (HDV) regroupées sous /marche.
@@ -54,39 +55,33 @@ public class MarcheCommand {
                                 IntegerArgumentType.getInteger(ctx, "quantite"),
                                 IntegerArgumentType.getInteger(ctx, "prix"))))))
 
-                // /marche acheter <vendeur> <qte> <item>
+                // /marche acheter <item> <qte>
                 .then(CommandManager.literal("acheter")
-                    .then(CommandManager.argument("vendeur", StringArgumentType.word())
+                    .then(CommandManager.argument("item", StringArgumentType.greedyString())
                         .suggests((ctx, builder) -> {
-                            String input = builder.getRemaining().toLowerCase();
+                            String pseudo = ctx.getSource().getName();
+                            // Une suggestion par item distinct dispo sur le marché (pas ses propres annonces)
                             MarketManager.getInstance().getAll().stream()
-                                .map(l -> l.seller).distinct()
-                                .filter(s -> s.toLowerCase().startsWith(input))
-                                .forEach(builder::suggest);
+                                .filter(l -> !l.seller.equalsIgnoreCase(pseudo))
+                                .collect(java.util.stream.Collectors.toMap(
+                                    l -> l.item,
+                                    l -> l,
+                                    (a, b) -> a.pricePerUnit <= b.pricePerUnit ? a : b // garde le moins cher
+                                ))
+                                .values().forEach(l -> {
+                                    String nom = FrenchItemNames.toDisplay(l.item);
+                                    boolean nomResout = l.item.equals(FrenchItemNames.toMinecraftId(nom));
+                                    String valeur = nomResout ? nom.toLowerCase() : l.item;
+                                    String tip = nom + " · " + l.pricePerUnit + "💎/u (meilleur prix)";
+                                    builder.suggest(valeur, Text.literal(tip));
+                                });
                             return builder.buildFuture();
                         })
                         .then(CommandManager.argument("quantite", IntegerArgumentType.integer(1))
-                            .then(CommandManager.argument("item", StringArgumentType.greedyString())
-                                .suggests((ctx, builder) -> {
-                                    String vendeur;
-                                    try { vendeur = StringArgumentType.getString(ctx, "vendeur"); }
-                                    catch (Exception e) { return builder.buildFuture(); }
-                                    // Une suggestion par annonce du vendeur
-                                    // Valeur = nom français si résolvable, sinon ID complet (pour les mods)
-                                    for (MarketListing l : MarketManager.getInstance().getBySeller(vendeur)) {
-                                        String nom = FrenchItemNames.toDisplay(l.item);
-                                        boolean nomResout = l.item.equals(FrenchItemNames.toMinecraftId(nom));
-                                        String valeur = nomResout ? nom.toLowerCase() : l.item;
-                                        String tip = l.quantity + " dispo · " + l.pricePerUnit + "💎/u";
-                                        builder.suggest(valeur, Text.literal(nom + " · " + tip));
-                                    }
-                                    return builder.buildFuture();
-                                })
-                                .executes(ctx -> executerAcheter(
-                                    ctx.getSource(),
-                                    StringArgumentType.getString(ctx, "vendeur"),
-                                    IntegerArgumentType.getInteger(ctx, "quantite"),
-                                    StringArgumentType.getString(ctx, "item")))))))
+                            .executes(ctx -> executerAcheter(
+                                ctx.getSource(),
+                                StringArgumentType.getString(ctx, "item"),
+                                IntegerArgumentType.getInteger(ctx, "quantite"))))))
 
                 // /marche annonces
                 .then(CommandManager.literal("annonces")
@@ -190,9 +185,10 @@ public class MarcheCommand {
         return 1;
     }
 
-    // ── /marche acheter <vendeur> <qte> <item> ────────────────────────────────
+    // ── /marche acheter <item> <qte> ─────────────────────────────────────────
+    // Achète automatiquement chez le(s) vendeur(s) le moins cher.
 
-    private static int executerAcheter(ServerCommandSource source, String vendeur, int quantite, String itemInput) {
+    private static int executerAcheter(ServerCommandSource source, String itemInput, int quantiteVoulue) {
         if (!(source.getEntity() instanceof ServerPlayerEntity joueur)) {
             source.sendError(Text.literal("Commande réservée aux joueurs.")); return 0;
         }
@@ -206,71 +202,101 @@ public class MarcheCommand {
         }
 
         String nomItem = FrenchItemNames.toDisplay(itemId);
-        Optional<MarketListing> opt = MarketManager.getInstance().getBySellerAndItem(vendeur, itemId);
-        if (opt.isEmpty()) {
+
+        // Collecte toutes les annonces pour cet item (sauf les siennes), triées par prix croissant
+        List<MarketListing> annonces = MarketManager.getInstance().getAll().stream()
+            .filter(l -> l.item.equalsIgnoreCase(itemId) && !l.seller.equalsIgnoreCase(pseudo))
+            .sorted(java.util.Comparator.comparingInt(l -> l.pricePerUnit))
+            .collect(java.util.stream.Collectors.toList());
+
+        if (annonces.isEmpty()) {
             joueur.sendMessage(Text.literal(String.format(
-                "§cAucune annonce de §f%s§c pour §f%s§c.", vendeur, nomItem)));
+                "§cAucune annonce disponible pour §f%s§c.", nomItem)));
             return 0;
         }
 
-        MarketListing annonce = opt.get();
-        if (annonce.seller.equalsIgnoreCase(pseudo)) {
-            joueur.sendMessage(Text.literal(
-                "§cTu ne peux pas acheter ta propre annonce. Utilise §f/marche retirer " + nomItem));
-            return 0;
-        }
-        if (quantite > annonce.quantity) {
+        // Calcule le stock total dispo et le coût total au meilleur prix
+        int stockTotal = annonces.stream().mapToInt(l -> l.quantity).sum();
+        if (stockTotal < quantiteVoulue) {
             joueur.sendMessage(Text.literal(String.format(
-                "§f%s§c n'en vend que §f%d§c.", vendeur, annonce.quantity)));
+                "§cStock insuffisant — seulement §f%d§c/%d dispo pour §f%s§c.",
+                stockTotal, quantiteVoulue, nomItem)));
             return 0;
         }
 
-        int total = quantite * annonce.pricePerUnit;
+        // Calcul du coût réel (peut traverser plusieurs vendeurs)
+        int coutTotal = 0;
+        int restantACalculer = quantiteVoulue;
+        for (MarketListing l : annonces) {
+            int pris = Math.min(restantACalculer, l.quantity);
+            coutTotal += pris * l.pricePerUnit;
+            restantACalculer -= pris;
+            if (restantACalculer == 0) break;
+        }
+
         LocalEconomy eco = LocalEconomy.getInstance();
-        int soldeCourant = eco.getBalance(pseudo);
-
-        if (soldeCourant < total) {
+        int solde = eco.getBalance(pseudo);
+        if (solde < coutTotal) {
             joueur.sendMessage(Text.literal(String.format(
                 "§c❌ Solde insuffisant — tu as §f%d💎§c, il te faut §f%d💎§c.",
-                soldeCourant, total)));
+                solde, coutTotal)));
             return 0;
         }
 
-        eco.transfer(pseudo, annonce.seller, total);
+        // Exécute les achats vendeur par vendeur
+        Item itemObj = Registries.ITEM.get(Identifier.tryParse(itemId));
+        int restantADonner = quantiteVoulue;
 
-        Item item = Registries.ITEM.get(Identifier.tryParse(annonce.item));
-        int restant = quantite;
-        while (restant > 0) {
-            int sz = Math.min(restant, item.getMaxCount());
-            ItemStack stack = new ItemStack(item, sz);
-            if (!joueur.getInventory().insertStack(stack)) joueur.dropItem(stack, false);
-            restant -= sz;
+        for (MarketListing annonce : annonces) {
+            if (restantADonner <= 0) break;
+
+            int pris = Math.min(restantADonner, annonce.quantity);
+            int cout = pris * annonce.pricePerUnit;
+
+            eco.transfer(pseudo, annonce.seller, cout);
+
+            // Donne les items
+            int aDistribuer = pris;
+            while (aDistribuer > 0) {
+                int sz = Math.min(aDistribuer, itemObj.getMaxCount());
+                ItemStack stack = new ItemStack(itemObj, sz);
+                if (!joueur.getInventory().insertStack(stack)) joueur.dropItem(stack, false);
+                aDistribuer -= sz;
+            }
+
+            int nouvelleQte = annonce.quantity - pris;
+            MarketManager.getInstance().updateQuantity(annonce.id, nouvelleQte);
+
+            // Notifie le vendeur s'il est connecté
+            final String vendeur = annonce.seller;
+            final int prisFinal = pris;
+            final int coutFinal = cout;
+            ServerPlayerEntity vend = source.getServer().getPlayerManager().getPlayer(vendeur);
+            if (vend != null) vend.sendMessage(Text.literal(String.format(
+                "§a💰 §f%s§a t'a acheté §f%dx %s§a pour §f%d💎§a !%s Solde : §f%d💎§a.",
+                pseudo, prisFinal, nomItem, coutFinal,
+                nouvelleQte > 0 ? " §7(§f" + nouvelleQte + " restants§7)" : " §7(stock épuisé)",
+                eco.getBalance(vendeur)
+            )));
+
+            // Sync Discord
+            Map<String, Object> data = new HashMap<>();
+            data.put("seller", annonce.seller);
+            data.put("buyer", pseudo);
+            data.put("item", annonce.item);
+            data.put("quantity", pris);
+            data.put("total", cout);
+            data.put("id", annonce.id);
+            EventDispatcher.envoyer("SALE_COMPLETED", data);
+
+            restantADonner -= pris;
         }
 
-        int nouvelleQte = annonce.quantity - quantite;
-        MarketManager.getInstance().updateQuantity(annonce.id, nouvelleQte);
-
         joueur.sendMessage(Text.literal(String.format(
-            "§a✅ Tu as acheté §f%dx %s §aauprès de §f%s§a pour §f%d💎§a ! Solde restant : §f%d💎§a.",
-            quantite, nomItem, vendeur, total, eco.getBalance(pseudo)
+            "§a✅ Tu as acheté §f%dx %s §apour §f%d💎§a au total. Solde restant : §f%d💎§a.",
+            quantiteVoulue, nomItem, coutTotal, eco.getBalance(pseudo)
         )));
 
-        ServerPlayerEntity vend = source.getServer().getPlayerManager().getPlayer(annonce.seller);
-        if (vend != null) vend.sendMessage(Text.literal(String.format(
-            "§a💰 §f%s§a t'a acheté §f%dx %s§a pour §f%d💎§a !%s Solde : §f%d💎§a.",
-            pseudo, quantite, nomItem, total,
-            nouvelleQte > 0 ? " §7(§f" + nouvelleQte + " restants§7)" : " §7(stock épuisé)",
-            eco.getBalance(annonce.seller)
-        )));
-
-        Map<String, Object> data = new HashMap<>();
-        data.put("seller", annonce.seller);
-        data.put("buyer", pseudo);
-        data.put("item", annonce.item);
-        data.put("quantity", quantite);
-        data.put("total", total);
-        data.put("id", annonce.id);
-        EventDispatcher.envoyer("SALE_COMPLETED", data);
         return 1;
     }
 
