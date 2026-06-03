@@ -274,7 +274,7 @@ public class MarcheCommand {
         return 1;
     }
 
-    // ── /annuler <item> ───────────────────────────────────────────────────────
+    // ── /annuler <item|id> ────────────────────────────────────────────────────
 
     private static int executerAnnuler(ServerCommandSource source, String itemInput) {
         if (!(source.getEntity() instanceof ServerPlayerEntity joueur)) {
@@ -282,29 +282,44 @@ public class MarcheCommand {
         }
 
         String pseudo = joueur.getName().getString();
-        String itemId = FrenchItemNames.toMinecraftId(itemInput);
+        Optional<MarketListing> opt = Optional.empty();
 
-        if (itemId == null) {
-            joueur.sendMessage(Text.literal(
-                String.format("§cItem §f%s §cinconnu.", itemInput))); return 0;
-        }
-
-        Optional<MarketListing> opt = MarketManager.getInstance().getBySellerAndItem(pseudo, itemId);
-        if (opt.isEmpty()) {
-            // Admin peut annuler par n'importe quel vendeur
-            if (source.hasPermissionLevel(2)) {
-                List<MarketListing> toutes = MarketManager.getInstance().getAll();
-                Optional<MarketListing> adminOpt = toutes.stream()
-                        .filter(l -> l.item.equalsIgnoreCase(itemId)).findFirst();
-                if (adminOpt.isEmpty()) {
-                    joueur.sendMessage(Text.literal("§cAucune annonce trouvée pour §f" + FrenchItemNames.toDisplay(itemId)));
+        // Support de l'ID numérique : /annuler 10
+        try {
+            int id = Integer.parseInt(itemInput.trim());
+            opt = MarketManager.getInstance().getListing(id);
+            if (opt.isEmpty()) {
+                joueur.sendMessage(Text.literal("§cAucune annonce avec l'ID §f#" + id + "§c."));
+                return 0;
+            }
+            MarketListing ann = opt.get();
+            if (!ann.seller.equalsIgnoreCase(pseudo) && !source.hasPermissionLevel(2)) {
+                joueur.sendMessage(Text.literal("§cCette annonce appartient à §f" + ann.seller + "§c."));
+                return 0;
+            }
+        } catch (NumberFormatException ignored) {
+            // Pas un nombre, on cherche par nom d'item
+            String itemId = FrenchItemNames.toMinecraftId(itemInput);
+            if (itemId == null) {
+                joueur.sendMessage(Text.literal(
+                    String.format("§cItem §f%s §cinconnu. Utilise §f/mesventes §cpour voir tes annonces.", itemInput)));
+                return 0;
+            }
+            opt = MarketManager.getInstance().getBySellerAndItem(pseudo, itemId);
+            if (opt.isEmpty()) {
+                if (source.hasPermissionLevel(2)) {
+                    Optional<MarketListing> adminOpt = MarketManager.getInstance().getAll().stream()
+                            .filter(l -> l.item.equalsIgnoreCase(itemId)).findFirst();
+                    if (adminOpt.isEmpty()) {
+                        joueur.sendMessage(Text.literal("§cAucune annonce trouvée pour §f" + FrenchItemNames.toDisplay(itemId)));
+                        return 0;
+                    }
+                    opt = adminOpt;
+                } else {
+                    joueur.sendMessage(Text.literal(
+                        String.format("§cTu n'as pas d'annonce pour §f%s§c. Utilise §f/mesventes§c.", FrenchItemNames.toDisplay(itemId))));
                     return 0;
                 }
-                opt = adminOpt;
-            } else {
-                joueur.sendMessage(Text.literal(
-                    String.format("§cTu n'as pas d'annonce pour §f%s§c.", FrenchItemNames.toDisplay(itemId))));
-                return 0;
             }
         }
 
@@ -324,7 +339,7 @@ public class MarcheCommand {
         MarketManager.getInstance().removeListing(annonce.id);
 
         joueur.sendMessage(Text.literal(String.format(
-            "§a✅ Annonce annulée. Tu as récupéré §f%dx %s§a.", annonce.quantity, nomItem)));
+            "§a✅ Annonce §f#%d §aannulée. Tu as récupéré §f%dx %s§a.", annonce.id, annonce.quantity, nomItem)));
 
         Map<String, Object> data = new HashMap<>();
         data.put("seller", annonce.seller);
