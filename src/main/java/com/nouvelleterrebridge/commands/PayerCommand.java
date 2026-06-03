@@ -3,7 +3,7 @@ package com.nouvelleterrebridge.commands;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
-import com.nouvelleterrebridge.economy.EconomyManager;
+import com.nouvelleterrebridge.economy.LocalEconomy;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -37,23 +37,34 @@ public class PayerCommand {
             return 0;
         }
 
-        joueur.sendMessage(Text.literal("§e⏳ Virement en cours..."));
+        LocalEconomy eco = LocalEconomy.getInstance();
+        int solde = eco.getBalance(expediteur);
 
-        EconomyManager.transfer(expediteur, destinataire, montant, source.getServer(), (success, message) -> {
-            if (success) {
-                joueur.sendMessage(Text.literal(
-                    String.format("§a✅ Tu as envoyé §f§l%d 💎§a à §f%s§a.", montant, destinataire)
-                ));
-                ServerPlayerEntity dest = source.getServer().getPlayerManager().getPlayer(destinataire);
-                if (dest != null) {
-                    dest.sendMessage(Text.literal(
-                        String.format("§a💰 Tu as reçu §f§l%d 💎§a de §f%s§a.", montant, expediteur)
-                    ));
-                }
-            } else {
-                joueur.sendMessage(Text.literal("§c❌ " + message));
-            }
-        });
+        if (solde < montant) {
+            joueur.sendMessage(Text.literal(
+                String.format("§c❌ Solde insuffisant — tu as §f%d💎§c, il te faut §f%d💎§c.", solde, montant)
+            ));
+            return 0;
+        }
+
+        boolean ok = eco.transfer(expediteur, destinataire, montant);
+        if (!ok) {
+            joueur.sendMessage(Text.literal("§c❌ Virement impossible."));
+            return 0;
+        }
+
+        joueur.sendMessage(Text.literal(
+            String.format("§a✅ Tu as envoyé §f§l%d💎§a à §f%s§a. Solde restant : §f%d💎§a.",
+                montant, destinataire, eco.getBalance(expediteur))
+        ));
+
+        ServerPlayerEntity dest = source.getServer().getPlayerManager().getPlayer(destinataire);
+        if (dest != null) {
+            dest.sendMessage(Text.literal(
+                String.format("§a💰 §f%s§a t'a envoyé §f§l%d💎§a ! Solde : §f%d💎§a.",
+                    expediteur, montant, eco.getBalance(destinataire))
+            ));
+        }
 
         return 1;
     }

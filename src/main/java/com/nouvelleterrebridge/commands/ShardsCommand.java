@@ -3,8 +3,7 @@ package com.nouvelleterrebridge.commands;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
-import com.nouvelleterrebridge.economy.EconomyManager;
-import com.nouvelleterrebridge.http.EventDispatcher;
+import com.nouvelleterrebridge.economy.LocalEconomy;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -42,42 +41,34 @@ public class ShardsCommand {
     }
 
     private static int executerGive(ServerCommandSource source, String cible, int montant) {
-        EconomyManager.reward(cible, montant, "admin give");
+        LocalEconomy.getInstance().addShards(cible, montant);
         source.sendFeedback(() -> Text.literal(
-            String.format("§a✅ +%d 💎 donnés à %s.", montant, cible)
+            String.format("§a✅ +%d💎 donnés à %s. Nouveau solde : %d💎.",
+                montant, cible, LocalEconomy.getInstance().getBalance(cible))
         ), true);
         ServerPlayerEntity joueurCible = source.getServer().getPlayerManager().getPlayer(cible);
         if (joueurCible != null) {
             joueurCible.sendMessage(Text.literal(
-                String.format("§6💰 Un administrateur t'a donné §f§l%d 💎§6.", montant)
+                String.format("§6💰 Un administrateur t'a donné §f§l%d💎§6 !", montant)
             ));
         }
         return 1;
     }
 
     private static int executerTake(ServerCommandSource source, String cible, int montant) {
-        java.util.Map<String, Object> data = new java.util.HashMap<>();
-        data.put("player", cible);
-        data.put("amount", montant);
-        data.put("description", "admin take");
-        EventDispatcher.envoyer("ECONOMY_DEDUCT", data);
+        LocalEconomy.getInstance().removeShards(cible, montant);
         source.sendFeedback(() -> Text.literal(
-            String.format("§c✅ -%d 💎 retirés à %s.", montant, cible)
+            String.format("§c✅ -%d💎 retirés à %s. Solde restant : %d💎.",
+                montant, cible, LocalEconomy.getInstance().getBalance(cible))
         ), true);
         return 1;
     }
 
     private static int executerCheck(ServerCommandSource source, String cible) {
-        source.sendFeedback(() -> Text.literal("§e⏳ Récupération du solde de " + cible + "..."), false);
-        EconomyManager.getBalance(cible, source.getServer(), (solde) -> {
-            if (solde < 0) {
-                source.sendFeedback(() -> Text.literal("§cImpossible de récupérer le solde de " + cible), false);
-            } else {
-                source.sendFeedback(() -> Text.literal(
-                    String.format("§6💰 Solde de §f%s§6 : §f§l%d 💎", cible, solde)
-                ), false);
-            }
-        });
+        int solde = LocalEconomy.getInstance().getBalance(cible);
+        source.sendFeedback(() -> Text.literal(
+            String.format("§6💰 Solde de §f%s§6 : §f§l%d💎", cible, solde)
+        ), false);
         return 1;
     }
 }

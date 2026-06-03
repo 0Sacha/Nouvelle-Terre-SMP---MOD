@@ -1,7 +1,7 @@
 package com.nouvelleterrebridge.commands;
 
 import com.mojang.brigadier.CommandDispatcher;
-import com.nouvelleterrebridge.economy.EconomyManager;
+import com.nouvelleterrebridge.economy.LocalEconomy;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -21,20 +21,10 @@ public class SoldeCommand {
             source.sendError(Text.literal("Cette commande est réservée aux joueurs."));
             return 0;
         }
-
-        String pseudo = joueur.getName().getString();
-        joueur.sendMessage(Text.literal("§e⏳ Récupération de ton solde..."));
-
-        EconomyManager.getBalance(pseudo, source.getServer(), (solde) -> {
-            if (solde < 0) {
-                joueur.sendMessage(Text.literal("§cErreur : impossible de récupérer ton solde."));
-            } else {
-                joueur.sendMessage(Text.literal(
-                    String.format("§6💰 Ton solde : §f§l%d 💎 §6Shards", solde)
-                ));
-            }
-        });
-
+        int solde = LocalEconomy.getInstance().getBalance(joueur.getName().getString());
+        joueur.sendMessage(Text.literal(
+            String.format("§6💰 Ton solde : §f§l%d 💎 §6Shards", solde)
+        ));
         return 1;
     }
 }

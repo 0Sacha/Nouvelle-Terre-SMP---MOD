@@ -3,7 +3,7 @@ package com.nouvelleterrebridge.commands;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
-import com.nouvelleterrebridge.economy.EconomyManager;
+import com.nouvelleterrebridge.economy.LocalEconomy;
 import com.nouvelleterrebridge.http.EventDispatcher;
 import com.nouvelleterrebridge.shop.FrenchItemNames;
 import com.nouvelleterrebridge.shop.MarketListing;
@@ -159,11 +159,21 @@ public class MarcheCommand {
         MarketListing annonce = MarketManager.getInstance().addListing(
                 joueur.getName().getString(), itemId, quantite, prix);
 
+        // Confirmation au vendeur
         joueur.sendMessage(Text.literal(String.format(
-            "§a✅ Annonce créée : §f%dx %s §apour §f%d 💎/u §a(total §f%d 💎§a). §7Utilisez §f/marche §7pour voir.",
-            quantite, nomItem, prix, annonce.getTotal()
+            "§a✅ Annonce §f#%d §acréée : §f%dx %s §apour §f%d💎/u §a(total §f%d💎§a).",
+            annonce.id, quantite, nomItem, prix, annonce.getTotal()
         )));
 
+        // Broadcast à tous les joueurs en ligne
+        String broadcast = String.format(
+            "§6[Marché] §e%s §7vend §f%dx %s §7· §f%d💎/u §7(total §f%d💎§7) — §f/acheter %s %d %s",
+            joueur.getName().getString(), quantite, nomItem, prix, annonce.getTotal(),
+            joueur.getName().getString(), quantite, nomItem.toLowerCase()
+        );
+        source.getServer().getPlayerManager().broadcast(Text.literal(broadcast), false);
+
+        // Sync Discord (async, ne bloque pas)
         Map<String, Object> data = new HashMap<>();
         data.put("player", joueur.getName().getString());
         data.put("item", itemId);
@@ -246,53 +256,57 @@ public class MarcheCommand {
         }
 
         int total = quantite * annonce.pricePerUnit;
+        LocalEconomy eco = LocalEconomy.getInstance();
+
+        int soldeCourant = eco.getBalance(pseudo);
+        if (soldeCourant < total) {
+            joueur.sendMessage(Text.literal(String.format(
+                "§c❌ Solde insuffisant — tu as §f%d💎§c, il te faut §f%d💎§c.",
+                soldeCourant, total
+            )));
+            return 0;
+        }
+
+        // Transfert instantané (local, pas d'HTTP)
+        eco.transfer(pseudo, annonce.seller, total);
+
+        // Donne les items
+        Item item = Registries.ITEM.get(Identifier.tryParse(annonce.item));
+        int restant = quantite;
+        while (restant > 0) {
+            int sz = Math.min(restant, item.getMaxCount());
+            ItemStack stack = new ItemStack(item, sz);
+            if (!joueur.getInventory().insertStack(stack)) joueur.dropItem(stack, false);
+            restant -= sz;
+        }
+
+        int nouvelleQte = annonce.quantity - quantite;
+        MarketManager.getInstance().updateQuantity(annonce.id, nouvelleQte);
+
+        // Confirmation à l'acheteur
         joueur.sendMessage(Text.literal(String.format(
-            "§e⏳ Achat de §f%dx %s§e auprès de §f%s§e pour §f%d 💎§e...",
-            quantite, nomItem, vendeur, total
+            "§a✅ Tu as acheté §f%dx %s §aauprès de §f%s§a pour §f%d💎§a ! Solde restant : §f%d💎§a.",
+            quantite, nomItem, vendeur, total, eco.getBalance(pseudo)
         )));
 
-        EconomyManager.transfer(pseudo, annonce.seller, total, source.getServer(), (success, message) -> {
-            if (!success) {
-                joueur.sendMessage(Text.literal("§c❌ " + message)); return;
-            }
+        // Notification au vendeur s'il est en ligne
+        ServerPlayerEntity vend = source.getServer().getPlayerManager().getPlayer(annonce.seller);
+        if (vend != null) vend.sendMessage(Text.literal(String.format(
+            "§a💰 §f%s§a t'a acheté §f%dx %s§a pour §f%d💎§a !%s Solde : §f%d💎§a.",
+            pseudo, quantite, nomItem, total,
+            nouvelleQte > 0 ? " §7(§f" + nouvelleQte + " restants§7)" : " §7(stock épuisé)",
+            eco.getBalance(annonce.seller)
+        )));
 
-            // Donne les items
-            Item item = Registries.ITEM.get(Identifier.tryParse(annonce.item));
-            int restant = quantite;
-            while (restant > 0) {
-                int sz = Math.min(restant, item.getMaxCount());
-                ItemStack stack = new ItemStack(item, sz);
-                if (!joueur.getInventory().insertStack(stack)) joueur.dropItem(stack, false);
-                restant -= sz;
-            }
-
-            // Met à jour ou supprime l'annonce
-            int nouvelleQte = annonce.quantity - quantite;
-            MarketManager.getInstance().updateQuantity(annonce.id, nouvelleQte);
-
-            // Notifie le vendeur s'il est en ligne
-            ServerPlayerEntity vend = source.getServer().getPlayerManager().getPlayer(annonce.seller);
-            if (vend != null) vend.sendMessage(Text.literal(String.format(
-                "§a💰 §f%s§a t'a acheté §f%dx %s§a pour §f%d 💎§a.%s",
-                pseudo, quantite, nomItem, total,
-                nouvelleQte > 0 ? " §7(§f" + nouvelleQte + " restants§7)" : " §7(stock épuisé)"
-            )));
-
-            joueur.sendMessage(Text.literal(String.format(
-                "§a✅ Tu as acheté §f%dx %s §aauprès de §f%s§a pour §f%d 💎§a !",
-                quantite, nomItem, vendeur, total
-            )));
-
-            // Discord
-            Map<String, Object> data = new HashMap<>();
-            data.put("seller", annonce.seller);
-            data.put("buyer", pseudo);
-            data.put("item", annonce.item);
-            data.put("quantity", quantite);
-            data.put("total", total);
-            data.put("id", annonce.id);
-            EventDispatcher.envoyer("SALE_COMPLETED", data);
-        });
+        // Sync Discord (async)
+        Map<String, Object> data = new HashMap<>();
+        data.put("seller", annonce.seller);
+        data.put("buyer", pseudo);
+        data.put("item", annonce.item);
+        data.put("quantity", quantite);
+        data.put("total", total);
+        data.put("id", annonce.id);
+        EventDispatcher.envoyer("SALE_COMPLETED", data);
         return 1;
     }
 
@@ -386,6 +400,12 @@ public class MarcheCommand {
         joueur.sendMessage(Text.literal(String.format(
             "§a✅ Annonce §f#%d §aannulée. Tu as récupéré §f%dx %s§a.", annonce.id, annonce.quantity, nomItem)));
 
+        // Broadcast à tous les joueurs
+        source.getServer().getPlayerManager().broadcast(Text.literal(String.format(
+            "§6[Marché] §e%s §7a retiré §f%dx %s §7du marché.", annonce.seller, annonce.quantity, nomItem
+        )), false);
+
+        // Sync Discord (async)
         Map<String, Object> data = new HashMap<>();
         data.put("seller", annonce.seller);
         data.put("item", annonce.item);
