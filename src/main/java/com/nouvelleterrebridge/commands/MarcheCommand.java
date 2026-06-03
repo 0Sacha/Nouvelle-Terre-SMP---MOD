@@ -322,12 +322,12 @@ public class MarcheCommand {
             joueur.sendMessage(Text.literal("§eAucune annonce active. Utilise §f/vendre <qté> <prix>§e.")); return 1;
         }
 
-        joueur.sendMessage(Text.literal("§6═══ Tes ventes ══ §7/annuler <item>§6 ═══"));
+        joueur.sendMessage(Text.literal("§6═══ Tes ventes ══ §7/annuler <id>§6 ═══"));
         for (MarketListing a : miennes) {
             String nom = FrenchItemNames.toDisplay(a.item);
             joueur.sendMessage(Text.literal(String.format(
-                "§f%dx %s §7| §f%d 💎§7/u §7| total §f%d 💎",
-                a.quantity, nom, a.pricePerUnit, a.getTotal()
+                "§7#§f%d §7| §f%dx %s §7| §f%d💎§7/u §7| total §f%d💎",
+                a.id, a.quantity, nom, a.pricePerUnit, a.getTotal()
             )));
         }
         return 1;
