@@ -3,13 +3,17 @@ package com.nouvelleterrebridge.http;
 import com.google.gson.Gson;
 import com.nouvelleterrebridge.ModConfig;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
+import com.nouvelleterrebridge.shop.MarketListing;
+import com.nouvelleterrebridge.shop.MarketManager;
 
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -114,6 +118,27 @@ public class EventDispatcher {
         for (EventQueue.EvenementEnAttente evt : queue.vider()) {
             envoyerJson(evt.type, evt.json);
         }
+        // Resync le marché après reconnexion au bot
+        envoyerSyncMarche();
+    }
+
+    /** Envoie l'état complet du marché au bot pour resynchronisation. */
+    public static void envoyerSyncMarche() {
+        List<MarketListing> listings = MarketManager.getInstance().getAll();
+        List<Map<String, Object>> liste = new ArrayList<>();
+        for (MarketListing l : listings) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("id", l.id);
+            item.put("seller", l.seller);
+            item.put("item", l.item);
+            item.put("quantity", l.quantity);
+            item.put("price", l.pricePerUnit);
+            liste.add(item);
+        }
+        Map<String, Object> data = new HashMap<>();
+        data.put("listings", liste);
+        envoyer("MARKET_SYNC", data);
+        NouvelleTerreBridge.LOGGER.info("[EventDispatcher] MARKET_SYNC envoyé ({} annonce(s)).", listings.size());
     }
 
     public static boolean isBotEnLigne() {

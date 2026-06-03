@@ -6,6 +6,8 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Écouteurs pour les événements du cycle de vie du serveur.
@@ -21,6 +23,11 @@ public class ServerEvents {
             data.put("version", "1.20.1");
             data.put("maxPlayers", server.getMaxPlayerCount());
             EventDispatcher.envoyer("SERVER_START", data);
+
+            // Petite pause pour laisser le bot traiter SERVER_START avant le sync marché
+            Executors.newSingleThreadScheduledExecutor().schedule(
+                EventDispatcher::envoyerSyncMarche, 3, TimeUnit.SECONDS
+            );
         });
 
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
