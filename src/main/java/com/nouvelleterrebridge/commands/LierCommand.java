@@ -5,6 +5,9 @@ import com.nouvelleterrebridge.http.EventDispatcher;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.ClickEvent;
+import net.minecraft.text.HoverEvent;
+import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 
 import java.util.HashMap;
@@ -39,10 +42,18 @@ public class LierCommand {
         data.put("code", code);
         EventDispatcher.envoyer("LINK_REQUEST", data);
 
-        joueur.sendMessage(Text.literal(
-            "§6🔗 Code de liaison : §f§l" + code + "\n" +
-            "§7Tape §f/link " + code + " §7dans Discord. §eValide 10 minutes."
-        ));
+        MutableText codeCliquable = Text.literal("§f§l" + code)
+            .styled(s -> s
+                .withClickEvent(new ClickEvent(ClickEvent.Action.COPY_TO_CLIPBOARD, code))
+                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+                    Text.literal("§7Cliquer pour copier")))
+            );
+
+        joueur.sendMessage(
+            Text.literal("§6🔗 Code de liaison : ")
+                .append(codeCliquable)
+                .append(Text.literal("\n§7Tape §f/link <code> §7dans Discord. §eValide 10 min."))
+        );
         return 1;
     }
 }
