@@ -59,12 +59,37 @@ public class MarcheCommand {
                     )))
         );
 
-        // /acheter <vendeur> <qté> <item> (nom français ou ID mc)
+        // /acheter <vendeur> <qté> <item> — autocomplétion vendeur puis item
         dispatcher.register(
             CommandManager.literal("acheter")
                 .then(CommandManager.argument("vendeur", StringArgumentType.word())
+                    .suggests((ctx, builder) -> {
+                        String input = builder.getRemaining().toLowerCase();
+                        MarketManager.getInstance().getAll().stream()
+                            .map(l -> l.seller)
+                            .distinct()
+                            .filter(s -> s.toLowerCase().startsWith(input))
+                            .forEach(builder::suggest);
+                        return builder.buildFuture();
+                    })
                     .then(CommandManager.argument("quantite", IntegerArgumentType.integer(1))
                         .then(CommandManager.argument("item", StringArgumentType.greedyString())
+                            .suggests((ctx, builder) -> {
+                                String vendeur;
+                                try { vendeur = StringArgumentType.getString(ctx, "vendeur"); }
+                                catch (Exception e) { return builder.buildFuture(); }
+                                String input = builder.getRemaining().toLowerCase();
+                                for (MarketListing l : MarketManager.getInstance().getBySeller(vendeur)) {
+                                    String nomFr = FrenchItemNames.toDisplay(l.item).toLowerCase();
+                                    String mcId  = l.item.replace("minecraft:", "");
+                                    String tip   = l.quantity + " dispo · " + l.pricePerUnit + " shard/u";
+                                    if (nomFr.startsWith(input))
+                                        builder.suggest(nomFr, Text.literal(tip));
+                                    if (!mcId.equals(nomFr) && mcId.startsWith(input))
+                                        builder.suggest(mcId, Text.literal(tip));
+                                }
+                                return builder.buildFuture();
+                            })
                             .executes(ctx -> executerAcheter(
                                 ctx.getSource(),
                                 StringArgumentType.getString(ctx, "vendeur"),
@@ -79,10 +104,30 @@ public class MarcheCommand {
                 .executes(ctx -> executerMesVentes(ctx.getSource()))
         );
 
-        // /annuler <item> (nom français ou ID mc)
+        // /annuler <item|id> — autocomplétion sur les propres annonces du joueur
         dispatcher.register(
             CommandManager.literal("annuler")
                 .then(CommandManager.argument("item", StringArgumentType.greedyString())
+                    .suggests((ctx, builder) -> {
+                        if (!(ctx.getSource().getEntity() instanceof ServerPlayerEntity joueur))
+                            return builder.buildFuture();
+                        String pseudo = joueur.getName().getString();
+                        String input  = builder.getRemaining().toLowerCase();
+                        for (MarketListing l : MarketManager.getInstance().getBySeller(pseudo)) {
+                            String nomFr = FrenchItemNames.toDisplay(l.item).toLowerCase();
+                            String mcId  = l.item.replace("minecraft:", "");
+                            String idStr = String.valueOf(l.id);
+                            String tip   = l.quantity + "x " + FrenchItemNames.toDisplay(l.item)
+                                           + " · " + l.pricePerUnit + " shard/u";
+                            if (idStr.startsWith(input))
+                                builder.suggest(idStr, Text.literal(tip));
+                            if (nomFr.startsWith(input))
+                                builder.suggest(nomFr, Text.literal(tip));
+                            if (!mcId.equals(nomFr) && mcId.startsWith(input))
+                                builder.suggest(mcId, Text.literal(tip));
+                        }
+                        return builder.buildFuture();
+                    })
                     .executes(ctx -> executerAnnuler(
                         ctx.getSource(),
                         StringArgumentType.getString(ctx, "item")
