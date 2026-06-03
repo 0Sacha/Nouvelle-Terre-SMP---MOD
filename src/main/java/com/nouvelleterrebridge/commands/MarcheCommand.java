@@ -71,15 +71,14 @@ public class MarcheCommand {
                                     String vendeur;
                                     try { vendeur = StringArgumentType.getString(ctx, "vendeur"); }
                                     catch (Exception e) { return builder.buildFuture(); }
-                                    String input = builder.getRemaining().toLowerCase();
+                                    // Une suggestion par annonce du vendeur
+                                    // Valeur = nom français si résolvable, sinon ID complet (pour les mods)
                                     for (MarketListing l : MarketManager.getInstance().getBySeller(vendeur)) {
-                                        String nomFr = FrenchItemNames.toDisplay(l.item).toLowerCase();
-                                        String mcId  = l.item.replace("minecraft:", "");
-                                        String tip   = l.quantity + " dispo · " + l.pricePerUnit + " shard/u";
-                                        if (nomFr.startsWith(input))
-                                            builder.suggest(nomFr, Text.literal(tip));
-                                        if (!mcId.equals(nomFr) && mcId.startsWith(input))
-                                            builder.suggest(mcId, Text.literal(tip));
+                                        String nom = FrenchItemNames.toDisplay(l.item);
+                                        boolean nomResout = l.item.equals(FrenchItemNames.toMinecraftId(nom));
+                                        String valeur = nomResout ? nom.toLowerCase() : l.item;
+                                        String tip = l.quantity + " dispo · " + l.pricePerUnit + "💎/u";
+                                        builder.suggest(valeur, Text.literal(nom + " · " + tip));
                                     }
                                     return builder.buildFuture();
                                 })
@@ -93,24 +92,19 @@ public class MarcheCommand {
                 .then(CommandManager.literal("annonces")
                     .executes(ctx -> executerMesAnnonces(ctx.getSource())))
 
-                // /marche retirer <item|id>
+                // /marche retirer <id>
                 .then(CommandManager.literal("retirer")
                     .then(CommandManager.argument("cible", StringArgumentType.greedyString())
                         .suggests((ctx, builder) -> {
                             if (!(ctx.getSource().getEntity() instanceof ServerPlayerEntity joueur))
                                 return builder.buildFuture();
                             String pseudo = joueur.getName().getString();
-                            String input  = builder.getRemaining().toLowerCase();
+                            // Une suggestion par annonce : l'ID numérique, tooltip = détails lisibles
                             for (MarketListing l : MarketManager.getInstance().getBySeller(pseudo)) {
-                                String nomFr = FrenchItemNames.toDisplay(l.item).toLowerCase();
-                                String mcId  = l.item.replace("minecraft:", "");
-                                String idStr = String.valueOf(l.id);
-                                String tip   = l.quantity + "x " + FrenchItemNames.toDisplay(l.item)
-                                               + " · " + l.pricePerUnit + " shard/u";
-                                if (idStr.startsWith(input))   builder.suggest(idStr, Text.literal(tip));
-                                if (nomFr.startsWith(input))   builder.suggest(nomFr, Text.literal(tip));
-                                if (!mcId.equals(nomFr) && mcId.startsWith(input))
-                                    builder.suggest(mcId, Text.literal(tip));
+                                String nom = FrenchItemNames.toDisplay(l.item);
+                                String tip = "#" + l.id + " · " + l.quantity + "x " + nom
+                                             + " · " + l.pricePerUnit + "💎/u";
+                                builder.suggest(String.valueOf(l.id), Text.literal(tip));
                             }
                             return builder.buildFuture();
                         })

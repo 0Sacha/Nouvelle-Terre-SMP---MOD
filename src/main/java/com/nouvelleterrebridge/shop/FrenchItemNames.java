@@ -151,8 +151,8 @@ public class FrenchItemNames {
         if (mcId == null) return "?";
         String fr = MC_TO_FR.get(mcId);
         if (fr != null) return fr;
-        // Capitalise le nom anglais reformaté
-        String raw = mcId.replace("minecraft:", "").replace("_", " ");
-        return raw.substring(0, 1).toUpperCase() + raw.substring(1);
+        // Strip n'importe quel namespace (minecraft:, mcwbridges:, etc.) puis formate
+        String raw = mcId.replaceAll("^[^:]+:", "").replace("_", " ");
+        return Character.toUpperCase(raw.charAt(0)) + raw.substring(1);
     }
 }
