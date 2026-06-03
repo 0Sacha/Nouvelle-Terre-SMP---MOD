@@ -2,6 +2,7 @@ package com.nouvelleterrebridge;
 
 import com.nouvelleterrebridge.commands.ConflitCommand;
 import com.nouvelleterrebridge.commands.EventNarratifCommand;
+import com.nouvelleterrebridge.commands.LierCommand;
 import com.nouvelleterrebridge.commands.MarcheCommand;
 import com.nouvelleterrebridge.commands.PayerCommand;
 import com.nouvelleterrebridge.commands.ShardsCommand;
@@ -58,6 +59,7 @@ public class NouvelleTerreBridge implements ModInitializer {
         // Enregistrement des commandes Minecraft
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             MarcheCommand.register(dispatcher);
+            LierCommand.register(dispatcher);
             ConflitCommand.register(dispatcher);
             EventNarratifCommand.register(dispatcher);
             SoldeCommand.register(dispatcher);
