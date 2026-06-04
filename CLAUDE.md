@@ -40,21 +40,19 @@ GitHub Action crée une Release automatique à chaque push sur `main`.
 | `/economie bourse` | Solde du joueur |
 | `/economie virer <joueur> <montant>` | Envoyer des shards |
 | `/economie admin give/take/check <joueur>` | Admin (op 2) |
-| `/marche` | Accueil : liste des vendeurs (cliquables) |
-| `/marche <joueur>` | Boutique d'un vendeur |
-| `/marche vendre <qte> <prix>` | Vendre item en main |
-| `/marche acheter <qte> <item>` | Acheter au meilleur prix |
-| `/marche annonces` | Ses propres annonces |
-| `/marche retirer <id>` | Retirer une annonce |
+| `/hdv` | Ouvre le GUI HDV (coffre virtuel 6 rangées) |
 | `/discord` | Lier compte Minecraft ↔ Discord |
 | `/conflit <cible> <raison>` | Déclarer un conflit RP |
 | `/evenement <message>` | Narration (op only) |
+
+> Toutes les opérations marché (vendre, acheter, retirer) se font **uniquement via `/hdv`** — aucune commande chat `/marche`.
 
 ## Structure des fichiers Java
 ```
 commands/
   EconomieCommand.java     → /economie (bourse, virer, admin) + constantes SEP_* + fmt()
-  MarcheCommand.java       → /marche (toutes sous-commandes)
+  MarcheCommand.java       → /marche (vendre, acheter, annonces, retirer) — PAS de <joueur>
+  HdvCommand.java          → /hdv (ouvre le GUI)
   LierCommand.java         → /discord
   ConflitCommand.java      → /conflit
   EventNarratifCommand.java → /evenement
@@ -79,15 +77,22 @@ mixin/
 shop/
   MarketManager.java       → Singleton marche.json, CRUD annonces
   MarketListing.java       → POJO annonce
+  MarketActions.java       → Logique métier buy/sell/withdraw — appelé uniquement par HdvGui
   FrenchItemNames.java     → Dico FR↔MC, toDisplay() strip namespace
+  HdvGui.java              → GUI coffre virtuel : open/buildPage/handleClick (4 modes)
+  HdvState.java            → État par joueur (mode, page, vendeur, qté vente, searchQuery)
+  HdvScreenHandler.java    → Subclasse GenericContainerScreenHandler, override onSlotClick/onClosed
+  HdvSearchHandler.java    → Enclume détournée pour recherche texte
+  HdvSellPriceHandler.java → Enclume détournée pour saisie du prix de vente
 ```
 
 ## Dead code — NE PAS RECRÉER
-- `VenteCommand`, `AchatCommand` — remplacées par MarcheCommand
+- `VenteCommand`, `AchatCommand`, `MarcheCommand` — remplacées par HdvGui + MarketActions
 - `EconomyManager` — remplacé par LocalEconomy
 - `EconomyEvents` — méthodes mortes
 - `VenteScreenHandler/Factory` — TYPE = null, jamais enregistrée
 - `CadmusIntegration` — stub vide
+- `HdvCategory` — supprimé, catégories retirées de l'UI (première page = vendeurs)
 
 ## UI — Constantes visuelles (EconomieCommand.java)
 ```java
@@ -101,13 +106,71 @@ EconomieCommand.fmt(int)    // formatte un nombre avec espaces (1 250)
 Style général : blocs visuels avec `▬` en couleur, `§8»` comme séparateur label/valeur,
 éléments cliquables via `MutableText` + `ClickEvent` + `HoverEvent`.
 
-## Prochain chantier : GUI HDV (/hdv)
-Plan validé — **ne pas commencer sans relire ceci** :
-- Commande `/hdv` ouvre un **coffre virtuel 6 rangées** (GenericContainerScreenHandler)
-- **Mixin** sur `GenericContainerScreenHandler.onSlotClick` pour intercepter les clics côté serveur
-- État GUI par joueur stocké dans une `Map<UUID, HdvState>` (quelle page, quelle catégorie)
-- **Navigation** : Catégories → Items filtrés → Ma Boutique
-- **Clics** : G = achète 1 unité / D = achète une pile / Shift = achète tout le stock
-- **Vente via GUI** : bouton [+Vendre] → slot dédié → joueur tape `/hdv vendre <qté> <prix>`
-- **Catégories** auto par namespace/ID Minecraft, items de mods → "Divers"
-- Aucune texture custom nécessaire (vanilla chest UI)
+## Resource pack HDV dark-theme
+
+Généré et servi automatiquement par le mod, style Paladium.
+
+### Fichiers générés à la volée (pur Java, aucune image externe)
+| Fichier dans le pack | Rôle |
+|---|---|
+| `assets/minecraft/textures/gui/container/generic_54.png` | Fond sombre du coffre 6 rangées (#1a1b1e, barre titre #23272a) |
+
+> PNG encodé en **RGBA (color type 6)** — Minecraft 1.20.1 crash si les textures GUI sont en RGB (type 2).
+> `slot.png` retiré — son chemin dans l'atlas sprite 1.20.1 est différent ; le fichier inconnu faisait rejeter tout le pack.
+
+### Envoi aux joueurs
+- Au démarrage du serveur : génère le ZIP + le sauvegarde dans `<gameDir>/nouvelle-terre-hdv.zip`
+- `PlayerEvents` envoie `ResourcePackSendS2CPacket(url, hash, required, null)` à chaque connexion
+- Config dans `nouvelle-terre-bridge.json` :
+  - `resourcePackUrl` — **URL directe** (recommandée, ex: GitHub Releases). Si renseigné, le serveur HTTP intégré ne démarre PAS.
+  - `resourcePackHost` / `resourcePackPort` — fallback serveur HTTP intégré (port 25566 souvent bloqué par les hébergeurs)
+  - `resourcePackRequired` — si `true`, le joueur est déconnecté s'il refuse
+
+### Workflow resource pack (GitHub Releases)
+1. Push sur `main` → GitHub Actions génère `nouvelle-terre-hdv.zip` via `.github/scripts/gen_resourcepack.py`
+2. Le ZIP est attaché à la Release GitHub avec le SHA-1 dans la description
+3. Configurer `resourcePackUrl` dans `nouvelle-terre-bridge.json` avec l'URL de la Release
+
+### Décision technique
+- Port 25566 bloqué par Minestrator → passage au mode URL directe (GitHub Releases)
+- Encodeur PNG pur Java (pas d'AWT) — fonctionne sur serveur headless Linux sans config supplémentaire
+- `slot.png` sprite retiré du pack — chemin dans l'atlas 1.20.1 différent, faisait rejeter tout le pack
+
+## GUI HDV — implémenté et fonctionnel
+
+### Architecture
+- `HdvScreenHandler` sous-classe `GenericContainerScreenHandler`, override `onSlotClick` (bloque tout vanilla) et `onClosed` (nettoie le state)
+- **PAS de Mixin pour les clics HDV** — le override direct est fiable et plus simple
+- `HdvGui.STATES : Map<UUID, HdvState>` — un état par joueur connecté
+
+### Modes de navigation (HdvState.Mode)
+| Mode | Description |
+|---|---|
+| `VENDORS` | **Accueil** : grille de têtes de joueurs avec skin (NBT SkullOwner), pagination |
+| `ITEMS` | Items achetables filtrés par vendeur ; propres annonces grisées |
+| `MY_SHOP` | Ses propres annonces ; D = retirer ; bouton + Vendre → mode SELL |
+| `SELL` | Sélection quantité (presets 1/4/8/16/32/64/tout) ; confirmer → enclume prix |
+
+### Recherche (style Paladium)
+- Bouton `🔍 Rechercher` au slot 6 du header de la vue ITEMS
+- Ouvre `HdvSearchHandler` (enclume détournée) : `AnvilScreenHandler` avec `ScreenHandlerContext.EMPTY`
+- Le joueur tape dans le field texte natif de l'enclume → clic sur l'output (slot 2) → `output.getName()` = texte tapé
+- `HdvGui.openHdvWithSearch(player, query)` rouvre le HDV en mode ITEMS avec `state.searchQuery`
+- Escape → `onClosed` (confirmed=false) → `server.execute(() → openHdv(player))` (sur le tick suivant, évite récursion)
+- Filtre combinable avec vendeur : match sur nom FR, item ID, ou pseudo vendeur
+- Filtre actif : bouton change en `§b🔍 "query"` — G=effacer, D=modifier
+
+### Clics en mode ITEMS
+- G (clic gauche) = achète 1 unité
+- D (clic droit) = achète min(64, stock)
+- Shift = achète tout le stock
+
+### Vente via GUI
+1. `Ma Boutique` → clic sur `+ Vendre` (item en main obligatoire)
+2. Page SELL : aperçu item + sélecteurs quantité
+3. Clic `✅ Confirmer` → ouvre `HdvSellPriceHandler` (enclume) → joueur tape le prix → `MarketActions.sell()`
+
+### Décisions techniques à retenir
+- `onSlotClick` dans la sous-classe bloque TOUTES les actions vanilla (PICKUP, QUICK_MOVE, SWAP, etc.)
+- `SkullOwner` NBT suffit pour afficher les vraies têtes de joueurs sans dépendances
+- Achat/retrait/vente délégués à `MarketActions` — aucune commande chat pour le marché

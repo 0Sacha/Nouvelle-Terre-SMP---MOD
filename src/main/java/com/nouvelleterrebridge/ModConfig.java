@@ -30,6 +30,14 @@ public class ModConfig {
     // Délai en secondes avant de vider la file d'attente (si le bot revient en ligne)
     private int delaiVideFileAttente = 30;
 
+    // Resource pack HDV
+    // Option 1 : URL directe (recommandée) — ex: URL GitHub Releases
+    private String resourcePackUrl      = "";
+    // Option 2 (fallback) : serveur HTTP intégré si resourcePackUrl est vide
+    private String resourcePackHost     = "91.197.6.86";
+    private int    resourcePackPort     = 25566;
+    private boolean resourcePackRequired = false;
+
     public static ModConfig charger() {
         Path cheminConfig = FabricLoader.getInstance().getConfigDir().resolve(NOM_FICHIER);
         File fichier = cheminConfig.toFile();
@@ -70,4 +78,15 @@ public class ModConfig {
     public boolean isActiverEvenementEconomie() { return activerEvenementEconomie; }
     public boolean isActiverEvenementTerritoire() { return activerEvenementTerritoire; }
     public int getDelaiVideFileAttente() { return delaiVideFileAttente; }
+
+    public String  getResourcePackHost()     { return resourcePackHost; }
+    public int     getResourcePackPort()     { return resourcePackPort; }
+    public boolean isResourcePackRequired()  { return resourcePackRequired; }
+    public boolean hasDirectUrl()            { return resourcePackUrl != null && !resourcePackUrl.isBlank(); }
+
+    /** URL finale du pack.zip — URL directe si configurée, sinon serveur HTTP intégré. */
+    public String getResourcePackUrl() {
+        if (hasDirectUrl()) return resourcePackUrl;
+        return "http://" + resourcePackHost + ":" + resourcePackPort + "/pack.zip";
+    }
 }
