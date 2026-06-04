@@ -21,6 +21,7 @@ Lit ce fichier automatiquement pour avoir le contexte complet avant de coder.
 # Nécessite Java 17
 ```
 GitHub Action crée une Release automatique à chaque push sur `main`.
+Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueurs doivent installer le JAR Fabric côté client pour le GUI HDV.
 
 ## Architecture économie
 - Source de vérité : `shards.json` sur le serveur (`LocalEconomy.java`)
@@ -40,7 +41,7 @@ GitHub Action crée une Release automatique à chaque push sur `main`.
 | `/economie bourse` | Solde du joueur |
 | `/economie virer <joueur> <montant>` | Envoyer des shards |
 | `/economie admin give/take/check <joueur>` | Admin (op 2) |
-| `/hdv` | Ouvre le GUI HDV (coffre virtuel 6 rangées) |
+| `/hdv` | Ouvre le GUI HDV custom (screen client Fabric) |
 | `/discord` | Lier compte Minecraft ↔ Discord |
 | `/conflit <cible> <raison>` | Déclarer un conflit RP |
 | `/evenement <message>` | Narration (op only) |
@@ -51,8 +52,7 @@ GitHub Action crée une Release automatique à chaque push sur `main`.
 ```
 commands/
   EconomieCommand.java     → /economie (bourse, virer, admin) + constantes SEP_* + fmt()
-  MarcheCommand.java       → /marche (vendre, acheter, annonces, retirer) — PAS de <joueur>
-  HdvCommand.java          → /hdv (ouvre le GUI)
+  HdvCommand.java          → /hdv : envoie HDV_OPEN au client via ServerPlayNetworking
   LierCommand.java         → /discord
   ConflitCommand.java      → /conflit
   EventNarratifCommand.java → /evenement
@@ -63,8 +63,8 @@ economy/
   PlaytimeTracker.java     → Récompenses 30min + salaire horaire
 
 events/
-  PlayerEvents.java        → JOIN / LEAVE / première connexion
-  ServerEvents.java        → SERVER_START / SERVER_STOP / MARKET_SYNC
+  PlayerEvents.java        → JOIN / LEAVE / première connexion + envoi resource pack
+  ServerEvents.java        → SERVER_START / SERVER_STOP / MARKET_SYNC + init ResourcePackManager
   TerritoryEvents.java     → Cadmus stub (non implémenté)
 
 http/
@@ -74,25 +74,74 @@ http/
 mixin/
   LivingEntityMixin.java   → Morts joueurs → PLAYER_DEATH
 
+network/
+  HdvNetworking.java       → Identifiants canaux HDV_OPEN / HDV_ACTION / HDV_RESULT + constantes ACTION_*
+
+client/                    ← Code client uniquement (@Environment(CLIENT))
+  HdvScreen.java           → Screen Fabric full-screen : 4 onglets + modal achat + toast
+
+resourcepack/
+  ResourcePackManager.java → Génère ZIP dark-theme, calcule hash SHA-1 (télécharge depuis URL directe)
+
 shop/
   MarketManager.java       → Singleton marche.json, CRUD annonces
   MarketListing.java       → POJO annonce
-  MarketActions.java       → Logique métier buy/sell/withdraw — appelé uniquement par HdvGui
+  MarketActions.java       → Logique métier buy / sell / sellByItemId / withdraw
   FrenchItemNames.java     → Dico FR↔MC, toDisplay() strip namespace
-  HdvGui.java              → GUI coffre virtuel : open/buildPage/handleClick (4 modes)
-  HdvState.java            → État par joueur (mode, page, vendeur, qté vente, searchQuery)
-  HdvScreenHandler.java    → Subclasse GenericContainerScreenHandler, override onSlotClick/onClosed
-  HdvSearchHandler.java    → Enclume détournée pour recherche texte
-  HdvSellPriceHandler.java → Enclume détournée pour saisie du prix de vente
+  HdvGui.java              → ⚠️ DEAD CODE — ancien GUI coffre, plus appelé
+  HdvState.java            → ⚠️ DEAD CODE — état ancien GUI
+  HdvScreenHandler.java    → ⚠️ DEAD CODE — sous-classe GenericContainerScreenHandler
+  HdvSearchHandler.java    → ⚠️ DEAD CODE — enclume recherche
+  HdvSellPriceHandler.java → ⚠️ DEAD CODE — enclume saisie prix
 ```
 
 ## Dead code — NE PAS RECRÉER
-- `VenteCommand`, `AchatCommand`, `MarcheCommand` — remplacées par HdvGui + MarketActions
+- `VenteCommand`, `AchatCommand`, `MarcheCommand` — remplacées par HdvScreen + MarketActions
 - `EconomyManager` — remplacé par LocalEconomy
 - `EconomyEvents` — méthodes mortes
 - `VenteScreenHandler/Factory` — TYPE = null, jamais enregistrée
 - `CadmusIntegration` — stub vide
-- `HdvCategory` — supprimé, catégories retirées de l'UI (première page = vendeurs)
+- `HdvCategory` — supprimé
+- `HdvGui`, `HdvState`, `HdvScreenHandler`, `HdvSearchHandler`, `HdvSellPriceHandler` — ancien système coffre vanilla, remplacé par `HdvScreen`
+
+## GUI HDV — architecture client-serveur
+
+### Flux d'ouverture
+1. Joueur tape `/hdv`
+2. `HdvCommand` → `ServerPlayNetworking.send(player, HDV_OPEN, buf)` avec balance + toutes les annonces
+3. `NouvelleTerreBridgeClient` reçoit → `client.setScreen(new HdvScreen(...))`
+
+### Flux d'action (achat / vente / retrait)
+1. `HdvScreen` → `ClientPlayNetworking.send(HDV_ACTION, buf)` avec type + données
+2. `NouvelleTerreBridge.registerHdvNetworking()` reçoit → appelle `MarketActions.*`
+3. Réponse → `ServerPlayNetworking.send(HDV_RESULT, buf)` avec ok + message + nouvelles annonces
+4. `NouvelleTerreBridgeClient` reçoit → `screen.handleResult(...)` met à jour l'UI
+
+### HdvScreen — onglets
+| Onglet | Description |
+|---|---|
+| 🏪 Marché | Grille items filtrée par catégorie + recherche texte, scroll, hover gold border |
+| 💰 Vendre | Inventaire joueur lu client-side → formulaire qté/prix → `sellByItemId()` serveur |
+| 🛒 Mon Shop | Mes annonces avec bouton Retirer |
+| 👥 Boutiques | Liste vendeurs → détail boutique → achat |
+
+### Couleurs (HdvScreen)
+```java
+C_BG    = 0xFF1e1f22   // fond principal
+C_PANEL = 0xFF2b2d31   // cartes / panneaux
+C_HOVER = 0xFF313338   // hover
+C_GOLD  = 0xFFf0b232   // accent or (prix, onglet actif, bordure hover)
+C_SEP   = 0xFF3a3c40   // séparateurs, boutons secondaires
+C_RED   = 0xFFd4183d   // erreur / retrait
+C_GREEN = 0xFF23a55a   // succès (toast)
+```
+
+### Décisions techniques à retenir
+- Le GUI est un `Screen` Fabric pur — pas de `ScreenHandler`, pas de slots vanilla
+- Les items sont rendus avec `DrawContext.drawItem(ItemStack, x, y)` (icônes Minecraft réelles)
+- La vente lit l'inventaire côté client (`client.player.getInventory().main`) — le serveur revalide
+- `MarketActions.sell()` requiert l'item en main ; `MarketActions.sellByItemId()` cherche dans l'inventaire
+- `@Environment(EnvType.CLIENT)` sur `HdvScreen` et `NouvelleTerreBridgeClient`
 
 ## UI — Constantes visuelles (EconomieCommand.java)
 ```java
@@ -109,68 +158,23 @@ Style général : blocs visuels avec `▬` en couleur, `§8»` comme séparateur
 ## Resource pack HDV dark-theme
 
 Généré et servi automatiquement par le mod, style Paladium.
-
-### Fichiers générés à la volée (pur Java, aucune image externe)
-| Fichier dans le pack | Rôle |
-|---|---|
-| `assets/minecraft/textures/gui/container/generic_54.png` | Fond sombre du coffre 6 rangées (#1a1b1e, barre titre #23272a) |
-
-> PNG encodé en **RGBA (color type 6)** — Minecraft 1.20.1 crash si les textures GUI sont en RGB (type 2).
-> `slot.png` retiré — son chemin dans l'atlas sprite 1.20.1 est différent ; le fichier inconnu faisait rejeter tout le pack.
+> Le resource pack n'est plus nécessaire pour le GUI HDV (remplacé par le screen client), mais reste envoyé pour d'autres usages potentiels.
 
 ### Envoi aux joueurs
-- Au démarrage du serveur : génère le ZIP + le sauvegarde dans `<gameDir>/nouvelle-terre-hdv.zip`
+- `ResourcePackManager.init()` au démarrage : en mode URL directe, **télécharge le fichier** pour calculer le vrai SHA-1 (le ZIP Python de la CI ≠ ZIP Java en mémoire)
 - `PlayerEvents` envoie `ResourcePackSendS2CPacket(url, hash, required, null)` à chaque connexion
 - Config dans `nouvelle-terre-bridge.json` :
-  - `resourcePackUrl` — **URL directe** (recommandée, ex: GitHub Releases). Si renseigné, le serveur HTTP intégré ne démarre PAS.
-  - `resourcePackHost` / `resourcePackPort` — fallback serveur HTTP intégré (port 25566 souvent bloqué par les hébergeurs)
+  - `resourcePackUrl` — URL fixe GitHub Releases latest : `https://github.com/0Sacha/Nouvelle-Terre-SMP---MOD/releases/latest/download/nouvelle-terre-hdv.zip`
+  - `resourcePackHost` / `resourcePackPort` — fallback serveur HTTP intégré (port 25566 souvent bloqué)
   - `resourcePackRequired` — si `true`, le joueur est déconnecté s'il refuse
 
 ### Workflow resource pack (GitHub Releases)
 1. Push sur `main` → GitHub Actions génère `nouvelle-terre-hdv.zip` via `.github/scripts/gen_resourcepack.py`
-2. Le ZIP est attaché à la Release GitHub avec le SHA-1 dans la description
-3. Configurer `resourcePackUrl` dans `nouvelle-terre-bridge.json` avec l'URL de la Release
+2. Le ZIP + le JAR sont attachés à la Release GitHub (tag `v{version}-{sha}`)
+3. L'URL `releases/latest/download/nouvelle-terre-hdv.zip` pointe toujours vers la dernière release → **ne jamais changer le config**
 
 ### Décision technique
 - Port 25566 bloqué par Minestrator → passage au mode URL directe (GitHub Releases)
-- Encodeur PNG pur Java (pas d'AWT) — fonctionne sur serveur headless Linux sans config supplémentaire
-- `slot.png` sprite retiré du pack — chemin dans l'atlas 1.20.1 différent, faisait rejeter tout le pack
-
-## GUI HDV — implémenté et fonctionnel
-
-### Architecture
-- `HdvScreenHandler` sous-classe `GenericContainerScreenHandler`, override `onSlotClick` (bloque tout vanilla) et `onClosed` (nettoie le state)
-- **PAS de Mixin pour les clics HDV** — le override direct est fiable et plus simple
-- `HdvGui.STATES : Map<UUID, HdvState>` — un état par joueur connecté
-
-### Modes de navigation (HdvState.Mode)
-| Mode | Description |
-|---|---|
-| `VENDORS` | **Accueil** : grille de têtes de joueurs avec skin (NBT SkullOwner), pagination |
-| `ITEMS` | Items achetables filtrés par vendeur ; propres annonces grisées |
-| `MY_SHOP` | Ses propres annonces ; D = retirer ; bouton + Vendre → mode SELL |
-| `SELL` | Sélection quantité (presets 1/4/8/16/32/64/tout) ; confirmer → enclume prix |
-
-### Recherche (style Paladium)
-- Bouton `🔍 Rechercher` au slot 6 du header de la vue ITEMS
-- Ouvre `HdvSearchHandler` (enclume détournée) : `AnvilScreenHandler` avec `ScreenHandlerContext.EMPTY`
-- Le joueur tape dans le field texte natif de l'enclume → clic sur l'output (slot 2) → `output.getName()` = texte tapé
-- `HdvGui.openHdvWithSearch(player, query)` rouvre le HDV en mode ITEMS avec `state.searchQuery`
-- Escape → `onClosed` (confirmed=false) → `server.execute(() → openHdv(player))` (sur le tick suivant, évite récursion)
-- Filtre combinable avec vendeur : match sur nom FR, item ID, ou pseudo vendeur
-- Filtre actif : bouton change en `§b🔍 "query"` — G=effacer, D=modifier
-
-### Clics en mode ITEMS
-- G (clic gauche) = achète 1 unité
-- D (clic droit) = achète min(64, stock)
-- Shift = achète tout le stock
-
-### Vente via GUI
-1. `Ma Boutique` → clic sur `+ Vendre` (item en main obligatoire)
-2. Page SELL : aperçu item + sélecteurs quantité
-3. Clic `✅ Confirmer` → ouvre `HdvSellPriceHandler` (enclume) → joueur tape le prix → `MarketActions.sell()`
-
-### Décisions techniques à retenir
-- `onSlotClick` dans la sous-classe bloque TOUTES les actions vanilla (PICKUP, QUICK_MOVE, SWAP, etc.)
-- `SkullOwner` NBT suffit pour afficher les vraies têtes de joueurs sans dépendances
-- Achat/retrait/vente délégués à `MarketActions` — aucune commande chat pour le marché
+- Encodeur PNG pur Java (pas d'AWT) — fonctionne sur serveur headless Linux
+- `slot.png` retiré du pack — chemin dans l'atlas 1.20.1 différent, faisait rejeter tout le pack
+- Hash calculé depuis le fichier téléchargé (pas le ZIP Java) pour éviter mismatch client
