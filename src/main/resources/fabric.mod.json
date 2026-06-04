@@ -8,10 +8,13 @@
   "contact": {},
   "license": "MIT",
   "icon": "assets/nouvelle-terre-bridge/icon.png",
-  "environment": "server",
+  "environment": "*",
   "entrypoints": {
     "main": [
       "com.nouvelleterrebridge.NouvelleTerreBridge"
+    ],
+    "client": [
+      "com.nouvelleterrebridge.NouvelleTerreBridgeClient"
     ]
   },
   "depends": {

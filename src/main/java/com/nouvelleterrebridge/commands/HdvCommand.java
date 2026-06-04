@@ -1,7 +1,9 @@
 package com.nouvelleterrebridge.commands;
 
 import com.mojang.brigadier.CommandDispatcher;
-import com.nouvelleterrebridge.shop.HdvGui;
+import com.nouvelleterrebridge.NouvelleTerreBridge;
+import com.nouvelleterrebridge.network.HdvNetworking;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -17,7 +19,8 @@ public class HdvCommand {
                         ctx.getSource().sendError(Text.literal("Commande réservée aux joueurs."));
                         return 0;
                     }
-                    HdvGui.openHdv(player);
+                    ServerPlayNetworking.send(player, HdvNetworking.HDV_OPEN,
+                        NouvelleTerreBridge.buildHdvOpenPacket(player));
                     return 1;
                 })
         );

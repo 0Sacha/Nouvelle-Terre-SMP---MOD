@@ -130,6 +130,50 @@ public final class MarketActions {
         return null; // succès
     }
 
+    // ── Vente par ID d'item (depuis le GUI client) ────────────────────────────
+
+    /**
+     * Met en vente {@code qty} unités de {@code itemId} depuis l'inventaire du joueur.
+     * Contrairement à {@link #sell}, ne requiert pas l'item en main.
+     */
+    public static String sellByItemId(ServerPlayerEntity player, String itemId, int qty, int pricePerUnit) {
+        String pseudo  = player.getName().getString();
+        String nomItem = FrenchItemNames.toDisplay(itemId);
+
+        // Compter la quantité disponible dans l'inventaire
+        int available = 0;
+        for (ItemStack stack : player.getInventory().main) {
+            if (!stack.isEmpty() && Registries.ITEM.getId(stack.getItem()).toString().equals(itemId))
+                available += stack.getCount();
+        }
+        if (available < qty)
+            return String.format("§cTu n'as que §f%d§c exemplaire(s) de §f%s§c.", available, nomItem);
+
+        // Retirer les items de l'inventaire
+        int toRemove = qty;
+        for (int i = 0; i < player.getInventory().main.size() && toRemove > 0; i++) {
+            ItemStack stack = player.getInventory().main.get(i);
+            if (!stack.isEmpty() && Registries.ITEM.getId(stack.getItem()).toString().equals(itemId)) {
+                int take = Math.min(toRemove, stack.getCount());
+                stack.decrement(take);
+                toRemove -= take;
+            }
+        }
+
+        MarketListing annonce = MarketManager.getInstance().addListing(pseudo, itemId, qty, pricePerUnit);
+
+        player.getServer().getPlayerManager().broadcast(net.minecraft.text.Text.literal(String.format(
+            "§6[Marché] §e%s §7vend §f%dx %s §7· §f%d💎/u — §f/hdv",
+            pseudo, qty, nomItem, pricePerUnit)), false);
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("player", pseudo); data.put("item", itemId);
+        data.put("quantity", qty);  data.put("price", pricePerUnit); data.put("id", annonce.id);
+        EventDispatcher.envoyer("SALE_POSTED", data);
+
+        return null; // succès
+    }
+
     // ── Retrait ───────────────────────────────────────────────────────────────
 
     /**
