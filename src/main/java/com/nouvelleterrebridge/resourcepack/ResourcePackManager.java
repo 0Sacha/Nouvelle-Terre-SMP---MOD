@@ -33,24 +33,46 @@ public class ResourcePackManager {
      */
     public static void init(String directUrl, String host, int port) {
         try {
-            byte[] zip = buildZip();
-            packHash = sha1(zip);
-
-            // Toujours sauvegarder le pack sur disque pour pouvoir l'uploader manuellement
-            Path packFile = FabricLoader.getInstance().getGameDir().resolve("nouvelle-terre-hdv.zip");
-            Files.write(packFile, zip);
-            NouvelleTerreBridge.LOGGER.info("[ResourcePack] Pack sauvegardé : {}", packFile.toAbsolutePath());
-            NouvelleTerreBridge.LOGGER.info("[ResourcePack] Hash SHA-1 : {}", packHash);
-
             if (directUrl != null && !directUrl.isBlank()) {
+                // Mode URL directe : télécharger le fichier pour obtenir son vrai hash SHA-1
                 NouvelleTerreBridge.LOGGER.info("[ResourcePack] Mode URL directe — {}", directUrl);
+                packHash = downloadHash(directUrl);
+                if (packHash.isEmpty()) {
+                    NouvelleTerreBridge.LOGGER.warn("[ResourcePack] Hash introuvable — le pack ne sera pas envoyé aux joueurs");
+                } else {
+                    NouvelleTerreBridge.LOGGER.info("[ResourcePack] Hash SHA-1 : {}", packHash);
+                }
             } else {
+                // Mode serveur HTTP intégré : générer et servir le pack localement
+                byte[] zip = buildZip();
+                packHash = sha1(zip);
+                Path packFile = FabricLoader.getInstance().getGameDir().resolve("nouvelle-terre-hdv.zip");
+                Files.write(packFile, zip);
+                NouvelleTerreBridge.LOGGER.info("[ResourcePack] Pack sauvegardé : {}", packFile.toAbsolutePath());
+                NouvelleTerreBridge.LOGGER.info("[ResourcePack] Hash SHA-1 : {}", packHash);
                 startHttp(port, zip);
                 NouvelleTerreBridge.LOGGER.info(
                     "[ResourcePack] Serveur HTTP intégré démarré — http://{}:{}/pack.zip", host, port);
             }
         } catch (Exception e) {
             NouvelleTerreBridge.LOGGER.error("[ResourcePack] Erreur init: {}", e.getMessage(), e);
+        }
+    }
+
+    private static String downloadHash(String url) {
+        try {
+            java.net.URL u = new java.net.URL(url);
+            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) u.openConnection();
+            conn.setInstanceFollowRedirects(true);
+            conn.setConnectTimeout(10_000);
+            conn.setReadTimeout(30_000);
+            conn.setRequestProperty("User-Agent", "NouvelleTerreBridge/1.0");
+            try (java.io.InputStream in = conn.getInputStream()) {
+                return sha1(in.readAllBytes());
+            }
+        } catch (Exception e) {
+            NouvelleTerreBridge.LOGGER.warn("[ResourcePack] Impossible de télécharger le pack : {}", e.getMessage());
+            return "";
         }
     }
 
