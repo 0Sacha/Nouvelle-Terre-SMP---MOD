@@ -27,13 +27,6 @@ jobs:
 
       - run: ./gradlew build --no-daemon
 
-      - name: Générer le resource pack HDV
-        id: pack
-        run: |
-          python3 .github/scripts/gen_resourcepack.py nouvelle-terre-hdv.zip | tee /tmp/pack_out.txt
-          HASH=$(grep '^HASH=' /tmp/pack_out.txt | cut -d'=' -f2)
-          echo "hash=$HASH" >> $GITHUB_OUTPUT
-
       - name: Lire la version du mod
         id: version
         run: |
@@ -51,14 +44,7 @@ jobs:
           body: |
             Build automatique depuis le commit `${{ steps.version.outputs.sha }}`.
 
-            **Installation mod :** dépose `nouvelle-terre-bridge-${{ steps.version.outputs.version }}.jar` dans `mods/`.
-
-            **Resource pack HDV :** configure `resourcePackUrl` dans `nouvelle-terre-bridge.json` :
-            ```
-            "resourcePackUrl": "https://github.com/0Sacha/Nouvelle-Terre-SMP---MOD/releases/download/${{ steps.version.outputs.tag }}/nouvelle-terre-hdv.zip"
-            ```
-            SHA-1 : `${{ steps.pack.outputs.hash }}`
+            **Installation :** dépose `nouvelle-terre-bridge-${{ steps.version.outputs.version }}.jar` dans `mods/`.
           files: |
             build/libs/nouvelle-terre-bridge-${{ steps.version.outputs.version }}.jar
-            nouvelle-terre-hdv.zip
           make_latest: true

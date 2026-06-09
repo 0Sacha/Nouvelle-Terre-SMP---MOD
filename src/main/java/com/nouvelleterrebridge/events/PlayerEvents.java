@@ -3,9 +3,7 @@ package com.nouvelleterrebridge.events;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
 import com.nouvelleterrebridge.economy.PlaytimeTracker;
 import com.nouvelleterrebridge.http.EventDispatcher;
-import com.nouvelleterrebridge.resourcepack.ResourcePackManager;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
-import net.minecraft.network.packet.s2c.play.ResourcePackSendS2CPacket;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.stat.Stats;
 
@@ -43,14 +41,7 @@ public class PlayerEvents {
                 EventDispatcher.envoyer("PLAYER_JOIN", data);
             }
 
-            // Envoi du resource pack HDV si configuré
-            String hash = ResourcePackManager.getHash();
-            if (!hash.isEmpty()) {
-                String url = NouvelleTerreBridge.config.getResourcePackUrl();
-                boolean required = NouvelleTerreBridge.config.isResourcePackRequired();
-                joueur.networkHandler.sendPacket(
-                    new ResourcePackSendS2CPacket(url, hash, required, null));
-            }
+
         });
 
         // Déconnexion d'un joueur
