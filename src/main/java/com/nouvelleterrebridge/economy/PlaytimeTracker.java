@@ -76,4 +76,12 @@ public class PlaytimeTracker {
         ticksDepuisRecompense.remove(uuid);
         ticksDepuisSalaire.remove(uuid);
     }
+
+    public static int getTicksUntilReward(UUID uuid) {
+        return TICKS_RECOMPENSE - ticksDepuisRecompense.getOrDefault(uuid, 0);
+    }
+
+    public static int getTicksUntilSalary(UUID uuid) {
+        return TICKS_SALAIRE - ticksDepuisSalaire.getOrDefault(uuid, 0);
+    }
 }

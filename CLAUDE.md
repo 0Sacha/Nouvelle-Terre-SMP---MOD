@@ -59,8 +59,9 @@ commands/
 
 economy/
   LocalEconomy.java        → Singleton shards.json, estConnu(), addShards/removeShards/transfer
+  TransactionLog.java      → Singleton in-memory, 50 dernières transactions par joueur (TYPE_BUY/SELL/TRANSFER_IN/TRANSFER_OUT/REWARD)
   KillRewards.java         → Récompenses kill mob
-  PlaytimeTracker.java     → Récompenses 30min + salaire horaire
+  PlaytimeTracker.java     → Récompenses 30min + salaire horaire + getTicksUntilReward/getTicksUntilSalary
 
 events/
   PlayerEvents.java        → JOIN / LEAVE / première connexion + envoi resource pack
@@ -78,7 +79,7 @@ network/
   HdvNetworking.java       → Identifiants canaux HDV_OPEN / HDV_ACTION / HDV_RESULT + constantes ACTION_*
 
 client/                    ← Code client uniquement (@Environment(CLIENT))
-  HdvScreen.java           → Screen Fabric full-screen : 4 onglets + modal achat + toast
+  HdvScreen.java           → Screen Fabric full-screen : 5 onglets + modal achat + toast
 
 resourcepack/
   ResourcePackManager.java → Génère ZIP dark-theme, calcule hash SHA-1 (télécharge depuis URL directe)
@@ -111,29 +112,43 @@ shop/
 2. `HdvCommand` → `ServerPlayNetworking.send(player, HDV_OPEN, buf)` avec balance + toutes les annonces
 3. `NouvelleTerreBridgeClient` reçoit → `client.setScreen(new HdvScreen(...))`
 
-### Flux d'action (achat / vente / retrait)
+### Flux d'action (achat / vente / retrait / virement)
 1. `HdvScreen` → `ClientPlayNetworking.send(HDV_ACTION, buf)` avec type + données
-2. `NouvelleTerreBridge.registerHdvNetworking()` reçoit → appelle `MarketActions.*`
-3. Réponse → `ServerPlayNetworking.send(HDV_RESULT, buf)` avec ok + message + nouvelles annonces
+2. `NouvelleTerreBridge.registerHdvNetworking()` reçoit → appelle `MarketActions.*` ou `LocalEconomy.transfer()`
+3. Réponse → `ServerPlayNetworking.send(HDV_RESULT, buf)` avec ok + message + nouvelles annonces + données profil
 4. `NouvelleTerreBridgeClient` reçoit → `screen.handleResult(...)` met à jour l'UI
+
+### Flux HDV_OPEN / HDV_RESULT — format paquet
+```
+HDV_OPEN  : int balance | listings[] | int ticksReward | int ticksSalary | transactions[]
+HDV_RESULT: bool ok | string msg | int balance | listings[] | int ticksReward | int ticksSalary | transactions[]
+listings[] : int count → (int id, string seller, string itemId, int qty, int price) × count
+transactions[]: int count → (int type, string label, int amount, long timestamp) × count
+```
 
 ### HdvScreen — onglets
 | Onglet | Description |
 |---|---|
 | 🏪 Marché | Grille 5 col filtrée par catégorie + recherche + tri Prix↑/↓/Nom + scrollbar |
 | 💰 Vendre | Inventaire joueur lu client-side → formulaire qté/prix → `sellByItemId()` serveur |
-| 🛒 Mon Shop | Mes annonces avec bouton Retirer |
+| 🛒 Mon Shop | Mes annonces avec bouton Retirer (strip bas = rouge au hover) |
 | 👥 Boutiques | Liste vendeurs → détail boutique → achat |
+| ★ Profil | Solde, countdown salary/reward, formulaire virement bancaire, liste transactions récentes |
 
 ### Couleurs (HdvScreen)
 ```java
-C_BG    = 0xFF1e1f22   // fond principal
-C_PANEL = 0xFF2b2d31   // cartes / panneaux
-C_HOVER = 0xFF313338   // hover
-C_GOLD  = 0xFFf0b232   // accent or (prix, onglet actif, bordure hover)
-C_SEP   = 0xFF3a3c40   // séparateurs, boutons secondaires
-C_RED   = 0xFFd4183d   // erreur / retrait
-C_GREEN = 0xFF23a55a   // succès (toast)
+C_BG      = 0xFF14161A   // fond principal
+C_PANEL   = 0xFF1B1D22   // cartes / panneaux
+C_SURFACE = 0xFF21242C   // formulaires / modals
+C_HOVER   = 0xFF282B34   // hover
+C_STRIP   = 0xFF1E2128   // bandes prix bas de carte
+C_BORDER  = 0xFF2A2D38   // bordures
+C_GOLD    = 0xFFE8A838   // accent or (prix, onglet actif, bordure hover)
+C_RED     = 0xFFBF2040   // erreur / retrait
+C_GREEN   = 0xFF2EAD6B   // succès
+C_WHITE   = 0xFFFFFFFF
+C_MID     = 0xFF9096A3   // texte secondaire
+C_DIM     = 0xFF565C6A   // labels, placeholders
 ```
 
 ### Décisions techniques à retenir
@@ -147,6 +162,11 @@ C_GREEN = 0xFF23a55a   // succès (toast)
 - Scrollbar visuelle (4 px) à droite de la grille — thumb proportionnel au ratio visRows/totalRows
 - Toast bottom-right avec accent coloré sur la bordure gauche (vert = succès, rouge = erreur)
 - Modal achat : bouton MAX calcule `min(stock, balance / prixUnit)`
+- Onglet actif = texte sans shadow (`drawText(..., false)`) sur fond or pour éviter l'effet "gras"
+- Mon Shop : strip bas (24px) bascule entre prix et "Retirer" selon hover — même draw call, pas d'overlay séparé (évite le batching text-over-fill de Minecraft)
+- TransactionLog : in-memory uniquement (50 entries / joueur), pas persisté sur disque — reset au restart serveur
+- Countdown salary/reward dans l'onglet Profil : calculé en soustrayant (now - screenOpenTime) / 50ms des ticks initiaux reçus du serveur — live sans round-trip réseau
+- 💎 → ◆ (U+25C6) partout : les emoji BMP-ext sont hors BMP et Minecraft ne les rend pas
 
 ## UI — Constantes visuelles (EconomieCommand.java)
 ```java

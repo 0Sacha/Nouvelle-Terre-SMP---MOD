@@ -8,6 +8,7 @@ import com.nouvelleterrebridge.commands.LierCommand;
 import com.nouvelleterrebridge.economy.LocalEconomy;
 import com.nouvelleterrebridge.economy.KillRewards;
 import com.nouvelleterrebridge.economy.PlaytimeTracker;
+import com.nouvelleterrebridge.economy.TransactionLog;
 import com.nouvelleterrebridge.events.PlayerEvents;
 import com.nouvelleterrebridge.events.ServerEvents;
 import com.nouvelleterrebridge.events.TerritoryEvents;
@@ -23,6 +24,7 @@ import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.Text;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -87,6 +89,22 @@ public class NouvelleTerreBridge implements ModInitializer {
                     int listingId = buf.readInt();
                     result = MarketActions.withdraw(player, listingId);
                 }
+                case HdvNetworking.ACTION_TRANSFER -> {
+                    String target = buf.readString();
+                    int amount = buf.readInt();
+                    String sender = player.getName().getString();
+                    boolean ok = LocalEconomy.getInstance().transfer(sender, target, amount);
+                    if (ok) {
+                        result = "§a✅ " + amount + " ◆ envoyés à §f" + target + "§a.";
+                        server.execute(() -> {
+                            ServerPlayerEntity t = server.getPlayerManager().getPlayer(target);
+                            if (t != null) t.sendMessage(Text.literal(
+                                "§a[Nouvelle Terre] §f" + sender + " §avous a envoyé §f" + amount + " ◆§a !"));
+                        });
+                    } else {
+                        result = "§cSolde insuffisant ou joueur inconnu.";
+                    }
+                }
                 default -> result = "§cAction inconnue.";
             }
 
@@ -101,6 +119,7 @@ public class NouvelleTerreBridge implements ModInitializer {
         resp.writeString(message);
         resp.writeInt(LocalEconomy.getInstance().getBalance(player.getName().getString()));
         writeListings(resp);
+        writeProfileData(resp, player);
         ServerPlayNetworking.send(player, HdvNetworking.HDV_RESULT, resp);
     }
 
@@ -108,6 +127,7 @@ public class NouvelleTerreBridge implements ModInitializer {
         PacketByteBuf buf = PacketByteBufs.create();
         buf.writeInt(LocalEconomy.getInstance().getBalance(player.getName().getString()));
         writeListings(buf);
+        writeProfileData(buf, player);
         return buf;
     }
 
@@ -120,6 +140,19 @@ public class NouvelleTerreBridge implements ModInitializer {
             buf.writeString(l.item);
             buf.writeInt(l.quantity);
             buf.writeInt(l.pricePerUnit);
+        }
+    }
+
+    private static void writeProfileData(PacketByteBuf buf, ServerPlayerEntity player) {
+        buf.writeInt(PlaytimeTracker.getTicksUntilReward(player.getUuid()));
+        buf.writeInt(PlaytimeTracker.getTicksUntilSalary(player.getUuid()));
+        List<TransactionLog.Entry> txs = TransactionLog.getLast(player.getName().getString(), 15);
+        buf.writeInt(txs.size());
+        for (TransactionLog.Entry e : txs) {
+            buf.writeInt(e.type());
+            buf.writeString(e.label());
+            buf.writeInt(e.amount());
+            buf.writeLong(e.timestamp());
         }
     }
 }

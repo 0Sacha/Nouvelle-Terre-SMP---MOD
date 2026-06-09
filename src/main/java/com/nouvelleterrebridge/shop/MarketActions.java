@@ -2,6 +2,7 @@ package com.nouvelleterrebridge.shop;
 
 import com.nouvelleterrebridge.commands.EconomieCommand;
 import com.nouvelleterrebridge.economy.LocalEconomy;
+import com.nouvelleterrebridge.economy.TransactionLog;
 import com.nouvelleterrebridge.http.EventDispatcher;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
@@ -85,6 +86,7 @@ public final class MarketActions {
                 nouvelleQte > 0 ? " §7(§f" + nouvelleQte + " restants§7)" : " §7(stock épuisé)",
                 eco.getBalance(ann.seller))));
 
+            TransactionLog.log(ann.seller, TransactionLog.TYPE_SELL, pris + "x " + nomItem + " (à " + pseudo + ")", cout);
             Map<String, Object> data = new HashMap<>();
             data.put("seller", ann.seller); data.put("buyer", pseudo);
             data.put("item", ann.item);     data.put("quantity", pris);
@@ -93,6 +95,7 @@ public final class MarketActions {
             restant -= pris;
         }
 
+        TransactionLog.log(pseudo, TransactionLog.TYPE_BUY, qty + "x " + nomItem, coutTotal);
         return String.format("§a✅ §f%dx %s §aacheté pour §f%s💎§a au total. Solde : §f%s💎§a.",
             qty, nomItem, EconomieCommand.fmt(coutTotal), EconomieCommand.fmt(eco.getBalance(pseudo)));
     }

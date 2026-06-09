@@ -53,6 +53,8 @@ public class LocalEconomy {
         soldes.put(deKey, soldeDe - montant);
         soldes.merge(versKey, montant, Integer::sum);
         save();
+        TransactionLog.log(de,   TransactionLog.TYPE_TRANSFER_OUT, "à " + vers,  montant);
+        TransactionLog.log(vers, TransactionLog.TYPE_TRANSFER_IN,  "de " + de,   montant);
         Map<String, Object> data = new HashMap<>();
         data.put("de", de);
         data.put("vers", vers);
@@ -65,6 +67,7 @@ public class LocalEconomy {
     public synchronized void addShards(String pseudo, int montant) {
         soldes.merge(pseudo.toLowerCase(), montant, Integer::sum);
         save();
+        TransactionLog.log(pseudo, TransactionLog.TYPE_REWARD, "Récompense", montant);
         Map<String, Object> data = new HashMap<>();
         data.put("player", pseudo);
         data.put("amount", montant);
