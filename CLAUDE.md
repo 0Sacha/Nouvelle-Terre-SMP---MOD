@@ -120,7 +120,7 @@ shop/
 ### HdvScreen — onglets
 | Onglet | Description |
 |---|---|
-| 🏪 Marché | Grille items filtrée par catégorie + recherche texte, scroll, hover gold border |
+| 🏪 Marché | Grille 5 col filtrée par catégorie + recherche + tri Prix↑/↓/Nom + scrollbar |
 | 💰 Vendre | Inventaire joueur lu client-side → formulaire qté/prix → `sellByItemId()` serveur |
 | 🛒 Mon Shop | Mes annonces avec bouton Retirer |
 | 👥 Boutiques | Liste vendeurs → détail boutique → achat |
@@ -138,10 +138,15 @@ C_GREEN = 0xFF23a55a   // succès (toast)
 
 ### Décisions techniques à retenir
 - Le GUI est un `Screen` Fabric pur — pas de `ScreenHandler`, pas de slots vanilla
-- Les items sont rendus avec `DrawContext.drawItem(ItemStack, x, y)` (icônes Minecraft réelles)
+- Items rendus en 2× (32×32 px) via `drawItemScaled()` qui pousse une transform matricielle sur `ctx.getMatrices()` avant `ctx.drawItem(stack, 0, 0)`
 - La vente lit l'inventaire côté client (`client.player.getInventory().main`) — le serveur revalide
 - `MarketActions.sell()` requiert l'item en main ; `MarketActions.sellByItemId()` cherche dans l'inventaire
 - `@Environment(EnvType.CLIENT)` sur `HdvScreen` et `NouvelleTerreBridgeClient`
+- Sidebar catégories : icône item Minecraft + compteur d'annonces par catégorie (CAT_ICONS map)
+- Tri : enum `SortMode` (PRICE_ASC / PRICE_DESC / NAME) cyclé par le bouton "⇅" à droite de la recherche
+- Scrollbar visuelle (4 px) à droite de la grille — thumb proportionnel au ratio visRows/totalRows
+- Toast bottom-right avec accent coloré sur la bordure gauche (vert = succès, rouge = erreur)
+- Modal achat : bouton MAX calcule `min(stock, balance / prixUnit)`
 
 ## UI — Constantes visuelles (EconomieCommand.java)
 ```java
