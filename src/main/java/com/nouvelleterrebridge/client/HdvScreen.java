@@ -19,7 +19,6 @@ import io.netty.buffer.Unpooled;
 
 import java.util.*;
 import java.util.stream.Collectors;
-import java.util.LinkedHashSet;
 
 @Environment(EnvType.CLIENT)
 public class HdvScreen extends Screen {
@@ -28,7 +27,12 @@ public class HdvScreen extends Screen {
 
     public record ListingData(int id, String seller, String itemId, int quantity, int pricePerUnit) {}
     public record TransactionData(int type, String label, int amount, long timestamp) {}
+    public record RecurringData(int id, String to, int amount, int intervalTicks, int ticksUntilNext) {}
     private record SellItem(Item item, String itemId, int qty) {}
+
+    // Intervalles disponibles pour les virements récurrents
+    private static final int[]    INTERVALS       = {72000, 432000, 864000, 1728000}; // 1h, 6h, 12h, 24h
+    private static final String[] INTERVAL_LABELS = {"1h", "6h", "12h", "24h"};
 
     private enum Tab {
         MARKET("🏪  Marché"),
@@ -139,27 +143,32 @@ public class HdvScreen extends Screen {
     private String selectedShop = null;
 
     private int ticksUntilReward = 36000;
-    private int ticksUntilSalary = 72000;
-    private List<TransactionData> transactions = new ArrayList<>();
+    private List<TransactionData>  transactions     = new ArrayList<>();
+    private List<RecurringData>    recurringList    = new ArrayList<>();
     private long screenOpenTime = System.currentTimeMillis();
-    private TextFieldWidget transferAmountField;
-    private String transferTarget = "";
-    private int transferAmount = 0;
 
-    private boolean isOp = false;
-    private List<String> knownPlayers  = new ArrayList<>();
-    private List<String> onlinePlayers = new ArrayList<>();
+    private List<String> knownPlayers = new ArrayList<>();
 
-    private boolean playerDropOpen  = false;
+    // Virement ponctuel (card 2)
+    private boolean playerDropOpen   = false;
     private int     playerDropScroll = 0;
+    private String  transferTarget   = "";
+    private int     transferAmount   = 0;
+    private TextFieldWidget transferAmountField;
     private int profileDropX = -1, profileDropY = -1, profileDropW = 0;
     private int profileTransferBtnY = -1;
 
-    private final Set<String> selectedForSalary = new LinkedHashSet<>();
-    private int profileSalaryBtnY        = -1;
-    private int profileSalaryCheckStartY = -1;
-    private int profileClaimSalaryBtnY   = -1;
-    private boolean profileSalaryReady   = false;
+    // Virement récurrent (card 3)
+    private boolean recurDropOpen   = false;
+    private int     recurDropScroll = 0;
+    private String  recurTarget     = "";
+    private int     recurAmount     = 0;
+    private int     recurIntervalIdx = 0;
+    private TextFieldWidget recurAmountField;
+    private int recurDropX = -1, recurDropY = -1, recurDropW = 0;
+    private int recurCreateBtnY   = -1;
+    private int recurIntervalBtnY = -1;
+    private final List<Integer> recurCancelBtnY = new ArrayList<>();
 
     private String toastMsg = null;
     private boolean toastOk = true;
@@ -167,18 +176,16 @@ public class HdvScreen extends Screen {
 
     // ── Constructeur ──────────────────────────────────────────────────────────
 
-    public HdvScreen(int balance, List<ListingData> listings, int ticksUntilReward, int ticksUntilSalary,
-                     List<TransactionData> transactions, boolean isOp, List<String> knownPlayers, List<String> onlinePlayers) {
+    public HdvScreen(int balance, List<ListingData> listings, int ticksUntilReward,
+                     List<TransactionData> transactions, List<String> knownPlayers, List<RecurringData> recurring) {
         super(Text.literal("HDV — Nouvelle Terre"));
         this.balance          = balance;
         this.listings         = new ArrayList<>(listings);
         this.ticksUntilReward = ticksUntilReward;
-        this.ticksUntilSalary = ticksUntilSalary;
         this.transactions     = new ArrayList<>(transactions);
         this.screenOpenTime   = System.currentTimeMillis();
-        this.isOp             = isOp;
         this.knownPlayers     = new ArrayList<>(knownPlayers);
-        this.onlinePlayers    = new ArrayList<>(onlinePlayers);
+        this.recurringList    = new ArrayList<>(recurring);
     }
 
     // ── Init ──────────────────────────────────────────────────────────────────
@@ -221,6 +228,13 @@ public class HdvScreen extends Screen {
         });
         addSelectableChild(transferAmountField);
 
+        recurAmountField = new TextFieldWidget(textRenderer, winX, winY, 100, 18, Text.literal(""));
+        recurAmountField.setPlaceholder(Text.literal("Montant..."));
+        recurAmountField.setChangedListener(s -> {
+            try { recurAmount = Math.max(0, Integer.parseInt(s.trim())); } catch (NumberFormatException ignored) { recurAmount = 0; }
+        });
+        addSelectableChild(recurAmountField);
+
         refreshSellInv();
     }
 
@@ -238,17 +252,16 @@ public class HdvScreen extends Screen {
 
     // ── Résultat réseau ───────────────────────────────────────────────────────
 
-    public void handleResult(boolean ok, String msg, int newBalance, List<ListingData> newListings, int newTicksReward, int newTicksSalary,
-                             List<TransactionData> newTransactions, boolean newIsOp, List<String> newKnownPlayers, List<String> newOnlinePlayers) {
-        balance           = newBalance;
-        listings          = new ArrayList<>(newListings);
-        ticksUntilReward  = newTicksReward;
-        ticksUntilSalary  = newTicksSalary;
-        transactions      = new ArrayList<>(newTransactions);
-        screenOpenTime    = System.currentTimeMillis();
-        isOp              = newIsOp;
-        knownPlayers      = new ArrayList<>(newKnownPlayers);
-        onlinePlayers     = new ArrayList<>(newOnlinePlayers);
+    public void handleResult(boolean ok, String msg, int newBalance, List<ListingData> newListings,
+                             int newTicksReward, List<TransactionData> newTransactions,
+                             List<String> newKnown, List<RecurringData> newRecurring) {
+        balance          = newBalance;
+        listings         = new ArrayList<>(newListings);
+        ticksUntilReward = newTicksReward;
+        transactions     = new ArrayList<>(newTransactions);
+        screenOpenTime   = System.currentTimeMillis();
+        knownPlayers     = new ArrayList<>(newKnown);
+        recurringList    = new ArrayList<>(newRecurring);
         buyingListing    = null;
         selectedSellItem = null;
         sellQtyField.setText("1");
@@ -286,9 +299,14 @@ public class HdvScreen extends Screen {
         if (buyingListing != null) renderBuyModal(ctx, mx, my);
         renderToast(ctx);
         super.render(ctx, mx, my, delta);
-        if (playerDropOpen && activeTab == Tab.PROFILE) {
-            ctx.fill(winX, winY + TOP_H, winX + winW, winY + winH, 0xAA000000);
-            renderPlayerDropdown(ctx, mx, my);
+        if (activeTab == Tab.PROFILE) {
+            if (playerDropOpen) {
+                ctx.fill(winX, winY + TOP_H, winX + winW, winY + winH, 0xAA000000);
+                renderPlayerDropdown(ctx, mx, my);
+            } else if (recurDropOpen) {
+                ctx.fill(winX, winY + TOP_H, winX + winW, winY + winH, 0xAA000000);
+                renderRecurDropdown(ctx, mx, my);
+            }
         }
     }
 
@@ -906,6 +924,21 @@ public class HdvScreen extends Screen {
             }
             playerDropOpen = false;
         }
+        if (activeTab == Tab.PROFILE && recurDropOpen && recurDropX >= 0) {
+            int maxVis = Math.min(8, knownPlayers.size());
+            int dropH  = maxVis * 18 + 4;
+            int dy     = recurDropY + 20;
+            if (dy + dropH > winY + winH - PAD) dy = recurDropY - dropH;
+            if (x >= recurDropX && x < recurDropX + recurDropW && y >= dy && y < dy + dropH) {
+                int idx = (y - dy - 2) / 18 + recurDropScroll;
+                if (idx >= 0 && idx < knownPlayers.size()) {
+                    recurTarget = knownPlayers.get(idx);
+                }
+                recurDropOpen = false;
+                return true;
+            }
+            recurDropOpen = false;
+        }
 
         if (y <= winY + TOP_H - 1) {
             handleTabClick(x, y);
@@ -1118,6 +1151,12 @@ public class HdvScreen extends Screen {
             playerDropScroll = Math.max(0, Math.min(maxScrl, playerDropScroll - (int) Math.signum(delta)));
             return true;
         }
+        if (activeTab == Tab.PROFILE && recurDropOpen) {
+            int maxVis  = Math.min(8, knownPlayers.size());
+            int maxScrl = Math.max(0, knownPlayers.size() - maxVis);
+            recurDropScroll = Math.max(0, Math.min(maxScrl, recurDropScroll - (int) Math.signum(delta)));
+            return true;
+        }
         if (activeTab == Tab.MARKET && buyingListing == null) {
             scrollOffset = Math.max(0, scrollOffset - (int) Math.signum(delta));
         }
@@ -1130,8 +1169,9 @@ public class HdvScreen extends Screen {
     public boolean keyPressed(int key, int scan, int mod) {
         if (key == 256) {
             if (playerDropOpen)         { playerDropOpen = false;  return true; }
-            if (buyingListing != null)  { buyingListing = null;    return true; }
-            if (selectedShop  != null)  { selectedShop  = null;    return true; }
+            if (recurDropOpen)          { recurDropOpen  = false;  return true; }
+            if (buyingListing != null)  { buyingListing  = null;   return true; }
+            if (selectedShop  != null)  { selectedShop   = null;   return true; }
         }
         return super.keyPressed(key, scan, mod);
     }
@@ -1170,15 +1210,13 @@ public class HdvScreen extends Screen {
         int pw = winW - PAD * 2;
         int py = winY + TOP_H + PAD;
 
-        long elapsed      = System.currentTimeMillis() - screenOpenTime;
-        int elapsedTicks  = (int) (elapsed / 50);
-        int rewardTicks   = Math.max(0, ticksUntilReward - elapsedTicks);
-        int salaryTicks   = Math.max(0, ticksUntilSalary - elapsedTicks);
-        profileSalaryReady     = (salaryTicks == 0);
-        profileClaimSalaryBtnY = -1;
-        profileTransferBtnY    = -1;
-        profileSalaryBtnY      = -1;
-        profileSalaryCheckStartY = -1;
+        long elapsed     = System.currentTimeMillis() - screenOpenTime;
+        int elapsedTicks = (int) (elapsed / 50);
+        int rewardTicks  = Math.max(0, ticksUntilReward - elapsedTicks);
+        profileTransferBtnY = -1;
+        recurCreateBtnY     = -1;
+        recurIntervalBtnY   = -1;
+        recurCancelBtnY.clear();
 
         // ── Header ────────────────────────────────────────────────────────────
         int headerH = 46;
@@ -1224,120 +1262,143 @@ public class HdvScreen extends Screen {
             ctx.drawText(textRenderer, "Versement automatique", c1x + 10, fy, C_DIM, false);
         }
 
-        // Card 2 — Salaire (manuel)
-        renderInfoCard(ctx, c2x, py, cardW, cardH, profileSalaryReady ? C_GREEN : C_GOLD);
+        // Card 2 — Virement ponctuel
+        renderInfoCard(ctx, c2x, py, cardW, cardH, C_GOLD);
         {
             int fy = py + 12;
-            ctx.drawText(textRenderer, "SALAIRE", c2x + 10, fy, C_DIM, false);
+            ctx.drawText(textRenderer, "VIREMENT PONCTUEL", c2x + 10, fy, C_DIM, false);
             fy += textRenderer.fontHeight + 8;
-            ctx.drawText(textRenderer, "+8 ◆  par heure jouee", c2x + 10, fy, C_MID, false);
-            fy += textRenderer.fontHeight + 10;
-            ctx.fill(c2x + 10, fy, c2x + 10 + barW, fy + 5, C_BORDER);
-            int prog2 = (int)(barW * Math.max(0f, Math.min(1f, 1f - salaryTicks / 72000f)));
-            ctx.fill(c2x + 10, fy, c2x + 10 + prog2, fy + 5, profileSalaryReady ? C_GREEN : C_GOLD);
-            fy += 12;
-            ctx.drawText(textRenderer,
-                profileSalaryReady ? "Disponible !" : "Dans " + ticksToTime(salaryTicks),
-                c2x + 10, fy, profileSalaryReady ? C_GREEN : C_MID, false);
-            int claimBtnY = py + cardH - 32;
-            profileClaimSalaryBtnY = claimBtnY;
-            boolean claimHov = profileSalaryReady
-                && mx >= c2x + 10 && mx < c2x + cardW - 10
-                && my >= claimBtnY && my < claimBtnY + 22;
-            ctx.fill(c2x + 10, claimBtnY, c2x + cardW - 10, claimBtnY + 22,
-                profileSalaryReady ? (claimHov ? 0xFF1A8050 : C_GREEN) : C_DARK);
-            ctx.drawCenteredTextWithShadow(textRenderer,
-                profileSalaryReady ? "Reclamer le salaire" : "Pas encore disponible",
-                c2x + cardW / 2, claimBtnY + 7,
-                profileSalaryReady ? C_WHITE : C_DIM);
-        }
-
-        // Card 3 — Virement bancaire
-        renderInfoCard(ctx, c3x, py, cardW, cardH, C_GOLD);
-        {
-            int fy = py + 12;
-            ctx.drawText(textRenderer, "VIREMENT", c3x + 10, fy, C_DIM, false);
-            fy += textRenderer.fontHeight + 8;
-            int dropW = cardW - 20;
-            profileDropX = c3x + 10;
+            int dropW2 = cardW - 20;
+            profileDropX = c2x + 10;
             profileDropY = fy;
-            profileDropW = dropW;
-            boolean dropHov = !playerDropOpen
-                && mx >= profileDropX && mx < profileDropX + dropW
+            profileDropW = dropW2;
+            boolean dropHov2 = !playerDropOpen && !recurDropOpen
+                && mx >= profileDropX && mx < profileDropX + dropW2
                 && my >= fy && my < fy + 20;
-            ctx.fill(profileDropX - 1, fy - 1, profileDropX + dropW + 1, fy + 21, C_BORDER);
-            ctx.fill(profileDropX, fy, profileDropX + dropW, fy + 20,
-                playerDropOpen ? C_HOVER : (dropHov ? C_HOVER : C_DARK));
-            String dropLabel = transferTarget.isEmpty() ? "Destinataire..." : transferTarget;
-            ctx.drawText(textRenderer, truncate(dropLabel, dropW - 20), profileDropX + 6, fy + 6,
+            ctx.fill(profileDropX - 1, fy - 1, profileDropX + dropW2 + 1, fy + 21, C_BORDER);
+            ctx.fill(profileDropX, fy, profileDropX + dropW2, fy + 20,
+                playerDropOpen ? C_HOVER : (dropHov2 ? C_HOVER : C_DARK));
+            String dropLabel2 = transferTarget.isEmpty() ? "Destinataire..." : transferTarget;
+            ctx.drawText(textRenderer, truncate(dropLabel2, dropW2 - 20), profileDropX + 6, fy + 6,
                 transferTarget.isEmpty() ? C_DIM : C_WHITE, false);
             ctx.drawText(textRenderer, playerDropOpen ? "▲" : "▼",
-                profileDropX + dropW - 14, fy + 6, C_DIM, false);
+                profileDropX + dropW2 - 14, fy + 6, C_DIM, false);
             fy += 24;
-            if (playerDropOpen) {
-                // Masquer le champ hors-écran pour que super.render() ne le réaffiche pas sous le dropdown
+            if (playerDropOpen || recurDropOpen) {
                 transferAmountField.setY(-200);
             } else {
-                transferAmountField.setX(c3x + 10);
+                transferAmountField.setX(c2x + 10);
                 transferAmountField.setY(fy);
                 transferAmountField.setWidth(cardW - 20);
                 transferAmountField.render(ctx, mx, my, 0);
                 fy += 26;
                 boolean canTransfer = !transferTarget.isEmpty() && transferAmount > 0 && transferAmount <= balance;
                 boolean sendHov = canTransfer
-                    && mx >= c3x + 10 && mx < c3x + cardW - 10
+                    && mx >= c2x + 10 && mx < c2x + cardW - 10
                     && my >= fy && my < fy + 22;
                 profileTransferBtnY = fy;
-                ctx.fill(c3x + 10, fy, c3x + cardW - 10, fy + 22,
+                ctx.fill(c2x + 10, fy, c2x + cardW - 10, fy + 22,
                     canTransfer ? (sendHov ? 0xFF1A8050 : C_GREEN) : C_DARK);
                 ctx.drawCenteredTextWithShadow(textRenderer, "Envoyer",
-                    c3x + cardW / 2, fy + 7, canTransfer ? C_WHITE : C_DIM);
+                    c2x + cardW / 2, fy + 7, canTransfer ? C_WHITE : C_DIM);
+            }
+        }
+
+        // Card 3 — Virement récurrent
+        renderInfoCard(ctx, c3x, py, cardW, cardH, C_GOLD);
+        {
+            int fy = py + 12;
+            ctx.drawText(textRenderer, "VIREMENT RECURRENT", c3x + 10, fy, C_DIM, false);
+            fy += textRenderer.fontHeight + 8;
+            int dropW3 = cardW - 20;
+            recurDropX = c3x + 10;
+            recurDropY = fy;
+            recurDropW = dropW3;
+            boolean rdropHov = !recurDropOpen && !playerDropOpen
+                && mx >= recurDropX && mx < recurDropX + dropW3
+                && my >= fy && my < fy + 20;
+            ctx.fill(recurDropX - 1, fy - 1, recurDropX + dropW3 + 1, fy + 21, C_BORDER);
+            ctx.fill(recurDropX, fy, recurDropX + dropW3, fy + 20,
+                recurDropOpen ? C_HOVER : (rdropHov ? C_HOVER : C_DARK));
+            String rdropLabel = recurTarget.isEmpty() ? "Destinataire..." : recurTarget;
+            ctx.drawText(textRenderer, truncate(rdropLabel, dropW3 - 20), recurDropX + 6, fy + 6,
+                recurTarget.isEmpty() ? C_DIM : C_WHITE, false);
+            ctx.drawText(textRenderer, recurDropOpen ? "▲" : "▼",
+                recurDropX + dropW3 - 14, fy + 6, C_DIM, false);
+            fy += 24;
+            if (recurDropOpen || playerDropOpen) {
+                recurAmountField.setY(-200);
+            } else {
+                recurAmountField.setX(c3x + 10);
+                recurAmountField.setY(fy);
+                recurAmountField.setWidth(cardW - 20);
+                recurAmountField.render(ctx, mx, my, 0);
+                fy += 26;
+                // Sélecteur d'intervalle < 1h / 6h / 12h / 24h >
+                int iLeft  = c3x + 10;
+                int iRight = c3x + cardW - 10;
+                int arrowW = 22;
+                recurIntervalBtnY = fy;
+                boolean prevHov = mx >= iLeft && mx < iLeft + arrowW && my >= fy && my < fy + 18;
+                boolean nextHov = mx >= iRight - arrowW && mx < iRight && my >= fy && my < fy + 18;
+                ctx.fill(iLeft, fy, iRight, fy + 18, C_DARK);
+                ctx.fill(iLeft, fy, iLeft + arrowW, fy + 18, prevHov ? C_HOVER : C_DARK);
+                ctx.fill(iRight - arrowW, fy, iRight, fy + 18, nextHov ? C_HOVER : C_DARK);
+                ctx.drawCenteredTextWithShadow(textRenderer, "<", iLeft + arrowW / 2, fy + 5, prevHov ? C_WHITE : C_MID);
+                ctx.drawCenteredTextWithShadow(textRenderer, INTERVAL_LABELS[recurIntervalIdx], (iLeft + iRight) / 2, fy + 5, C_GOLD);
+                ctx.drawCenteredTextWithShadow(textRenderer, ">", iRight - arrowW / 2, fy + 5, nextHov ? C_WHITE : C_MID);
+                fy += 22;
+                boolean canCreate = !recurTarget.isEmpty() && recurAmount > 0;
+                boolean createHov = canCreate
+                    && mx >= c3x + 10 && mx < c3x + cardW - 10
+                    && my >= fy && my < fy + 22;
+                recurCreateBtnY = fy;
+                ctx.fill(c3x + 10, fy, c3x + cardW - 10, fy + 22,
+                    canCreate ? (createHov ? 0xFF1A8050 : C_GREEN) : C_DARK);
+                ctx.drawCenteredTextWithShadow(textRenderer, "Creer",
+                    c3x + cardW / 2, fy + 7, canCreate ? C_WHITE : C_DIM);
             }
         }
 
         py += cardH + GAP;
 
-        // ── Admin section ─────────────────────────────────────────────────────
-        if (isOp && !onlinePlayers.isEmpty()) {
-            int checkCols = 5;
-            int rows  = (int) Math.ceil(onlinePlayers.size() / (double) checkCols);
-            int checkW = (pw - 20) / checkCols;
-            int adminH = 28 + rows * 24 + 30;
-            ctx.fill(px, py, px + pw, py + adminH, C_SURFACE);
-            ctx.fill(px, py, px + pw, py + 1, C_BORDER);
-            ctx.fill(px, py + adminH - 1, px + pw, py + adminH, C_BORDER);
-            ctx.fill(px, py, px + 1, py + adminH, C_BORDER);
-            ctx.fill(px + pw - 1, py, px + pw, py + adminH, C_BORDER);
-            ctx.fill(px + 1, py + 1, px + 3, py + adminH - 1, C_RED);
-            ctx.drawText(textRenderer, "ADMIN — DISTRIBUER SALAIRE", px + 12, py + 10, C_DIM, false);
-            int checkStartY = py + 28;
-            profileSalaryCheckStartY = checkStartY;
-            for (int i = 0; i < onlinePlayers.size(); i++) {
-                String p = onlinePlayers.get(i);
-                int col  = i % checkCols, row = i / checkCols;
-                int cx   = px + 10 + col * checkW;
-                int cy   = checkStartY + row * 24;
-                boolean checked = selectedForSalary.contains(p);
-                boolean chHov   = mx >= cx && mx < cx + checkW - 2 && my >= cy && my < cy + 18;
-                ctx.fill(cx, cy + 3, cx + 12, cy + 15, checked ? C_GREEN : (chHov ? C_HOVER : C_DARK));
-                ctx.fill(cx, cy + 3, cx + 12, cy + 4, C_BORDER);
-                ctx.fill(cx, cy + 14, cx + 12, cy + 15, C_BORDER);
-                ctx.fill(cx, cy + 3, cx + 1, cy + 15, C_BORDER);
-                ctx.fill(cx + 11, cy + 3, cx + 12, cy + 15, C_BORDER);
-                if (checked) ctx.drawText(textRenderer, "v", cx + 2, cy + 4, C_WHITE, false);
-                ctx.drawText(textRenderer, truncate(p, checkW - 18), cx + 16, cy + 5,
-                    chHov ? C_WHITE : C_MID, false);
+        // ── Virements récurrents actifs ───────────────────────────────────────
+        int rowH2 = 28;
+        if (!recurringList.isEmpty()) {
+            ctx.drawText(textRenderer, "VIREMENTS RECURRENTS ACTIFS", px, py + 4, C_DIM, false);
+            int recurListY = py + textRenderer.fontHeight + 10;
+            for (int i = 0; i < recurringList.size(); i++) {
+                RecurringData r = recurringList.get(i);
+                int ry = recurListY + i * (rowH2 + 4);
+                if (ry + rowH2 > winY + winH - PAD - 40) break;
+                boolean rowHov = mx >= px && mx < px + pw && my >= ry && my < ry + rowH2;
+                ctx.fill(px, ry, px + pw, ry + rowH2, rowHov ? C_HOVER : C_PANEL);
+                ctx.fill(px, ry, px + pw, ry + 1, C_BORDER);
+                ctx.fill(px, ry + rowH2 - 1, px + pw, ry + rowH2, C_BORDER);
+                ctx.fill(px + 1, ry + 1, px + 3, ry + rowH2 - 1, C_GOLD);
+                int midY = ry + (rowH2 - textRenderer.fontHeight) / 2;
+                String toStr = "→ " + r.to();
+                ctx.drawText(textRenderer, toStr, px + 8, midY, C_MID, false);
+                String amtLabel = r.amount() + " ◆ / " + INTERVAL_LABELS[intervalIdx(r.intervalTicks())];
+                ctx.drawText(textRenderer, amtLabel,
+                    px + 8 + textRenderer.getWidth(toStr) + 8, midY, C_GOLD, false);
+                String countStr = "dans " + ticksToTime(r.ticksUntilNext());
+                ctx.drawText(textRenderer, countStr,
+                    px + pw - textRenderer.getWidth(countStr) - 70, midY, C_DIM, false);
+                int cancelX    = px + pw - 58;
+                int cancelBtnY = ry + (rowH2 - 14) / 2;
+                boolean cancelHov = mx >= cancelX && mx < cancelX + 54
+                    && my >= cancelBtnY && my < cancelBtnY + 14;
+                ctx.fill(cancelX, cancelBtnY, cancelX + 54, cancelBtnY + 14, cancelHov ? C_RED : C_DARK);
+                ctx.fill(cancelX, cancelBtnY, cancelX + 54, cancelBtnY + 1, C_BORDER);
+                ctx.fill(cancelX, cancelBtnY + 13, cancelX + 54, cancelBtnY + 14, C_BORDER);
+                ctx.fill(cancelX, cancelBtnY, cancelX + 1, cancelBtnY + 14, C_BORDER);
+                ctx.fill(cancelX + 53, cancelBtnY, cancelX + 54, cancelBtnY + 14, C_BORDER);
+                ctx.drawCenteredTextWithShadow(textRenderer, "Annuler",
+                    cancelX + 27, cancelBtnY + 3, cancelHov ? C_WHITE : C_DIM);
+                recurCancelBtnY.add(cancelBtnY);
             }
-            int btnY = py + adminH - 26;
-            profileSalaryBtnY = btnY;
-            boolean anySelected = !selectedForSalary.isEmpty();
-            boolean btnHov = anySelected && mx >= px + 10 && mx < px + pw - 10 && my >= btnY && my < btnY + 20;
-            ctx.fill(px + 10, btnY, px + pw - 10, btnY + 20,
-                anySelected ? (btnHov ? 0xFF1A8050 : C_GREEN) : C_BORDER);
-            ctx.drawCenteredTextWithShadow(textRenderer,
-                anySelected ? "Verser a " + selectedForSalary.size() + " joueur(s)" : "Selectionner des joueurs",
-                px + pw / 2, btnY + 6, anySelected ? C_WHITE : C_DARK);
-            py += adminH + GAP;
+            py += textRenderer.fontHeight + 10 + recurringList.size() * (rowH2 + 4) + GAP;
         }
 
         // ── Transactions ──────────────────────────────────────────────────────
@@ -1439,6 +1500,56 @@ public class HdvScreen extends Screen {
         }
     }
 
+    private void renderRecurDropdown(DrawContext ctx, int mx, int my) {
+        if (knownPlayers.isEmpty() || recurDropX < 0) { recurDropOpen = false; return; }
+        int itemH  = 18;
+        int maxVis = Math.min(8, knownPlayers.size());
+        int dropH  = maxVis * itemH + 4;
+        int dx = recurDropX, dw = recurDropW;
+        int dy = recurDropY + 20;
+        if (dy + dropH > winY + winH - PAD) dy = recurDropY - dropH;
+
+        ctx.fill(dx + 3, dy + 3, dx + dw + 3, dy + dropH + 3, 0x44000000);
+        ctx.fill(dx, dy, dx + dw, dy + dropH, C_SURFACE);
+        ctx.fill(dx - 1, dy - 1, dx + dw + 1, dy, C_GOLD);
+        ctx.fill(dx - 1, dy + dropH, dx + dw + 1, dy + dropH + 1, C_GOLD);
+        ctx.fill(dx - 1, dy - 1, dx, dy + dropH + 1, C_GOLD);
+        ctx.fill(dx + dw, dy - 1, dx + dw + 1, dy + dropH + 1, C_GOLD);
+
+        ctx.enableScissor(dx, dy, dx + dw, dy + dropH);
+        int end = Math.min(recurDropScroll + maxVis, knownPlayers.size());
+        for (int i = recurDropScroll; i < end; i++) {
+            String p   = knownPlayers.get(i);
+            int iy     = dy + 2 + (i - recurDropScroll) * itemH;
+            boolean sel = p.equalsIgnoreCase(recurTarget);
+            boolean hov = mx >= dx && mx < dx + dw && my >= iy && my < iy + itemH;
+            if (sel) {
+                ctx.fill(dx + 1, iy, dx + dw - 1, iy + itemH, C_HOVER);
+                ctx.fill(dx + 1, iy, dx + 3, iy + itemH, C_GOLD);
+            } else if (hov) {
+                ctx.fill(dx + 1, iy, dx + dw - 1, iy + itemH, 0x18FFFFFF);
+            }
+            ctx.drawText(textRenderer, p, dx + 8, iy + (itemH - textRenderer.fontHeight) / 2,
+                (sel || hov) ? C_WHITE : C_MID, false);
+        }
+        ctx.disableScissor();
+
+        if (knownPlayers.size() > maxVis) {
+            int sbH  = Math.max(12, dropH * maxVis / knownPlayers.size());
+            int maxSc = knownPlayers.size() - maxVis;
+            int sbY  = dy + (maxSc > 0 ? (dropH - sbH) * recurDropScroll / maxSc : 0);
+            ctx.fill(dx + dw - 4, dy, dx + dw, dy + dropH, C_BORDER);
+            ctx.fill(dx + dw - 4, sbY, dx + dw, sbY + sbH, 0x60FFFFFF);
+        }
+    }
+
+    private int intervalIdx(int ticks) {
+        int best = 0;
+        for (int i = 1; i < INTERVALS.length; i++)
+            if (Math.abs(ticks - INTERVALS[i]) < Math.abs(ticks - INTERVALS[best])) best = i;
+        return best;
+    }
+
     private void handleProfileClick(int mx, int my) {
         int px    = winX + PAD;
         int pw    = winW - PAD * 2;
@@ -1446,27 +1557,45 @@ public class HdvScreen extends Screen {
         int c2x   = px + cardW + GAP;
         int c3x   = px + (cardW + GAP) * 2;
 
-        // Dropdown button (card 3)
+        // Dropdown button — card 2 (virement ponctuel)
         if (profileDropX >= 0 && mx >= profileDropX && mx < profileDropX + profileDropW
                 && my >= profileDropY && my < profileDropY + 20) {
-            playerDropOpen = !playerDropOpen;
+            playerDropOpen  = !playerDropOpen;
+            recurDropOpen   = false;
             playerDropScroll = 0;
             return;
         }
 
-        // Claim salary (card 2)
-        if (profileClaimSalaryBtnY >= 0 && profileSalaryReady) {
-            if (mx >= c2x + 10 && mx < c2x + cardW - 10
-                    && my >= profileClaimSalaryBtnY && my < profileClaimSalaryBtnY + 22) {
-                sendClaimSalary();
-                return;
+        // Dropdown button — card 3 (virement récurrent)
+        if (recurDropX >= 0 && mx >= recurDropX && mx < recurDropX + recurDropW
+                && my >= recurDropY && my < recurDropY + 20) {
+            recurDropOpen   = !recurDropOpen;
+            playerDropOpen  = false;
+            recurDropScroll = 0;
+            return;
+        }
+
+        // Interval selector — card 3
+        if (recurIntervalBtnY >= 0) {
+            int iLeft  = c3x + 10;
+            int iRight = c3x + cardW - 10;
+            int arrowW = 22;
+            if (my >= recurIntervalBtnY && my < recurIntervalBtnY + 18) {
+                if (mx >= iLeft && mx < iLeft + arrowW) {
+                    recurIntervalIdx = (recurIntervalIdx + INTERVALS.length - 1) % INTERVALS.length;
+                    return;
+                }
+                if (mx >= iRight - arrowW && mx < iRight) {
+                    recurIntervalIdx = (recurIntervalIdx + 1) % INTERVALS.length;
+                    return;
+                }
             }
         }
 
-        // Transfer send (card 3)
+        // Transfer send — card 2
         if (profileTransferBtnY >= 0) {
             boolean canTransfer = !transferTarget.isEmpty() && transferAmount > 0 && transferAmount <= balance;
-            if (canTransfer && mx >= c3x + 10 && mx < c3x + cardW - 10
+            if (canTransfer && mx >= c2x + 10 && mx < c2x + cardW - 10
                     && my >= profileTransferBtnY && my < profileTransferBtnY + 22) {
                 sendTransfer(transferTarget, transferAmount);
                 transferTarget = "";
@@ -1477,26 +1606,28 @@ public class HdvScreen extends Screen {
             }
         }
 
-        // Admin checkboxes
-        if (isOp && profileSalaryCheckStartY >= 0 && !onlinePlayers.isEmpty()) {
-            int checkCols = 5;
-            int checkW = (pw - 20) / checkCols;
-            for (int i = 0; i < onlinePlayers.size(); i++) {
-                String p = onlinePlayers.get(i);
-                int col  = i % checkCols, row = i / checkCols;
-                int cx   = px + 10 + col * checkW;
-                int cy   = profileSalaryCheckStartY + row * 24;
-                if (mx >= cx && mx < cx + checkW - 2 && my >= cy && my < cy + 18) {
-                    if (selectedForSalary.contains(p)) selectedForSalary.remove(p);
-                    else selectedForSalary.add(p);
-                    return;
-                }
+        // Recurring create — card 3
+        if (recurCreateBtnY >= 0) {
+            boolean canCreate = !recurTarget.isEmpty() && recurAmount > 0;
+            if (canCreate && mx >= c3x + 10 && mx < c3x + cardW - 10
+                    && my >= recurCreateBtnY && my < recurCreateBtnY + 22) {
+                sendRecurringCreate(recurTarget, recurAmount, INTERVALS[recurIntervalIdx]);
+                recurTarget = "";
+                recurAmountField.setText("");
+                recurAmount = 0;
+                recurDropOpen = false;
+                return;
             }
-            if (profileSalaryBtnY >= 0 && !selectedForSalary.isEmpty()
-                    && mx >= px + 10 && mx < px + pw - 10
-                    && my >= profileSalaryBtnY && my < profileSalaryBtnY + 20) {
-                sendAdminSalary(new ArrayList<>(selectedForSalary));
-                selectedForSalary.clear();
+        }
+
+        // Recurring cancel buttons
+        for (int i = 0; i < recurCancelBtnY.size(); i++) {
+            int cancelBtnY = recurCancelBtnY.get(i);
+            int cancelX    = px + pw - 58;
+            if (my >= cancelBtnY && my < cancelBtnY + 14
+                    && mx >= cancelX && mx < cancelX + 54) {
+                if (i < recurringList.size()) sendRecurringCancel(recurringList.get(i).id());
+                return;
             }
         }
     }
@@ -1509,17 +1640,19 @@ public class HdvScreen extends Screen {
         ClientPlayNetworking.send(HdvNetworking.HDV_ACTION, buf);
     }
 
-    private void sendAdminSalary(List<String> targets) {
+    private void sendRecurringCreate(String to, int amount, int intervalTicks) {
         PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
-        buf.writeInt(HdvNetworking.ACTION_ADMIN_SALARY);
-        buf.writeInt(targets.size());
-        for (String t : targets) buf.writeString(t);
+        buf.writeInt(HdvNetworking.ACTION_RECURRING_CREATE);
+        buf.writeString(to);
+        buf.writeInt(amount);
+        buf.writeInt(intervalTicks);
         ClientPlayNetworking.send(HdvNetworking.HDV_ACTION, buf);
     }
 
-    private void sendClaimSalary() {
+    private void sendRecurringCancel(int id) {
         PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
-        buf.writeInt(HdvNetworking.ACTION_CLAIM_SALARY);
+        buf.writeInt(HdvNetworking.ACTION_RECURRING_CANCEL);
+        buf.writeInt(id);
         ClientPlayNetworking.send(HdvNetworking.HDV_ACTION, buf);
     }
 

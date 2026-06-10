@@ -8,6 +8,8 @@ import com.nouvelleterrebridge.commands.LierCommand;
 import com.nouvelleterrebridge.economy.LocalEconomy;
 import com.nouvelleterrebridge.economy.KillRewards;
 import com.nouvelleterrebridge.economy.PlaytimeTracker;
+import com.nouvelleterrebridge.economy.RecurringTransfer;
+import com.nouvelleterrebridge.economy.RecurringTransferManager;
 import com.nouvelleterrebridge.economy.TransactionLog;
 import com.nouvelleterrebridge.events.PlayerEvents;
 import com.nouvelleterrebridge.events.ServerEvents;
@@ -29,7 +31,6 @@ import net.minecraft.text.Text;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -57,6 +58,7 @@ public class NouvelleTerreBridge implements ModInitializer {
         TerritoryEvents.register();
         KillRewards.register();
         PlaytimeTracker.register();
+        RecurringTransferManager.register();
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             HdvCommand.register(dispatcher);
@@ -109,30 +111,24 @@ public class NouvelleTerreBridge implements ModInitializer {
                         result = "§cSolde insuffisant ou joueur inconnu.";
                     }
                 }
-                case HdvNetworking.ACTION_ADMIN_SALARY -> {
-                    int count = buf.readInt();
-                    List<String> targets = new ArrayList<>();
-                    for (int i = 0; i < count; i++) targets.add(buf.readString());
-                    if (!player.hasPermissionLevel(2)) {
-                        result = "§cPermission insuffisante.";
-                    } else if (targets.isEmpty()) {
-                        result = "§cAucun joueur sélectionné.";
+                case HdvNetworking.ACTION_RECURRING_CREATE -> {
+                    String to = buf.readString();
+                    int amount = buf.readInt();
+                    int intervalTicks = buf.readInt();
+                    String from = player.getName().getString();
+                    if (!LocalEconomy.getInstance().estConnu(to)) {
+                        result = "§cJoueur inconnu.";
+                    } else if (amount <= 0) {
+                        result = "§cMontant invalide.";
                     } else {
-                        for (String t : targets) {
-                            LocalEconomy.getInstance().addShards(t, PlaytimeTracker.getSalaireBase());
-                        }
-                        result = "§a✅ Salaire versé à " + targets.size() + " joueur(s).";
+                        RecurringTransferManager.getInstance().add(from, to, amount, intervalTicks);
+                        result = "§a✅ Virement récurrent créé vers §f" + to + "§a !";
                     }
                 }
-                case HdvNetworking.ACTION_CLAIM_SALARY -> {
-                    String pseudo = player.getName().getString();
-                    int amount = PlaytimeTracker.tryClaimSalary(player.getUuid());
-                    if (amount > 0) {
-                        LocalEconomy.getInstance().addShards(pseudo, amount);
-                        result = "§a✅ Salaire réclamé : +" + amount + " ◆ !";
-                    } else {
-                        result = "§cSalaire pas encore disponible.";
-                    }
+                case HdvNetworking.ACTION_RECURRING_CANCEL -> {
+                    int id = buf.readInt();
+                    boolean ok = RecurringTransferManager.getInstance().cancel(id, player.getName().getString());
+                    result = ok ? "§a✅ Virement récurrent annulé." : "§cVirement introuvable.";
                 }
                 default -> result = "§cAction inconnue.";
             }
@@ -173,8 +169,10 @@ public class NouvelleTerreBridge implements ModInitializer {
     }
 
     private static void writeProfileData(PacketByteBuf buf, ServerPlayerEntity player, MinecraftServer server) {
+        // Récompense
         buf.writeInt(PlaytimeTracker.getTicksUntilReward(player.getUuid()));
-        buf.writeInt(PlaytimeTracker.getTicksUntilSalary(player.getUuid()));
+
+        // Transactions
         List<TransactionLog.Entry> txs = TransactionLog.getLast(player.getName().getString(), 15);
         buf.writeInt(txs.size());
         for (TransactionLog.Entry e : txs) {
@@ -184,10 +182,7 @@ public class NouvelleTerreBridge implements ModInitializer {
             buf.writeLong(e.timestamp());
         }
 
-        // isOp
-        buf.writeBoolean(player.hasPermissionLevel(2));
-
-        // Known players with best-effort proper casing (online + market sellers override lowercase economy keys)
+        // Joueurs connus (dropdown virement) avec casing correct
         Set<String> knownLower = LocalEconomy.getInstance().getSoldesKeys();
         Map<String, String> casing = server.getPlayerManager().getPlayerList().stream()
             .collect(Collectors.toMap(p -> p.getName().getString().toLowerCase(), p -> p.getName().getString(), (a, b) -> a));
@@ -199,12 +194,16 @@ public class NouvelleTerreBridge implements ModInitializer {
         buf.writeInt(known.size());
         for (String p : known) buf.writeString(p);
 
-        // Online players (for admin salary selector)
-        List<String> online = server.getPlayerManager().getPlayerList().stream()
-            .map(p -> p.getName().getString())
-            .sorted(String.CASE_INSENSITIVE_ORDER)
-            .collect(Collectors.toList());
-        buf.writeInt(online.size());
-        for (String p : online) buf.writeString(p);
+        // Virements récurrents du joueur
+        List<RecurringTransfer> recurring = RecurringTransferManager.getInstance()
+            .getForPlayer(player.getName().getString());
+        buf.writeInt(recurring.size());
+        for (RecurringTransfer rt : recurring) {
+            buf.writeInt(rt.id);
+            buf.writeString(rt.to);
+            buf.writeInt(rt.amount);
+            buf.writeInt(rt.intervalTicks);
+            buf.writeInt(rt.intervalTicks - rt.ticksSince); // ticksUntilNext
+        }
     }
 }

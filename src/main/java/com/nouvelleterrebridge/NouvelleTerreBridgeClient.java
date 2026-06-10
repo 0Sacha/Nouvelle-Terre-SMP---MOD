@@ -25,16 +25,15 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(HdvNetworking.HDV_OPEN, (client, handler, buf, responseSender) -> {
             int balance = buf.readInt();
             List<HdvScreen.ListingData> listings = readListings(buf);
-            int ticksReward  = buf.readInt();
-            int ticksSalary  = buf.readInt();
+            int ticksReward = buf.readInt();
             List<HdvScreen.TransactionData> transactions = readTransactions(buf);
-            boolean isOp = buf.readBoolean();
-            List<String> knownPlayers  = readPlayerList(buf);
-            List<String> onlinePlayers = readPlayerList(buf);
-            client.execute(() -> client.setScreen(new HdvScreen(balance, listings, ticksReward, ticksSalary, transactions, isOp, knownPlayers, onlinePlayers)));
+            List<String> knownPlayers = readStringList(buf);
+            List<HdvScreen.RecurringData> recurring = readRecurring(buf);
+            client.execute(() -> client.setScreen(
+                new HdvScreen(balance, listings, ticksReward, transactions, knownPlayers, recurring)));
         });
 
-        // S2C : vérification de version — alerte si le client est en retard
+        // S2C : vérification de version
         ClientPlayNetworking.registerGlobalReceiver(HdvNetworking.NT_VERSION, (client, handler, buf, responseSender) -> {
             String serverVer = buf.readString();
             String clientVer = FabricLoader.getInstance()
@@ -49,28 +48,26 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
                         .styled(s -> s
                             .withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, url))
                             .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal(url))));
-                    MutableText msg = Text.literal("§e[Nouvelle Terre] §cMod obsolète §7— client §f" + clientVer + " §7≠ serveur §f" + serverVer + " §7— ")
-                        .append(link);
+                    MutableText msg = Text.literal("§e[Nouvelle Terre] §cMod obsolète §7— client §f" + clientVer
+                            + " §7≠ serveur §f" + serverVer + " §7— ").append(link);
                     client.player.sendMessage(msg, false);
                 });
             }
         });
 
-        // S2C : résultat d'une action (achat, vente, retrait, virement)
+        // S2C : résultat d'une action
         ClientPlayNetworking.registerGlobalReceiver(HdvNetworking.HDV_RESULT, (client, handler, buf, responseSender) -> {
-            boolean ok         = buf.readBoolean();
-            String  message    = buf.readString();
-            int     newBalance = buf.readInt();
+            boolean ok      = buf.readBoolean();
+            String  message = buf.readString();
+            int balance     = buf.readInt();
             List<HdvScreen.ListingData> listings = readListings(buf);
-            int ticksReward  = buf.readInt();
-            int ticksSalary  = buf.readInt();
+            int ticksReward = buf.readInt();
             List<HdvScreen.TransactionData> transactions = readTransactions(buf);
-            boolean isOp = buf.readBoolean();
-            List<String> knownPlayers  = readPlayerList(buf);
-            List<String> onlinePlayers = readPlayerList(buf);
+            List<String> knownPlayers = readStringList(buf);
+            List<HdvScreen.RecurringData> recurring = readRecurring(buf);
             client.execute(() -> {
                 if (client.currentScreen instanceof HdvScreen screen) {
-                    screen.handleResult(ok, message, newBalance, listings, ticksReward, ticksSalary, transactions, isOp, knownPlayers, onlinePlayers);
+                    screen.handleResult(ok, message, balance, listings, ticksReward, transactions, knownPlayers, recurring);
                 }
             });
         });
@@ -79,36 +76,31 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
     private static List<HdvScreen.ListingData> readListings(PacketByteBuf buf) {
         int count = buf.readInt();
         List<HdvScreen.ListingData> list = new ArrayList<>(count);
-        for (int i = 0; i < count; i++) {
-            list.add(new HdvScreen.ListingData(
-                buf.readInt(),    // id
-                buf.readString(), // seller
-                buf.readString(), // itemId
-                buf.readInt(),    // quantity
-                buf.readInt()     // pricePerUnit
-            ));
-        }
+        for (int i = 0; i < count; i++)
+            list.add(new HdvScreen.ListingData(buf.readInt(), buf.readString(), buf.readString(), buf.readInt(), buf.readInt()));
         return list;
     }
 
     private static List<HdvScreen.TransactionData> readTransactions(PacketByteBuf buf) {
         int count = buf.readInt();
         List<HdvScreen.TransactionData> list = new ArrayList<>(count);
-        for (int i = 0; i < count; i++) {
-            list.add(new HdvScreen.TransactionData(
-                buf.readInt(),    // type
-                buf.readString(), // label
-                buf.readInt(),    // amount
-                buf.readLong()    // timestamp
-            ));
-        }
+        for (int i = 0; i < count; i++)
+            list.add(new HdvScreen.TransactionData(buf.readInt(), buf.readString(), buf.readInt(), buf.readLong()));
         return list;
     }
 
-    private static List<String> readPlayerList(PacketByteBuf buf) {
+    private static List<String> readStringList(PacketByteBuf buf) {
         int count = buf.readInt();
         List<String> list = new ArrayList<>(count);
         for (int i = 0; i < count; i++) list.add(buf.readString());
+        return list;
+    }
+
+    private static List<HdvScreen.RecurringData> readRecurring(PacketByteBuf buf) {
+        int count = buf.readInt();
+        List<HdvScreen.RecurringData> list = new ArrayList<>(count);
+        for (int i = 0; i < count; i++)
+            list.add(new HdvScreen.RecurringData(buf.readInt(), buf.readString(), buf.readInt(), buf.readInt(), buf.readInt()));
         return list;
     }
 }
