@@ -30,9 +30,6 @@ public class HdvScreen extends Screen {
     public record RecurringData(int id, String to, int amount, int intervalTicks, int ticksUntilNext) {}
     private record SellItem(Item item, String itemId, int qty) {}
 
-    // Intervalles disponibles pour les virements récurrents
-    private static final int[]    INTERVALS       = {72000, 432000, 864000, 1728000}; // 1h, 6h, 12h, 24h
-    private static final String[] INTERVAL_LABELS = {"1h", "6h", "12h", "24h"};
 
     private enum Tab {
         MARKET("🏪  Marché"),
@@ -163,12 +160,17 @@ public class HdvScreen extends Screen {
     private int     recurDropScroll = 0;
     private String  recurTarget     = "";
     private int     recurAmount     = 0;
-    private int     recurIntervalIdx = 0;
+    private int     recurIntervalMins = 60;
     private TextFieldWidget recurAmountField;
+    private TextFieldWidget recurIntervalMinsField;
     private int recurDropX = -1, recurDropY = -1, recurDropW = 0;
     private int recurCreateBtnY   = -1;
-    private int recurIntervalBtnY = -1;
     private final List<Integer> recurCancelBtnY = new ArrayList<>();
+
+    // Transactions scroll
+    private int txScrollOffset = 0;
+    private int txListStartY   = -1;
+    private int txListEndY     = -1;
 
     private String toastMsg = null;
     private boolean toastOk = true;
@@ -235,6 +237,14 @@ public class HdvScreen extends Screen {
         });
         addSelectableChild(recurAmountField);
 
+        recurIntervalMinsField = new TextFieldWidget(textRenderer, winX, winY, 100, 18, Text.literal("60"));
+        recurIntervalMinsField.setText("60");
+        recurIntervalMinsField.setMaxLength(6);
+        recurIntervalMinsField.setChangedListener(s -> {
+            try { recurIntervalMins = Math.max(1, Integer.parseInt(s.trim())); } catch (NumberFormatException ignored) { recurIntervalMins = 0; }
+        });
+        addSelectableChild(recurIntervalMinsField);
+
         refreshSellInv();
     }
 
@@ -268,6 +278,7 @@ public class HdvScreen extends Screen {
         sellPriceField.setText("");
         sellQty   = 1;
         sellPrice = 0;
+        txScrollOffset = 0;
         refreshSellInv();
         toast(msg, ok);
     }
@@ -1157,6 +1168,14 @@ public class HdvScreen extends Screen {
             recurDropScroll = Math.max(0, Math.min(maxScrl, recurDropScroll - (int) Math.signum(delta)));
             return true;
         }
+        if (activeTab == Tab.PROFILE && !playerDropOpen && !recurDropOpen
+                && txListStartY >= 0 && my >= txListStartY && my < txListEndY) {
+            int rowH = 26;
+            int visRows  = Math.max(1, (txListEndY - txListStartY) / (rowH + 2));
+            int maxScroll = Math.max(0, transactions.size() - visRows);
+            txScrollOffset = Math.max(0, Math.min(maxScroll, txScrollOffset - (int) Math.signum(delta)));
+            return true;
+        }
         if (activeTab == Tab.MARKET && buyingListing == null) {
             scrollOffset = Math.max(0, scrollOffset - (int) Math.signum(delta));
         }
@@ -1215,7 +1234,6 @@ public class HdvScreen extends Screen {
         int rewardTicks  = Math.max(0, ticksUntilReward - elapsedTicks);
         profileTransferBtnY = -1;
         recurCreateBtnY     = -1;
-        recurIntervalBtnY   = -1;
         recurCancelBtnY.clear();
 
         // ── Header ────────────────────────────────────────────────────────────
@@ -1235,7 +1253,7 @@ public class HdvScreen extends Screen {
         py += headerH + GAP;
 
         // ── 3 cards ───────────────────────────────────────────────────────────
-        int cardH = 128;
+        int cardH = 148;
         int cardW = (pw - GAP * 2) / 3;
         int c1x   = px;
         int c2x   = px + cardW + GAP;
@@ -1292,7 +1310,8 @@ public class HdvScreen extends Screen {
                 transferAmountField.setWidth(cardW - 20);
                 transferAmountField.render(ctx, mx, my, 0);
                 fy += 26;
-                boolean canTransfer = !transferTarget.isEmpty() && transferAmount > 0 && transferAmount <= balance;
+                boolean canTransfer = !transferTarget.isEmpty() && !transferTarget.equalsIgnoreCase(me)
+                    && transferAmount > 0 && transferAmount <= balance;
                 boolean sendHov = canTransfer
                     && mx >= c2x + 10 && mx < c2x + cardW - 10
                     && my >= fy && my < fy + 22;
@@ -1328,27 +1347,30 @@ public class HdvScreen extends Screen {
             fy += 24;
             if (recurDropOpen || playerDropOpen) {
                 recurAmountField.setY(-200);
+                recurIntervalMinsField.setY(-200);
             } else {
                 recurAmountField.setX(c3x + 10);
                 recurAmountField.setY(fy);
                 recurAmountField.setWidth(cardW - 20);
                 recurAmountField.render(ctx, mx, my, 0);
                 fy += 26;
-                // Sélecteur d'intervalle < 1h / 6h / 12h / 24h >
-                int iLeft  = c3x + 10;
-                int iRight = c3x + cardW - 10;
-                int arrowW = 22;
-                recurIntervalBtnY = fy;
-                boolean prevHov = mx >= iLeft && mx < iLeft + arrowW && my >= fy && my < fy + 18;
-                boolean nextHov = mx >= iRight - arrowW && mx < iRight && my >= fy && my < fy + 18;
-                ctx.fill(iLeft, fy, iRight, fy + 18, C_DARK);
-                ctx.fill(iLeft, fy, iLeft + arrowW, fy + 18, prevHov ? C_HOVER : C_DARK);
-                ctx.fill(iRight - arrowW, fy, iRight, fy + 18, nextHov ? C_HOVER : C_DARK);
-                ctx.drawCenteredTextWithShadow(textRenderer, "<", iLeft + arrowW / 2, fy + 5, prevHov ? C_WHITE : C_MID);
-                ctx.drawCenteredTextWithShadow(textRenderer, INTERVAL_LABELS[recurIntervalIdx], (iLeft + iRight) / 2, fy + 5, C_GOLD);
-                ctx.drawCenteredTextWithShadow(textRenderer, ">", iRight - arrowW / 2, fy + 5, nextHov ? C_WHITE : C_MID);
+                // Champ intervalle en minutes
+                ctx.drawText(textRenderer, "INTERVALLE (minutes)", c3x + 10, fy, C_DIM, false);
+                fy += textRenderer.fontHeight + 4;
+                recurIntervalMinsField.setX(c3x + 10);
+                recurIntervalMinsField.setY(fy);
+                recurIntervalMinsField.setWidth(cardW - 20);
+                recurIntervalMinsField.render(ctx, mx, my, 0);
+                // Aperçu formaté à droite
+                if (recurIntervalMins > 0) {
+                    String preview = ticksToInterval(recurIntervalMins * 1200);
+                    ctx.drawText(textRenderer, "= " + preview,
+                        c3x + cardW - 10 - textRenderer.getWidth("= " + preview), fy - textRenderer.fontHeight - 4,
+                        C_GOLD, false);
+                }
                 fy += 22;
-                boolean canCreate = !recurTarget.isEmpty() && recurAmount > 0;
+                boolean canCreate = !recurTarget.isEmpty() && recurAmount > 0
+                    && recurIntervalMins >= 1 && !recurTarget.equalsIgnoreCase(me);
                 boolean createHov = canCreate
                     && mx >= c3x + 10 && mx < c3x + cardW - 10
                     && my >= fy && my < fy + 22;
@@ -1379,7 +1401,7 @@ public class HdvScreen extends Screen {
                 int midY = ry + (rowH2 - textRenderer.fontHeight) / 2;
                 String toStr = "→ " + r.to();
                 ctx.drawText(textRenderer, toStr, px + 8, midY, C_MID, false);
-                String amtLabel = r.amount() + " ◆ / " + INTERVAL_LABELS[intervalIdx(r.intervalTicks())];
+                String amtLabel = r.amount() + " ◆ / " + ticksToInterval(r.intervalTicks());
                 ctx.drawText(textRenderer, amtLabel,
                     px + 8 + textRenderer.getWidth(toStr) + 8, midY, C_GOLD, false);
                 String countStr = "dans " + ticksToTime(r.ticksUntilNext());
@@ -1405,16 +1427,32 @@ public class HdvScreen extends Screen {
         ctx.drawText(textRenderer, "TRANSACTIONS RECENTES", px, py + 4, C_DIM, false);
         int listStartY = py + textRenderer.fontHeight + 10;
         int rowH = 26;
-        ctx.enableScissor(px, listStartY, px + pw, winY + winH - PAD);
+        txListStartY = listStartY;
+        txListEndY   = winY + winH - PAD;
+
+        int visRowsTx  = Math.max(1, (txListEndY - listStartY) / (rowH + 2));
+        int maxScrollTx = Math.max(0, transactions.size() - visRowsTx);
+        txScrollOffset  = Math.min(txScrollOffset, maxScrollTx);
+
+        // Scrollbar transactions
+        if (maxScrollTx > 0) {
+            int sbX = px + pw - SCROLL_W;
+            ctx.fill(sbX, listStartY, sbX + SCROLL_W, txListEndY, C_BORDER);
+            int sbH = Math.max(16, (txListEndY - listStartY) * visRowsTx / transactions.size());
+            int sbY = listStartY + (txListEndY - listStartY - sbH) * txScrollOffset / maxScrollTx;
+            ctx.fill(sbX, sbY, sbX + SCROLL_W, sbY + sbH, 0x60FFFFFF);
+        }
+
+        ctx.enableScissor(px, listStartY, px + pw, txListEndY);
         if (transactions.isEmpty()) {
             ctx.drawCenteredTextWithShadow(textRenderer, "Aucune transaction recente",
                 px + pw / 2, listStartY + 16, C_DIM);
         }
-        for (int i = 0; i < transactions.size(); i++) {
+        for (int i = txScrollOffset; i < transactions.size(); i++) {
             TransactionData tx = transactions.get(i);
-            int ry = listStartY + i * (rowH + 2);
-            if (ry + rowH > winY + winH - PAD) break;
-            boolean hov = mx >= px && mx < px + pw && my >= ry && my < ry + rowH;
+            int ry = listStartY + (i - txScrollOffset) * (rowH + 2);
+            if (ry + rowH > txListEndY) break;
+            boolean hov = mx >= px && mx < px + pw - SCROLL_W - 2 && my >= ry && my < ry + rowH;
             ctx.fill(px, ry, px + pw, ry + rowH, hov ? C_HOVER : C_PANEL);
             ctx.fill(px, ry, px + pw, ry + 1, C_BORDER);
             ctx.fill(px, ry + rowH - 1, px + pw, ry + rowH, C_BORDER);
@@ -1439,8 +1477,8 @@ public class HdvScreen extends Screen {
             int amtColor   = isOut ? C_RED : C_GREEN;
             String timeStr = formatAgo(System.currentTimeMillis() - tx.timestamp());
             int timeW      = textRenderer.getWidth(timeStr);
-            ctx.drawText(textRenderer, timeStr, px + pw - timeW - 4, midY, C_DIM, false);
-            ctx.drawText(textRenderer, amtStr, px + pw - timeW - textRenderer.getWidth(amtStr) - 14, midY, amtColor, false);
+            ctx.drawText(textRenderer, timeStr, px + pw - timeW - 4 - SCROLL_W, midY, C_DIM, false);
+            ctx.drawText(textRenderer, amtStr, px + pw - timeW - textRenderer.getWidth(amtStr) - 14 - SCROLL_W, midY, amtColor, false);
         }
         ctx.disableScissor();
     }
@@ -1543,14 +1581,18 @@ public class HdvScreen extends Screen {
         }
     }
 
-    private int intervalIdx(int ticks) {
-        int best = 0;
-        for (int i = 1; i < INTERVALS.length; i++)
-            if (Math.abs(ticks - INTERVALS[i]) < Math.abs(ticks - INTERVALS[best])) best = i;
-        return best;
+    private String ticksToInterval(int ticks) {
+        int totalMins = ticks / 1200;
+        int h = totalMins / 60;
+        int m = totalMins % 60;
+        if (h > 0 && m > 0) return h + "h " + m + "min";
+        if (h > 0) return h + "h";
+        if (m > 0) return m + "min";
+        return ticks + "t";
     }
 
     private void handleProfileClick(int mx, int my) {
+        String me = client != null && client.player != null ? client.player.getName().getString() : "";
         int px    = winX + PAD;
         int pw    = winW - PAD * 2;
         int cardW = (pw - GAP * 2) / 3;
@@ -1575,26 +1617,10 @@ public class HdvScreen extends Screen {
             return;
         }
 
-        // Interval selector — card 3
-        if (recurIntervalBtnY >= 0) {
-            int iLeft  = c3x + 10;
-            int iRight = c3x + cardW - 10;
-            int arrowW = 22;
-            if (my >= recurIntervalBtnY && my < recurIntervalBtnY + 18) {
-                if (mx >= iLeft && mx < iLeft + arrowW) {
-                    recurIntervalIdx = (recurIntervalIdx + INTERVALS.length - 1) % INTERVALS.length;
-                    return;
-                }
-                if (mx >= iRight - arrowW && mx < iRight) {
-                    recurIntervalIdx = (recurIntervalIdx + 1) % INTERVALS.length;
-                    return;
-                }
-            }
-        }
-
         // Transfer send — card 2
         if (profileTransferBtnY >= 0) {
-            boolean canTransfer = !transferTarget.isEmpty() && transferAmount > 0 && transferAmount <= balance;
+            boolean canTransfer = !transferTarget.isEmpty() && !transferTarget.equalsIgnoreCase(me)
+                && transferAmount > 0 && transferAmount <= balance;
             if (canTransfer && mx >= c2x + 10 && mx < c2x + cardW - 10
                     && my >= profileTransferBtnY && my < profileTransferBtnY + 22) {
                 sendTransfer(transferTarget, transferAmount);
@@ -1608,10 +1634,11 @@ public class HdvScreen extends Screen {
 
         // Recurring create — card 3
         if (recurCreateBtnY >= 0) {
-            boolean canCreate = !recurTarget.isEmpty() && recurAmount > 0;
+            boolean canCreate = !recurTarget.isEmpty() && recurAmount > 0
+                && recurIntervalMins >= 1 && !recurTarget.equalsIgnoreCase(me);
             if (canCreate && mx >= c3x + 10 && mx < c3x + cardW - 10
                     && my >= recurCreateBtnY && my < recurCreateBtnY + 22) {
-                sendRecurringCreate(recurTarget, recurAmount, INTERVALS[recurIntervalIdx]);
+                sendRecurringCreate(recurTarget, recurAmount, recurIntervalMins * 1200);
                 recurTarget = "";
                 recurAmountField.setText("");
                 recurAmount = 0;

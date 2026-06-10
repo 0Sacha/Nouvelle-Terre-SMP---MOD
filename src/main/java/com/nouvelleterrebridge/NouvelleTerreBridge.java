@@ -99,6 +99,10 @@ public class NouvelleTerreBridge implements ModInitializer {
                     String target = buf.readString();
                     int amount = buf.readInt();
                     String sender = player.getName().getString();
+                    if (sender.equalsIgnoreCase(target)) {
+                        result = "§cVous ne pouvez pas vous envoyer des fonds.";
+                        break;
+                    }
                     boolean ok = LocalEconomy.getInstance().transfer(sender, target, amount);
                     if (ok) {
                         result = "§a✅ " + amount + " ◆ envoyés à §f" + target + "§a.";
@@ -116,10 +120,14 @@ public class NouvelleTerreBridge implements ModInitializer {
                     int amount = buf.readInt();
                     int intervalTicks = buf.readInt();
                     String from = player.getName().getString();
-                    if (!LocalEconomy.getInstance().estConnu(to)) {
+                    if (from.equalsIgnoreCase(to)) {
+                        result = "§cVous ne pouvez pas vous faire de virement récurrent.";
+                    } else if (!LocalEconomy.getInstance().estConnu(to)) {
                         result = "§cJoueur inconnu.";
                     } else if (amount <= 0) {
                         result = "§cMontant invalide.";
+                    } else if (intervalTicks < 1200) {
+                        result = "§cIntervalle minimum : 1 minute.";
                     } else {
                         RecurringTransferManager.getInstance().add(from, to, amount, intervalTicks);
                         result = "§a✅ Virement récurrent créé vers §f" + to + "§a !";
