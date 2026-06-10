@@ -1169,88 +1169,150 @@ public class HdvScreen extends Screen {
         String me = client != null && client.player != null ? client.player.getName().getString() : "";
         int px = winX + PAD;
         int pw = winW - PAD * 2;
-        int colW = (pw - 12) / 2;
-        int leftX = px;
-        int rightX = px + colW + 12;
-        int pyBase = winY + TOP_H + PAD;
+        int py = winY + TOP_H + PAD;
 
-        ctx.drawText(textRenderer, "PROFIL — " + me.toUpperCase(), px, pyBase, C_DIM, false);
-
-        int leftY  = pyBase + textRenderer.fontHeight + 12;
-        int rightY = leftY;
-
-        long elapsed = System.currentTimeMillis() - screenOpenTime;
-        int elapsedTicks = (int) (elapsed / 50);
-
-        // ── Balance card (left) ───────────────────────────────────────────────
-        {
-            int h = 62;
-            ctx.fill(leftX, leftY, leftX + colW, leftY + h, C_PANEL);
-            ctx.fill(leftX, leftY, leftX + colW, leftY + 1, C_BORDER);
-            ctx.fill(leftX, leftY + h - 1, leftX + colW, leftY + h, C_BORDER);
-            ctx.fill(leftX, leftY, leftX + 1, leftY + h, C_BORDER);
-            ctx.fill(leftX + colW - 1, leftY, leftX + colW, leftY + h, C_BORDER);
-            ctx.fill(leftX + 1, leftY + 1, leftX + 3, leftY + h - 1, C_GOLD);
-            ctx.drawText(textRenderer, "SOLDE", leftX + 12, leftY + 10, C_DIM, false);
-            ctx.drawCenteredTextWithShadow(textRenderer, balance + " ◆", leftX + colW / 2, leftY + 28, C_GOLD);
-            ctx.drawText(textRenderer, me, leftX + 12, leftY + 47, C_MID, false);
-            leftY += h + 8;
-        }
-
-        // ── Revenus + bouton réclamer (left) ─────────────────────────────────
+        long elapsed      = System.currentTimeMillis() - screenOpenTime;
+        int elapsedTicks  = (int) (elapsed / 50);
+        int rewardTicks   = Math.max(0, ticksUntilReward - elapsedTicks);
+        int salaryTicks   = Math.max(0, ticksUntilSalary - elapsedTicks);
+        profileSalaryReady     = (salaryTicks == 0);
         profileClaimSalaryBtnY = -1;
-        profileSalaryReady     = false;
-        {
-            int rewardTicks = Math.max(0, ticksUntilReward - elapsedTicks);
-            int salaryTicks = Math.max(0, ticksUntilSalary - elapsedTicks);
-            profileSalaryReady = (salaryTicks == 0);
-            int h = 118;
-            ctx.fill(leftX, leftY, leftX + colW, leftY + h, C_PANEL);
-            ctx.fill(leftX, leftY, leftX + colW, leftY + 1, C_BORDER);
-            ctx.fill(leftX, leftY + h - 1, leftX + colW, leftY + h, C_BORDER);
-            ctx.fill(leftX, leftY, leftX + 1, leftY + h, C_BORDER);
-            ctx.fill(leftX + colW - 1, leftY, leftX + colW, leftY + h, C_BORDER);
-            ctx.drawText(textRenderer, "REVENUS", leftX + 10, leftY + 10, C_DIM, false);
-            ctx.drawText(textRenderer, "Récompense  +5 ◆ / 30 min", leftX + 10, leftY + 28, C_MID, false);
-            ctx.drawText(textRenderer, "Prochain : " + ticksToTime(rewardTicks), leftX + 10, leftY + 41, C_GOLD, false);
-            ctx.drawText(textRenderer, "Salaire     +8 ◆ / heure",   leftX + 10, leftY + 60, C_MID, false);
-            String salCountdown = profileSalaryReady ? "Disponible !" : "Prochain : " + ticksToTime(salaryTicks);
-            ctx.drawText(textRenderer, salCountdown, leftX + 10, leftY + 73, profileSalaryReady ? C_GREEN : C_GOLD, false);
+        profileTransferBtnY    = -1;
+        profileSalaryBtnY      = -1;
+        profileSalaryCheckStartY = -1;
 
-            int btnY = leftY + h - 30;
-            profileClaimSalaryBtnY = btnY;
-            boolean btnHov = profileSalaryReady && mx >= leftX + 10 && mx < leftX + colW - 10 && my >= btnY && my < btnY + 22;
-            ctx.fill(leftX + 10, btnY, leftX + colW - 10, btnY + 22,
-                profileSalaryReady ? (btnHov ? 0xFF1A8050 : C_GREEN) : C_BORDER);
-            ctx.drawCenteredTextWithShadow(textRenderer,
-                profileSalaryReady ? "Réclamer mon salaire" : "Salaire pas encore disponible",
-                leftX + colW / 2, btnY + 7, profileSalaryReady ? C_WHITE : C_DARK);
-            leftY += h + 8;
+        // ── Header ────────────────────────────────────────────────────────────
+        int headerH = 46;
+        ctx.fill(px, py, px + pw, py + headerH, C_PANEL);
+        ctx.fill(px, py, px + pw, py + 1, C_BORDER);
+        ctx.fill(px, py + headerH - 1, px + pw, py + headerH, C_BORDER);
+        ctx.fill(px, py, px + 1, py + headerH, C_BORDER);
+        ctx.fill(px + pw - 1, py, px + pw, py + headerH, C_BORDER);
+        ctx.fill(px + 1, py + 1, px + 3, py + headerH - 1, C_GOLD);
+        ctx.drawText(textRenderer, me, px + 12, py + 10, C_WHITE, false);
+        ctx.drawText(textRenderer, "Nouvelle Terre SMP", px + 12, py + 24, C_DIM, false);
+        String balStr = balance + " ◆";
+        ctx.drawText(textRenderer, balStr,
+            px + pw - textRenderer.getWidth(balStr) - 12,
+            py + (headerH - textRenderer.fontHeight) / 2, C_GOLD, false);
+        py += headerH + GAP;
+
+        // ── 3 cards ───────────────────────────────────────────────────────────
+        int cardH = 128;
+        int cardW = (pw - GAP * 2) / 3;
+        int c1x   = px;
+        int c2x   = px + cardW + GAP;
+        int c3x   = px + (cardW + GAP) * 2;
+        int barW  = cardW - 20;
+
+        // Card 1 — Récompense (automatique)
+        renderInfoCard(ctx, c1x, py, cardW, cardH, C_GOLD);
+        {
+            int fy = py + 12;
+            ctx.drawText(textRenderer, "RECOMPENSE", c1x + 10, fy, C_DIM, false);
+            fy += textRenderer.fontHeight + 8;
+            ctx.drawText(textRenderer, "+5 ◆  par 30 min de jeu", c1x + 10, fy, C_MID, false);
+            fy += textRenderer.fontHeight + 10;
+            ctx.fill(c1x + 10, fy, c1x + 10 + barW, fy + 5, C_BORDER);
+            int prog = (int)(barW * Math.max(0f, Math.min(1f, 1f - rewardTicks / 36000f)));
+            ctx.fill(c1x + 10, fy, c1x + 10 + prog, fy + 5, C_GOLD);
+            fy += 12;
+            boolean rewardReady = (rewardTicks == 0);
+            ctx.drawText(textRenderer,
+                rewardReady ? "Recompense en attente !" : "Dans " + ticksToTime(rewardTicks),
+                c1x + 10, fy, rewardReady ? C_GOLD : C_MID, false);
+            fy += textRenderer.fontHeight + 8;
+            ctx.drawText(textRenderer, "Versement automatique", c1x + 10, fy, C_DIM, false);
         }
 
-        // ── Admin salary section (left, isOp only) ────────────────────────────
-        profileSalaryBtnY        = -1;
-        profileSalaryCheckStartY = -1;
-        if (isOp && !onlinePlayers.isEmpty()) {
-            int rows  = (int) Math.ceil(onlinePlayers.size() / 4.0);
-            int checkW = (colW - 20) / 4;
-            int h = 28 + rows * 24 + 30;
-            ctx.fill(leftX, leftY, leftX + colW, leftY + h, C_SURFACE);
-            ctx.fill(leftX, leftY, leftX + colW, leftY + 1, C_BORDER);
-            ctx.fill(leftX, leftY + h - 1, leftX + colW, leftY + h, C_BORDER);
-            ctx.fill(leftX, leftY, leftX + 1, leftY + h, C_BORDER);
-            ctx.fill(leftX + colW - 1, leftY, leftX + colW, leftY + h, C_BORDER);
-            ctx.fill(leftX + 1, leftY + 1, leftX + 3, leftY + h - 1, C_RED);
-            ctx.drawText(textRenderer, "ADMIN — DISTRIBUER SALAIRE", leftX + 12, leftY + 10, C_DIM, false);
+        // Card 2 — Salaire (manuel)
+        renderInfoCard(ctx, c2x, py, cardW, cardH, profileSalaryReady ? C_GREEN : C_GOLD);
+        {
+            int fy = py + 12;
+            ctx.drawText(textRenderer, "SALAIRE", c2x + 10, fy, C_DIM, false);
+            fy += textRenderer.fontHeight + 8;
+            ctx.drawText(textRenderer, "+8 ◆  par heure jouee", c2x + 10, fy, C_MID, false);
+            fy += textRenderer.fontHeight + 10;
+            ctx.fill(c2x + 10, fy, c2x + 10 + barW, fy + 5, C_BORDER);
+            int prog2 = (int)(barW * Math.max(0f, Math.min(1f, 1f - salaryTicks / 72000f)));
+            ctx.fill(c2x + 10, fy, c2x + 10 + prog2, fy + 5, profileSalaryReady ? C_GREEN : C_GOLD);
+            fy += 12;
+            ctx.drawText(textRenderer,
+                profileSalaryReady ? "Disponible !" : "Dans " + ticksToTime(salaryTicks),
+                c2x + 10, fy, profileSalaryReady ? C_GREEN : C_MID, false);
+            int claimBtnY = py + cardH - 32;
+            profileClaimSalaryBtnY = claimBtnY;
+            boolean claimHov = profileSalaryReady
+                && mx >= c2x + 10 && mx < c2x + cardW - 10
+                && my >= claimBtnY && my < claimBtnY + 22;
+            ctx.fill(c2x + 10, claimBtnY, c2x + cardW - 10, claimBtnY + 22,
+                profileSalaryReady ? (claimHov ? 0xFF1A8050 : C_GREEN) : C_DARK);
+            ctx.drawCenteredTextWithShadow(textRenderer,
+                profileSalaryReady ? "Reclamer le salaire" : "Pas encore disponible",
+                c2x + cardW / 2, claimBtnY + 7,
+                profileSalaryReady ? C_WHITE : C_DIM);
+        }
 
-            int checkStartY = leftY + 28;
+        // Card 3 — Virement bancaire
+        renderInfoCard(ctx, c3x, py, cardW, cardH, C_GOLD);
+        {
+            int fy = py + 12;
+            ctx.drawText(textRenderer, "VIREMENT", c3x + 10, fy, C_DIM, false);
+            fy += textRenderer.fontHeight + 8;
+            int dropW = cardW - 20;
+            profileDropX = c3x + 10;
+            profileDropY = fy;
+            profileDropW = dropW;
+            boolean dropHov = !playerDropOpen
+                && mx >= profileDropX && mx < profileDropX + dropW
+                && my >= fy && my < fy + 20;
+            ctx.fill(profileDropX - 1, fy - 1, profileDropX + dropW + 1, fy + 21, C_BORDER);
+            ctx.fill(profileDropX, fy, profileDropX + dropW, fy + 20,
+                playerDropOpen ? C_HOVER : (dropHov ? C_HOVER : C_DARK));
+            String dropLabel = transferTarget.isEmpty() ? "Destinataire..." : transferTarget;
+            ctx.drawText(textRenderer, truncate(dropLabel, dropW - 20), profileDropX + 6, fy + 6,
+                transferTarget.isEmpty() ? C_DIM : C_WHITE, false);
+            ctx.drawText(textRenderer, playerDropOpen ? "▲" : "▼",
+                profileDropX + dropW - 14, fy + 6, C_DIM, false);
+            fy += 24;
+            transferAmountField.setX(c3x + 10);
+            transferAmountField.setY(fy);
+            transferAmountField.setWidth(cardW - 20);
+            transferAmountField.render(ctx, mx, my, 0);
+            fy += 26;
+            boolean canTransfer = !transferTarget.isEmpty() && transferAmount > 0 && transferAmount <= balance;
+            boolean sendHov = canTransfer
+                && mx >= c3x + 10 && mx < c3x + cardW - 10
+                && my >= fy && my < fy + 22;
+            profileTransferBtnY = fy;
+            ctx.fill(c3x + 10, fy, c3x + cardW - 10, fy + 22,
+                canTransfer ? (sendHov ? 0xFF1A8050 : C_GREEN) : C_DARK);
+            ctx.drawCenteredTextWithShadow(textRenderer, "Envoyer",
+                c3x + cardW / 2, fy + 7, canTransfer ? C_WHITE : C_DIM);
+        }
+
+        py += cardH + GAP;
+
+        // ── Admin section ─────────────────────────────────────────────────────
+        if (isOp && !onlinePlayers.isEmpty()) {
+            int checkCols = 5;
+            int rows  = (int) Math.ceil(onlinePlayers.size() / (double) checkCols);
+            int checkW = (pw - 20) / checkCols;
+            int adminH = 28 + rows * 24 + 30;
+            ctx.fill(px, py, px + pw, py + adminH, C_SURFACE);
+            ctx.fill(px, py, px + pw, py + 1, C_BORDER);
+            ctx.fill(px, py + adminH - 1, px + pw, py + adminH, C_BORDER);
+            ctx.fill(px, py, px + 1, py + adminH, C_BORDER);
+            ctx.fill(px + pw - 1, py, px + pw, py + adminH, C_BORDER);
+            ctx.fill(px + 1, py + 1, px + 3, py + adminH - 1, C_RED);
+            ctx.drawText(textRenderer, "ADMIN — DISTRIBUER SALAIRE", px + 12, py + 10, C_DIM, false);
+            int checkStartY = py + 28;
             profileSalaryCheckStartY = checkStartY;
             for (int i = 0; i < onlinePlayers.size(); i++) {
-                String p  = onlinePlayers.get(i);
-                int col   = i % 4;
-                int row   = i / 4;
-                int cx    = leftX + 10 + col * checkW;
-                int cy    = checkStartY + row * 24;
+                String p = onlinePlayers.get(i);
+                int col  = i % checkCols, row = i / checkCols;
+                int cx   = px + 10 + col * checkW;
+                int cy   = checkStartY + row * 24;
                 boolean checked = selectedForSalary.contains(p);
                 boolean chHov   = mx >= cx && mx < cx + checkW - 2 && my >= cy && my < cy + 18;
                 ctx.fill(cx, cy + 3, cx + 12, cy + 15, checked ? C_GREEN : (chHov ? C_HOVER : C_DARK));
@@ -1258,80 +1320,29 @@ public class HdvScreen extends Screen {
                 ctx.fill(cx, cy + 14, cx + 12, cy + 15, C_BORDER);
                 ctx.fill(cx, cy + 3, cx + 1, cy + 15, C_BORDER);
                 ctx.fill(cx + 11, cy + 3, cx + 12, cy + 15, C_BORDER);
-                if (checked) ctx.drawText(textRenderer, "✓", cx + 2, cy + 4, C_WHITE, false);
-                ctx.drawText(textRenderer, truncate(p, checkW - 18), cx + 16, cy + 5, chHov ? C_WHITE : C_MID, false);
+                if (checked) ctx.drawText(textRenderer, "v", cx + 2, cy + 4, C_WHITE, false);
+                ctx.drawText(textRenderer, truncate(p, checkW - 18), cx + 16, cy + 5,
+                    chHov ? C_WHITE : C_MID, false);
             }
-
-            int btnY = leftY + h - 26;
+            int btnY = py + adminH - 26;
             profileSalaryBtnY = btnY;
             boolean anySelected = !selectedForSalary.isEmpty();
-            boolean btnHov = anySelected && mx >= leftX + 10 && mx < leftX + colW - 10 && my >= btnY && my < btnY + 20;
-            ctx.fill(leftX + 10, btnY, leftX + colW - 10, btnY + 20,
+            boolean btnHov = anySelected && mx >= px + 10 && mx < px + pw - 10 && my >= btnY && my < btnY + 20;
+            ctx.fill(px + 10, btnY, px + pw - 10, btnY + 20,
                 anySelected ? (btnHov ? 0xFF1A8050 : C_GREEN) : C_BORDER);
             ctx.drawCenteredTextWithShadow(textRenderer,
-                anySelected ? "Verser à " + selectedForSalary.size() + " joueur(s)" : "Sélectionner des joueurs",
-                leftX + colW / 2, btnY + 6, anySelected ? C_WHITE : C_DARK);
-            leftY += h + 8;
-        }
-
-        // ── Virement bancaire form (right) ────────────────────────────────────
-        {
-            int fW = colW;
-            int fH = 160;
-            ctx.fill(rightX, rightY, rightX + fW, rightY + fH, C_SURFACE);
-            ctx.fill(rightX, rightY, rightX + fW, rightY + 1, C_BORDER);
-            ctx.fill(rightX, rightY + fH - 1, rightX + fW, rightY + fH, C_BORDER);
-            ctx.fill(rightX, rightY, rightX + 1, rightY + fH, C_BORDER);
-            ctx.fill(rightX + fW - 1, rightY, rightX + fW, rightY + fH, C_BORDER);
-
-            int fy = rightY + 12;
-            ctx.drawText(textRenderer, "VIREMENT BANCAIRE", rightX + 10, fy, C_DIM, false);
-            fy += textRenderer.fontHeight + 10;
-
-            ctx.drawText(textRenderer, "DESTINATAIRE", rightX + 10, fy, C_DIM, false);
-            fy += textRenderer.fontHeight + 4;
-
-            // Player dropdown button
-            int dropW = fW - 20;
-            profileDropX = rightX + 10;
-            profileDropY = fy;
-            profileDropW = dropW;
-            boolean dropHov = !playerDropOpen && mx >= profileDropX && mx < profileDropX + dropW && my >= fy && my < fy + 20;
-            ctx.fill(profileDropX - 1, fy - 1, profileDropX + dropW + 1, fy + 21, C_BORDER);
-            ctx.fill(profileDropX, fy, profileDropX + dropW, fy + 20,
-                playerDropOpen ? C_HOVER : (dropHov ? C_HOVER : C_DARK));
-            String dropLabel = transferTarget.isEmpty() ? "Sélectionner un joueur..." : transferTarget;
-            ctx.drawText(textRenderer, truncate(dropLabel, dropW - 20), profileDropX + 6, fy + 6,
-                transferTarget.isEmpty() ? C_DIM : C_WHITE, false);
-            ctx.drawText(textRenderer, playerDropOpen ? "▲" : "▼", profileDropX + dropW - 14, fy + 6, C_DIM, false);
-            fy += 26;
-
-            ctx.drawText(textRenderer, "MONTANT (◆)", rightX + 10, fy, C_DIM, false);
-            fy += textRenderer.fontHeight + 4;
-            transferAmountField.setX(rightX + 10);
-            transferAmountField.setY(fy);
-            transferAmountField.setWidth(fW - 20);
-            transferAmountField.render(ctx, mx, my, 0);
-            fy += 28;
-
-            boolean canTransfer = !transferTarget.isEmpty() && transferAmount > 0 && transferAmount <= balance;
-            boolean sendHov = canTransfer && mx >= rightX + 10 && mx < rightX + fW - 10 && my >= fy && my < fy + 22;
-            profileTransferBtnY = fy;
-            ctx.fill(rightX + 10, fy, rightX + fW - 10, fy + 22,
-                canTransfer ? (sendHov ? 0xFF1A8050 : C_GREEN) : C_BORDER);
-            ctx.drawCenteredTextWithShadow(textRenderer, "Envoyer",
-                rightX + fW / 2, fy + 7, canTransfer ? C_WHITE : C_DARK);
+                anySelected ? "Verser a " + selectedForSalary.size() + " joueur(s)" : "Selectionner des joueurs",
+                px + pw / 2, btnY + 6, anySelected ? C_WHITE : C_DARK);
+            py += adminH + GAP;
         }
 
         // ── Transactions ──────────────────────────────────────────────────────
-        int listStartY = Math.max(leftY, rightY + 160 + 8) + 14;
-
-        ctx.drawText(textRenderer, "TRANSACTIONS RECENTES", px, listStartY - textRenderer.fontHeight - 6, C_DIM, false);
-
-        int rowH = 24;
+        ctx.drawText(textRenderer, "TRANSACTIONS RECENTES", px, py + 4, C_DIM, false);
+        int listStartY = py + textRenderer.fontHeight + 10;
+        int rowH = 26;
         ctx.enableScissor(px, listStartY, px + pw, winY + winH - PAD);
         if (transactions.isEmpty()) {
-            ctx.drawCenteredTextWithShadow(textRenderer, "Aucune transaction récente",
+            ctx.drawCenteredTextWithShadow(textRenderer, "Aucune transaction recente",
                 px + pw / 2, listStartY + 16, C_DIM);
         }
         for (int i = 0; i < transactions.size(); i++) {
@@ -1342,34 +1353,40 @@ public class HdvScreen extends Screen {
             ctx.fill(px, ry, px + pw, ry + rowH, hov ? C_HOVER : C_PANEL);
             ctx.fill(px, ry, px + pw, ry + 1, C_BORDER);
             ctx.fill(px, ry + rowH - 1, px + pw, ry + rowH, C_BORDER);
-
             int accent = switch (tx.type()) {
                 case 0, 3 -> C_RED;
                 case 1, 2 -> C_GREEN;
                 default   -> C_GOLD;
             };
             ctx.fill(px + 1, ry + 1, px + 3, ry + rowH - 1, accent);
-
             String typeLabel = switch (tx.type()) {
                 case 0 -> "Achat";
                 case 1 -> "Vente";
-                case 2 -> "Reçu";
-                case 3 -> "Envoyé";
-                default -> "Récompense";
+                case 2 -> "Recu";
+                case 3 -> "Envoye";
+                default -> "Recompense";
             };
             int midY = ry + (rowH - textRenderer.fontHeight) / 2;
             ctx.drawText(textRenderer, typeLabel, px + 8, midY, C_MID, false);
             ctx.drawText(textRenderer, truncate(tx.label(), pw - 160), px + 72, midY, C_WHITE, false);
-
-            boolean isOut = tx.type() == 0 || tx.type() == 3;
+            boolean isOut  = tx.type() == 0 || tx.type() == 3;
             String amtStr  = (isOut ? "-" : "+") + tx.amount() + " ◆";
             int amtColor   = isOut ? C_RED : C_GREEN;
             String timeStr = formatAgo(System.currentTimeMillis() - tx.timestamp());
-            int timeW = textRenderer.getWidth(timeStr);
+            int timeW      = textRenderer.getWidth(timeStr);
             ctx.drawText(textRenderer, timeStr, px + pw - timeW - 4, midY, C_DIM, false);
-            ctx.drawText(textRenderer, amtStr,  px + pw - timeW - textRenderer.getWidth(amtStr) - 14, midY, amtColor, false);
+            ctx.drawText(textRenderer, amtStr, px + pw - timeW - textRenderer.getWidth(amtStr) - 14, midY, amtColor, false);
         }
         ctx.disableScissor();
+    }
+
+    private void renderInfoCard(DrawContext ctx, int x, int y, int w, int h, int accentColor) {
+        ctx.fill(x, y, x + w, y + h, C_PANEL);
+        ctx.fill(x, y, x + w, y + 1, C_BORDER);
+        ctx.fill(x, y + h - 1, x + w, y + h, C_BORDER);
+        ctx.fill(x, y, x + 1, y + h, C_BORDER);
+        ctx.fill(x + w - 1, y, x + w, y + h, C_BORDER);
+        ctx.fill(x + 1, y + 1, x + 3, y + h - 1, accentColor);
     }
 
     private void renderPlayerDropdown(DrawContext ctx, int mx, int my) {
@@ -1419,13 +1436,13 @@ public class HdvScreen extends Screen {
     }
 
     private void handleProfileClick(int mx, int my) {
-        int px   = winX + PAD;
-        int pw   = winW - PAD * 2;
-        int colW = (pw - 12) / 2;
-        int leftX  = px;
-        int rightX = px + colW + 12;
+        int px    = winX + PAD;
+        int pw    = winW - PAD * 2;
+        int cardW = (pw - GAP * 2) / 3;
+        int c2x   = px + cardW + GAP;
+        int c3x   = px + (cardW + GAP) * 2;
 
-        // Dropdown button
+        // Dropdown button (card 3)
         if (profileDropX >= 0 && mx >= profileDropX && mx < profileDropX + profileDropW
                 && my >= profileDropY && my < profileDropY + 20) {
             playerDropOpen = !playerDropOpen;
@@ -1433,20 +1450,19 @@ public class HdvScreen extends Screen {
             return;
         }
 
-        // Claim salary button
+        // Claim salary (card 2)
         if (profileClaimSalaryBtnY >= 0 && profileSalaryReady) {
-            int salColW = (winW - PAD * 2 - 12) / 2;
-            if (mx >= winX + PAD + 10 && mx < winX + PAD + salColW - 10
+            if (mx >= c2x + 10 && mx < c2x + cardW - 10
                     && my >= profileClaimSalaryBtnY && my < profileClaimSalaryBtnY + 22) {
                 sendClaimSalary();
                 return;
             }
         }
 
-        // Transfer "Envoyer" button
+        // Transfer send (card 3)
         if (profileTransferBtnY >= 0) {
             boolean canTransfer = !transferTarget.isEmpty() && transferAmount > 0 && transferAmount <= balance;
-            if (canTransfer && mx >= rightX + 10 && mx < rightX + colW - 10
+            if (canTransfer && mx >= c3x + 10 && mx < c3x + cardW - 10
                     && my >= profileTransferBtnY && my < profileTransferBtnY + 22) {
                 sendTransfer(transferTarget, transferAmount);
                 transferTarget = "";
@@ -1457,15 +1473,15 @@ public class HdvScreen extends Screen {
             }
         }
 
-        // Admin salary checkboxes
+        // Admin checkboxes
         if (isOp && profileSalaryCheckStartY >= 0 && !onlinePlayers.isEmpty()) {
-            int checkW = (colW - 20) / 4;
+            int checkCols = 5;
+            int checkW = (pw - 20) / checkCols;
             for (int i = 0; i < onlinePlayers.size(); i++) {
-                String p  = onlinePlayers.get(i);
-                int col   = i % 4;
-                int row   = i / 4;
-                int cx    = leftX + 10 + col * checkW;
-                int cy    = profileSalaryCheckStartY + row * 24;
+                String p = onlinePlayers.get(i);
+                int col  = i % checkCols, row = i / checkCols;
+                int cx   = px + 10 + col * checkW;
+                int cy   = profileSalaryCheckStartY + row * 24;
                 if (mx >= cx && mx < cx + checkW - 2 && my >= cy && my < cy + 18) {
                     if (selectedForSalary.contains(p)) selectedForSalary.remove(p);
                     else selectedForSalary.add(p);
@@ -1473,7 +1489,7 @@ public class HdvScreen extends Screen {
                 }
             }
             if (profileSalaryBtnY >= 0 && !selectedForSalary.isEmpty()
-                    && mx >= leftX + 10 && mx < leftX + colW - 10
+                    && mx >= px + 10 && mx < px + pw - 10
                     && my >= profileSalaryBtnY && my < profileSalaryBtnY + 20) {
                 sendAdminSalary(new ArrayList<>(selectedForSalary));
                 selectedForSalary.clear();
