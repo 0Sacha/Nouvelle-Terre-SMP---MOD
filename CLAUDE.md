@@ -135,7 +135,7 @@ online[]      : joueurs actuellement connectés (pour le sélecteur admin salair
 | 💰 Vendre | Inventaire joueur lu client-side → formulaire qté/prix → `sellByItemId()` serveur |
 | 🛒 Mon Shop | Mes annonces avec bouton Retirer (strip bas = rouge au hover) |
 | 👥 Boutiques | Liste vendeurs → détail boutique → achat |
-| ★ Profil | Accessible via chip solde (haut droite). Layout 2 colonnes : gauche = cards (solde, revenus+claim, admin salary si op) ; droite = virement (dropdown joueur). Bas = transactions récentes. |
+| ★ Profil | Accessible via chip solde (haut droite). Header strip (nom + solde) + 3 cards : Récompense (barre prog + auto) \| Salaire (barre prog + claim manuel) \| Virement (dropdown + montant + envoyer). Admin pleine largeur si op. Transactions au bas. |
 
 ### Couleurs (HdvScreen)
 ```java
@@ -169,11 +169,13 @@ C_DIM     = 0xFF565C6A   // labels, placeholders
 - TransactionLog : in-memory uniquement (50 entries / joueur), pas persisté sur disque — reset au restart serveur
 - Countdown salary/reward dans l'onglet Profil : calculé en soustrayant (now - screenOpenTime) / 50ms des ticks initiaux reçus du serveur — live sans round-trip réseau
 - 💎 → ◆ (U+25C6) partout : les emoji BMP-ext sont hors BMP et Minecraft ne les rend pas
-- **Chip solde** (haut droite, à côté du pseudo) : cliquable → ouvre onglet Profil. Texte sans shadow ni bold (`drawText(..., false)`)
-- **Salaire manuel** : `PlaytimeTracker` ne paie plus automatiquement. Le timer monte jusqu'à `TICKS_SALAIRE` (72 000 ticks = 1h) puis s'arrête. Le joueur clique "Réclamer mon salaire" → `ACTION_CLAIM_SALARY` → `tryClaimSalary()` atomique (check+reset) → `addShards()`. Bouton vert si disponible, grisé sinon.
-- **Dropdown joueur** (virement) : pas de `TextFieldWidget`, seulement un dropdown rendu custom. Rendu APRÈS `super.render()` pour passer au-dessus des widgets. Quand ouvert : overlay `0x55000000` sur toute la zone profil + bordure or + ombre sur la liste déroulante.
-- **Admin salary** : section visible uniquement si `isOp`. Liste de checkboxes des joueurs en ligne (`onlinePlayers[]`), multi-select via `Set<String> selectedForSalary`, bouton "Verser le salaire" → `ACTION_ADMIN_SALARY` avec liste des sélectionnés.
-- **Positions UI calculées dans render()** : `profileDropX/Y/W`, `profileTransferBtnY`, `profileClaimSalaryBtnY`, `profileSalaryBtnY`, `profileSalaryCheckStartY` sont des champs d'instance mis à jour à chaque frame et relus dans les click handlers — évite de dupliquer le calcul de layout.
+- **Chip solde** (haut droite) : cliquable → ouvre onglet Profil. Texte sans shadow ni bold (`drawText(..., false)`)
+- **Profil — layout** : header strip pleine largeur (nom + solde) + 3 cards égales (`cardW = (pw - GAP*2) / 3`) : Récompense | Salaire | Virement. Helper `renderInfoCard()` dessine le fond + bordure + accent coloré gauche. Admin section pleine largeur si `isOp`. Transactions scrollables en bas.
+- **Barres de progression** dans les cards revenus : `1f - ticks / totalTicks` → 0 = vide (pas commencé), 1 = plein (prêt).
+- **Salaire manuel** : `PlaytimeTracker` ne paie plus automatiquement. Timer caps à `TICKS_SALAIRE` (72 000 = 1h). Bouton "Réclamer" (card 2) → `ACTION_CLAIM_SALARY` → `tryClaimSalary()` atomique → `addShards()`. Vert si dispo, grisé sinon.
+- **Dropdown joueur** (virement, card 3) : pas de `TextFieldWidget`, dropdown custom rendu APRÈS `super.render()`. Quand ouvert : overlay `0x55000000` + bordure or + ombre.
+- **Admin salary** : 5 colonnes de checkboxes `onlinePlayers[]`, multi-select `Set<String> selectedForSalary`, bouton "Verser" → `ACTION_ADMIN_SALARY`.
+- **Positions UI calculées dans render()** : `profileDropX/Y/W`, `profileTransferBtnY`, `profileClaimSalaryBtnY`, `profileSalaryBtnY`, `profileSalaryCheckStartY` — champs d'instance relus dans les click handlers.
 
 ## UI — Constantes visuelles (EconomieCommand.java)
 ```java
