@@ -287,8 +287,7 @@ public class HdvScreen extends Screen {
         renderToast(ctx);
         super.render(ctx, mx, my, delta);
         if (playerDropOpen && activeTab == Tab.PROFILE) {
-            // Dim the profile area below the dropdown button to separate it visually
-            ctx.fill(winX, winY + TOP_H, winX + winW, winY + winH, 0x55000000);
+            ctx.fill(winX, winY + TOP_H, winX + winW, winY + winH, 0xAA000000);
             renderPlayerDropdown(ctx, mx, my);
         }
     }
@@ -1275,20 +1274,25 @@ public class HdvScreen extends Screen {
             ctx.drawText(textRenderer, playerDropOpen ? "▲" : "▼",
                 profileDropX + dropW - 14, fy + 6, C_DIM, false);
             fy += 24;
-            transferAmountField.setX(c3x + 10);
-            transferAmountField.setY(fy);
-            transferAmountField.setWidth(cardW - 20);
-            transferAmountField.render(ctx, mx, my, 0);
-            fy += 26;
-            boolean canTransfer = !transferTarget.isEmpty() && transferAmount > 0 && transferAmount <= balance;
-            boolean sendHov = canTransfer
-                && mx >= c3x + 10 && mx < c3x + cardW - 10
-                && my >= fy && my < fy + 22;
-            profileTransferBtnY = fy;
-            ctx.fill(c3x + 10, fy, c3x + cardW - 10, fy + 22,
-                canTransfer ? (sendHov ? 0xFF1A8050 : C_GREEN) : C_DARK);
-            ctx.drawCenteredTextWithShadow(textRenderer, "Envoyer",
-                c3x + cardW / 2, fy + 7, canTransfer ? C_WHITE : C_DIM);
+            if (playerDropOpen) {
+                // Masquer le champ hors-écran pour que super.render() ne le réaffiche pas sous le dropdown
+                transferAmountField.setY(-200);
+            } else {
+                transferAmountField.setX(c3x + 10);
+                transferAmountField.setY(fy);
+                transferAmountField.setWidth(cardW - 20);
+                transferAmountField.render(ctx, mx, my, 0);
+                fy += 26;
+                boolean canTransfer = !transferTarget.isEmpty() && transferAmount > 0 && transferAmount <= balance;
+                boolean sendHov = canTransfer
+                    && mx >= c3x + 10 && mx < c3x + cardW - 10
+                    && my >= fy && my < fy + 22;
+                profileTransferBtnY = fy;
+                ctx.fill(c3x + 10, fy, c3x + cardW - 10, fy + 22,
+                    canTransfer ? (sendHov ? 0xFF1A8050 : C_GREEN) : C_DARK);
+                ctx.drawCenteredTextWithShadow(textRenderer, "Envoyer",
+                    c3x + cardW / 2, fy + 7, canTransfer ? C_WHITE : C_DIM);
+            }
         }
 
         py += cardH + GAP;
