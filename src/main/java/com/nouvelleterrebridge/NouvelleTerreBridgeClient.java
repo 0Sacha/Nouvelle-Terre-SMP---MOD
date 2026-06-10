@@ -1,6 +1,8 @@
 package com.nouvelleterrebridge;
 
+import com.nouvelleterrebridge.client.BankScreen;
 import com.nouvelleterrebridge.client.HdvScreen;
+import com.nouvelleterrebridge.network.BankNetworking;
 import com.nouvelleterrebridge.network.HdvNetworking;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.api.EnvType;
@@ -55,6 +57,35 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             }
         });
 
+        // ── Bank ──────────────────────────────────────────────────────────────
+
+        ClientPlayNetworking.registerGlobalReceiver(BankNetworking.BANK_OPEN, (client, handler, buf, responseSender) -> {
+            BankScreen screen = readBankPacket(buf);
+            client.execute(() -> client.setScreen(screen));
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(BankNetworking.BANK_RESULT, (client, handler, buf, responseSender) -> {
+            boolean ok      = buf.readBoolean();
+            String  message = buf.readString();
+            int balance     = buf.readInt();
+            int ticksReward = buf.readInt();
+            List<BankScreen.TxData>           txs      = readBankTxs(buf);
+            int totalShards  = buf.readInt();
+            int playerCount  = buf.readInt();
+            List<BankScreen.LeaderboardEntry> lb       = readLeaderboard(buf);
+            List<BankScreen.LoanData>         asLender = readLoans(buf);
+            List<BankScreen.LoanData>         asBorrow = readLoans(buf);
+            List<String>                      known    = readStringList(buf);
+            client.execute(() -> {
+                if (client.currentScreen instanceof BankScreen screen) {
+                    screen.handleResult(ok, message, balance, ticksReward, txs,
+                        totalShards, playerCount, lb, asLender, asBorrow, known);
+                }
+            });
+        });
+
+        // ── HDV résultat ─────────────────────────────────────────────────────
+
         // S2C : résultat d'une action
         ClientPlayNetworking.registerGlobalReceiver(HdvNetworking.HDV_RESULT, (client, handler, buf, responseSender) -> {
             boolean ok      = buf.readBoolean();
@@ -101,6 +132,48 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
         List<HdvScreen.RecurringData> list = new ArrayList<>(count);
         for (int i = 0; i < count; i++)
             list.add(new HdvScreen.RecurringData(buf.readInt(), buf.readString(), buf.readInt(), buf.readInt(), buf.readInt()));
+        return list;
+    }
+
+    // ── Lecture paquets Bank ──────────────────────────────────────────────────
+
+    private static BankScreen readBankPacket(PacketByteBuf buf) {
+        int balance     = buf.readInt();
+        int ticksReward = buf.readInt();
+        List<BankScreen.TxData>           txs      = readBankTxs(buf);
+        int totalShards  = buf.readInt();
+        int playerCount  = buf.readInt();
+        List<BankScreen.LeaderboardEntry> lb       = readLeaderboard(buf);
+        List<BankScreen.LoanData>         asLender = readLoans(buf);
+        List<BankScreen.LoanData>         asBorrow = readLoans(buf);
+        List<String>                      known    = readStringList(buf);
+        return new BankScreen(balance, ticksReward, txs, totalShards, playerCount,
+            lb, asLender, asBorrow, known);
+    }
+
+    private static List<BankScreen.TxData> readBankTxs(PacketByteBuf buf) {
+        int count = buf.readInt();
+        List<BankScreen.TxData> list = new ArrayList<>(count);
+        for (int i = 0; i < count; i++)
+            list.add(new BankScreen.TxData(buf.readInt(), buf.readString(), buf.readInt(), buf.readLong()));
+        return list;
+    }
+
+    private static List<BankScreen.LeaderboardEntry> readLeaderboard(PacketByteBuf buf) {
+        int count = buf.readInt();
+        List<BankScreen.LeaderboardEntry> list = new ArrayList<>(count);
+        for (int i = 0; i < count; i++)
+            list.add(new BankScreen.LeaderboardEntry(buf.readString(), buf.readInt()));
+        return list;
+    }
+
+    private static List<BankScreen.LoanData> readLoans(PacketByteBuf buf) {
+        int count = buf.readInt();
+        List<BankScreen.LoanData> list = new ArrayList<>(count);
+        for (int i = 0; i < count; i++)
+            list.add(new BankScreen.LoanData(
+                buf.readInt(), buf.readString(), buf.readInt(), buf.readLong(),
+                buf.readInt(), buf.readInt(), buf.readInt(), buf.readBoolean()));
         return list;
     }
 }

@@ -1,10 +1,13 @@
 package com.nouvelleterrebridge;
 
+import com.nouvelleterrebridge.commands.BankCommand;
 import com.nouvelleterrebridge.commands.ConflitCommand;
 import com.nouvelleterrebridge.commands.EconomieCommand;
 import com.nouvelleterrebridge.commands.EventNarratifCommand;
 import com.nouvelleterrebridge.commands.HdvCommand;
 import com.nouvelleterrebridge.commands.LierCommand;
+import com.nouvelleterrebridge.economy.Loan;
+import com.nouvelleterrebridge.economy.LoanManager;
 import com.nouvelleterrebridge.economy.LocalEconomy;
 import com.nouvelleterrebridge.economy.KillRewards;
 import com.nouvelleterrebridge.economy.PlaytimeTracker;
@@ -16,6 +19,7 @@ import com.nouvelleterrebridge.events.ServerEvents;
 import com.nouvelleterrebridge.events.TerritoryEvents;
 import com.nouvelleterrebridge.http.EventDispatcher;
 import com.nouvelleterrebridge.http.EventQueue;
+import com.nouvelleterrebridge.network.BankNetworking;
 import com.nouvelleterrebridge.network.HdvNetworking;
 import com.nouvelleterrebridge.shop.MarketActions;
 import com.nouvelleterrebridge.shop.MarketListing;
@@ -31,6 +35,7 @@ import net.minecraft.text.Text;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -59,9 +64,11 @@ public class NouvelleTerreBridge implements ModInitializer {
         KillRewards.register();
         PlaytimeTracker.register();
         RecurringTransferManager.register();
+        LoanManager.register();
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             HdvCommand.register(dispatcher);
+            BankCommand.register(dispatcher);
             EconomieCommand.register(dispatcher);
             LierCommand.register(dispatcher);
             ConflitCommand.register(dispatcher);
@@ -69,6 +76,7 @@ public class NouvelleTerreBridge implements ModInitializer {
         });
 
         registerHdvNetworking();
+        registerBankNetworking();
 
         LOGGER.info("[NouvelleTerreBridge] Mod initialisé avec succès.");
     }
@@ -175,6 +183,158 @@ public class NouvelleTerreBridge implements ModInitializer {
             buf.writeInt(l.pricePerUnit);
         }
     }
+
+    // ── Bank networking ──────────────────────────────────────────────────────
+
+    private void registerBankNetworking() {
+        ServerPlayNetworking.registerGlobalReceiver(BankNetworking.BANK_ACTION, (server, player, handler, buf, responseSender) -> {
+            int type = buf.readInt();
+            final String result;
+            switch (type) {
+                case BankNetworking.ACTION_LOAN_CREATE -> {
+                    String borrower    = buf.readString();
+                    int amount         = buf.readInt();
+                    int durationDays   = buf.readInt();
+                    int penaltyBase    = buf.readInt();
+                    int penaltyIncrease = buf.readInt();
+                    String lender = player.getName().getString();
+                    if (lender.equalsIgnoreCase(borrower)) {
+                        result = "§cVous ne pouvez pas vous accorder un credit.";
+                    } else if (!LocalEconomy.getInstance().estConnu(borrower)) {
+                        result = "§cJoueur inconnu.";
+                    } else if (amount <= 0 || durationDays <= 0 || penaltyBase <= 0) {
+                        result = "§cValeurs invalides.";
+                    } else {
+                        String err = LoanManager.getInstance().add(lender, borrower, amount, durationDays, penaltyBase, penaltyIncrease);
+                        if (err != null) {
+                            result = "§c" + err;
+                        } else {
+                            result = "§a✅ Credit de " + amount + " ◆ accorde a §f" + borrower + "§a !";
+                            server.execute(() -> {
+                                ServerPlayerEntity bp = server.getPlayerManager().getPlayer(borrower);
+                                if (bp != null) bp.sendMessage(Text.literal(
+                                    "§a[Nouvelle Terre] §f" + lender + " §avous a accorde un credit de §f" + amount + " ◆§a !"));
+                            });
+                        }
+                    }
+                }
+                case BankNetworking.ACTION_LOAN_REPAY -> {
+                    int loanId = buf.readInt();
+                    String borrowerName = player.getName().getString();
+                    Loan loan = LoanManager.getInstance().getLoan(loanId);
+                    String err = LoanManager.getInstance().repay(borrowerName, loanId);
+                    if (err != null) {
+                        result = "§c" + err;
+                    } else {
+                        result = "§a✅ Credit rembourse !";
+                        if (loan != null) {
+                            server.execute(() -> {
+                                ServerPlayerEntity lp = server.getPlayerManager().getPlayer(loan.lender);
+                                if (lp != null) lp.sendMessage(Text.literal(
+                                    "§a[Nouvelle Terre] §f" + borrowerName + " §aa rembourse son credit de §f" + loan.principal + " ◆§a !"));
+                            });
+                        }
+                    }
+                }
+                case BankNetworking.ACTION_LOAN_FORGIVE -> {
+                    int loanId = buf.readInt();
+                    String err = LoanManager.getInstance().forgive(player.getName().getString(), loanId);
+                    result = err != null ? "§c" + err : "§a✅ Credit pardonne.";
+                }
+                default -> result = "§cAction inconnue.";
+            }
+            server.execute(() -> sendBankResult(player, result, server));
+        });
+    }
+
+    public static void sendBankResult(ServerPlayerEntity player, String message, MinecraftServer server) {
+        boolean ok = !message.contains("§c");
+        PacketByteBuf resp = PacketByteBufs.create();
+        resp.writeBoolean(ok);
+        resp.writeString(message);
+        writeBankData(resp, player, server);
+        ServerPlayNetworking.send(player, BankNetworking.BANK_RESULT, resp);
+    }
+
+    public static PacketByteBuf buildBankOpenPacket(ServerPlayerEntity player, MinecraftServer server) {
+        PacketByteBuf buf = PacketByteBufs.create();
+        writeBankData(buf, player, server);
+        return buf;
+    }
+
+    private static void writeBankData(PacketByteBuf buf, ServerPlayerEntity player, MinecraftServer server) {
+        String name = player.getName().getString();
+        LocalEconomy eco = LocalEconomy.getInstance();
+
+        buf.writeInt(eco.getBalance(name));
+        buf.writeInt(PlaytimeTracker.getTicksUntilReward(player.getUuid()));
+
+        // Transactions
+        List<TransactionLog.Entry> txs = TransactionLog.getLast(name, 20);
+        buf.writeInt(txs.size());
+        for (TransactionLog.Entry e : txs) {
+            buf.writeInt(e.type()); buf.writeString(e.label()); buf.writeInt(e.amount()); buf.writeLong(e.timestamp());
+        }
+
+        // Stats économiques
+        Map<String, Integer> allBalances = eco.getAllBalances();
+        int totalShards = allBalances.values().stream().mapToInt(Integer::intValue).filter(v -> v > 0).sum();
+        buf.writeInt(totalShards);
+        buf.writeInt(allBalances.size());
+
+        // Classement top 10
+        Map<String, String> casing = buildCasingMap(server, eco);
+        List<Map.Entry<String, Integer>> top = allBalances.entrySet().stream()
+            .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+            .limit(10)
+            .collect(Collectors.toList());
+        buf.writeInt(top.size());
+        for (Map.Entry<String, Integer> e : top) {
+            buf.writeString(casing.getOrDefault(e.getKey(), e.getKey()));
+            buf.writeInt(e.getValue());
+        }
+
+        // Crédits en tant que prêteur
+        List<Loan> asLender = LoanManager.getInstance().getLoansAsLender(name);
+        buf.writeInt(asLender.size());
+        for (Loan l : asLender) writeLoanData(buf, l.borrower, l);
+
+        // Crédits en tant qu'emprunteur
+        List<Loan> asBorrower = LoanManager.getInstance().getLoansAsBorrower(name);
+        buf.writeInt(asBorrower.size());
+        for (Loan l : asBorrower) writeLoanData(buf, l.lender, l);
+
+        // Joueurs connus (dropdown)
+        List<String> known = eco.getSoldesKeys().stream()
+            .filter(k -> !k.equalsIgnoreCase(name))
+            .map(k -> casing.getOrDefault(k, k))
+            .sorted(String.CASE_INSENSITIVE_ORDER)
+            .collect(Collectors.toList());
+        buf.writeInt(known.size());
+        for (String p : known) buf.writeString(p);
+    }
+
+    private static void writeLoanData(PacketByteBuf buf, String other, Loan l) {
+        buf.writeInt(l.id);
+        buf.writeString(other);
+        buf.writeInt(l.principal);
+        buf.writeLong(l.dueTimestamp);
+        buf.writeInt(l.daysOverdue);
+        buf.writeInt(l.totalPenalty);
+        buf.writeInt(l.nextPenalty());
+        buf.writeBoolean(l.repaid);
+    }
+
+    private static Map<String, String> buildCasingMap(MinecraftServer server, LocalEconomy eco) {
+        Map<String, String> casing = new HashMap<>();
+        server.getPlayerManager().getPlayerList().forEach(p ->
+            casing.putIfAbsent(p.getName().getString().toLowerCase(), p.getName().getString()));
+        MarketManager.getInstance().getAll().forEach(l ->
+            casing.putIfAbsent(l.seller.toLowerCase(), l.seller));
+        return casing;
+    }
+
+    // ── HDV profile data ─────────────────────────────────────────────────────
 
     private static void writeProfileData(PacketByteBuf buf, ServerPlayerEntity player, MinecraftServer server) {
         // Récompense

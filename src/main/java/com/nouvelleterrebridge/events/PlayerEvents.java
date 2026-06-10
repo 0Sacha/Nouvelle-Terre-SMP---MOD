@@ -3,7 +3,12 @@ package com.nouvelleterrebridge.events;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
 import com.nouvelleterrebridge.economy.PlaytimeTracker;
 import com.nouvelleterrebridge.http.EventDispatcher;
+import com.nouvelleterrebridge.network.HdvNetworking;
+import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.network.PacketByteBuf;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.stat.Stats;
 
@@ -41,7 +46,14 @@ public class PlayerEvents {
                 EventDispatcher.envoyer("PLAYER_JOIN", data);
             }
 
-
+            // Envoie la version serveur au client pour vérification
+            String version = FabricLoader.getInstance()
+                .getModContainer(NouvelleTerreBridge.MOD_ID)
+                .map(c -> c.getMetadata().getVersion().getFriendlyString())
+                .orElse("unknown");
+            PacketByteBuf versionBuf = PacketByteBufs.create();
+            versionBuf.writeString(version);
+            ServerPlayNetworking.send(joueur, HdvNetworking.NT_VERSION, versionBuf);
         });
 
         // Déconnexion d'un joueur

@@ -22,8 +22,23 @@ public class FrenchItemNames {
         add("pierre taillee","minecraft:cobblestone");
         add("sable",         "minecraft:sand");
         add("gravier",       "minecraft:gravel");
-        add("bois",          "minecraft:oak_log");
-        add("planche",       "minecraft:oak_planks");
+        // Bois — troncs et planches toutes essences
+        add("bois chene",        "minecraft:oak_log");
+        add("planche chene",     "minecraft:oak_planks");
+        add("bois bouleau",      "minecraft:birch_log");
+        add("planche bouleau",   "minecraft:birch_planks");
+        add("bois epinette",     "minecraft:spruce_log");
+        add("planche epinette",  "minecraft:spruce_planks");
+        add("bois jungle",       "minecraft:jungle_log");
+        add("planche jungle",    "minecraft:jungle_planks");
+        add("bois acacia",       "minecraft:acacia_log");
+        add("planche acacia",    "minecraft:acacia_planks");
+        add("bois noyer",        "minecraft:dark_oak_log");
+        add("planche noyer",     "minecraft:dark_oak_planks");
+        add("bois mangrove",     "minecraft:mangrove_log");
+        add("planche mangrove",  "minecraft:mangrove_planks");
+        add("bois cerisier",     "minecraft:cherry_log");
+        add("planche cerisier",  "minecraft:cherry_planks");
         add("verre",         "minecraft:glass");
         add("obsidienne",    "minecraft:obsidian");
         add("argile",        "minecraft:clay");
@@ -76,7 +91,23 @@ public class FrenchItemNames {
         add("poudre",        "minecraft:gunpowder");
         add("fleche",        "minecraft:arrow");
         add("cuir",          "minecraft:leather");
-        add("laine",         "minecraft:white_wool");
+        // Laine — toutes les couleurs
+        add("laine blanche",       "minecraft:white_wool");
+        add("laine orange",        "minecraft:orange_wool");
+        add("laine magenta",       "minecraft:magenta_wool");
+        add("laine bleue claire",  "minecraft:light_blue_wool");
+        add("laine jaune",         "minecraft:yellow_wool");
+        add("laine verte claire",  "minecraft:lime_wool");
+        add("laine rose",          "minecraft:pink_wool");
+        add("laine grise",         "minecraft:gray_wool");
+        add("laine gris clair",    "minecraft:light_gray_wool");
+        add("laine cyan",          "minecraft:cyan_wool");
+        add("laine violette",      "minecraft:purple_wool");
+        add("laine bleue",         "minecraft:blue_wool");
+        add("laine marron",        "minecraft:brown_wool");
+        add("laine verte",         "minecraft:green_wool");
+        add("laine rouge",         "minecraft:red_wool");
+        add("laine noire",         "minecraft:black_wool");
         add("perle",         "minecraft:ender_pearl");
         add("tige blaze",    "minecraft:blaze_rod");
         add("poudre blaze",  "minecraft:blaze_powder");
@@ -150,7 +181,7 @@ public class FrenchItemNames {
     public static String toDisplay(String mcId) {
         if (mcId == null) return "?";
         String fr = MC_TO_FR.get(mcId);
-        if (fr != null) return fr;
+        if (fr != null) return Character.toUpperCase(fr.charAt(0)) + fr.substring(1);
         // Strip n'importe quel namespace (minecraft:, mcwbridges:, etc.) puis formate
         String raw = mcId.replaceAll("^[^:]+:", "").replace("_", " ");
         return Character.toUpperCase(raw.charAt(0)) + raw.substring(1);

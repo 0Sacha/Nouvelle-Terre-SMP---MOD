@@ -23,6 +23,12 @@ Lit ce fichier automatiquement pour avoir le contexte complet avant de coder.
 GitHub Action crée une Release automatique à chaque push sur `main`.
 Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueurs doivent installer le JAR Fabric côté client pour le GUI HDV.
 
+## Convention de version
+- Format : `0.x.y-beta` (dans `gradle.properties` → `mod_version`)
+- **Incrémenter `y` à chaque modification de code avant de rebuild et push.**
+- Version actuelle : `0.1.8-beta` (ajout système crédit + `/bank`)
+- À chaque rebuild : mettre à jour `mod_version` dans `gradle.properties`, puis `git commit` + `git push`
+
 ## Architecture économie
 - Source de vérité : `shards.json` sur le serveur (`LocalEconomy.java`)
 - Toutes les opérations sont instantanées (pas d'HTTP pour le gameplay)
@@ -35,6 +41,16 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 - Achat au meilleur prix automatique, peut fractionner sur plusieurs vendeurs
 - `FrenchItemNames.toDisplay()` strip n'importe quel namespace (pas seulement minecraft:)
 
+## Architecture crédits
+- Crédits : `nouvelle-terre-credits.json` sur le serveur (`LoanManager.java`)
+- Création : le prêteur définit montant, durée (jours) et pénalité de base (◆/j)
+- Au déclenchement, le montant est **transféré automatiquement** du prêteur à l'emprunteur
+- Pénalités automatiques : vérifiées toutes les minutes (1200 ticks), appliquées chaque jour de retard
+- Pénalité jour N = `penaltyBase + (N-1) * 5` ◆ (augmente de 5 ◆/j par défaut)
+- `LocalEconomy.forceDeduct()` permet de passer en solde négatif pour les pénalités
+- Remboursement : l'emprunteur renvoie le principal au prêteur via `/bank`
+- Pardon : le prêteur peut annuler un crédit sans remboursement
+
 ## Commandes in-game actuelles
 | Commande | Description |
 |---|---|
@@ -42,6 +58,7 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 | `/economie virer <joueur> <montant>` | Envoyer des shards |
 | `/economie admin give/take/check <joueur>` | Admin (op 2) |
 | `/hdv` | Ouvre le GUI HDV custom (screen client Fabric) |
+| `/bank` | Ouvre le GUI Banque (screen client Fabric) |
 | `/discord` | Lier compte Minecraft ↔ Discord |
 | `/conflit <cible> <raison>` | Déclarer un conflit RP |
 | `/evenement <message>` | Narration (op only) |
@@ -53,17 +70,20 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 commands/
   EconomieCommand.java     → /economie (bourse, virer, admin) + constantes SEP_* + fmt()
   HdvCommand.java          → /hdv : envoie HDV_OPEN au client via ServerPlayNetworking
+  BankCommand.java         → /bank : envoie BANK_OPEN au client
   LierCommand.java         → /discord
   ConflitCommand.java      → /conflit
   EventNarratifCommand.java → /evenement
 
 economy/
-  LocalEconomy.java        → Singleton shards.json, estConnu(), addShards/removeShards/transfer, getSoldesKeys()
-  TransactionLog.java      → Singleton in-memory, 50 dernières transactions par joueur (TYPE_BUY/SELL/TRANSFER_IN/TRANSFER_OUT/REWARD)
+  LocalEconomy.java        → Singleton shards.json, estConnu(), addShards/removeShards/forceDeduct/transfer, getAllBalances/getSoldesKeys()
+  TransactionLog.java      → Singleton in-memory, 50 dernières transactions par joueur (TYPE_BUY/SELL/TRANSFER_IN/TRANSFER_OUT/REWARD/LOAN_OUT/LOAN_IN/LOAN_REPAY_OUT/LOAN_REPAY_IN/LOAN_PENALTY)
   KillRewards.java         → Récompenses kill mob
   PlaytimeTracker.java     → Récompenses 30min (auto) uniquement + getTicksUntilReward (salaire supprimé)
   RecurringTransfer.java   → POJO virement récurrent (id, from, to, amount, intervalTicks, ticksSince)
   RecurringTransferManager.java → Singleton nouvelle-terre-virements.json, tick-based, add/cancel/getForPlayer
+  Loan.java                → POJO crédit (id, lender, borrower, principal, dueTimestamp, penaltyBase, penaltyIncrease, daysOverdue, totalPenalty, repaid, lastPenaltyMs)
+  LoanManager.java         → Singleton nouvelle-terre-credits.json, tick-based (toutes les minutes), pénalités auto jour J+N, add/repay/forgive/getLoansAs*
 
 events/
   PlayerEvents.java        → JOIN / LEAVE / première connexion + envoi resource pack
@@ -79,9 +99,11 @@ mixin/
 
 network/
   HdvNetworking.java       → Identifiants canaux HDV_OPEN / HDV_ACTION / HDV_RESULT + constantes ACTION_* (0-5 : BUY/SELL/WITHDRAW/TRANSFER/RECURRING_CREATE/RECURRING_CANCEL)
+  BankNetworking.java      → Identifiants canaux BANK_OPEN / BANK_ACTION / BANK_RESULT + constantes ACTION_* (0-2 : LOAN_CREATE/LOAN_REPAY/LOAN_FORGIVE)
 
 client/                    ← Code client uniquement (@Environment(CLIENT))
   HdvScreen.java           → Screen Fabric fenêtré semi-transparent : 4 onglets + onglet Profil (chip cliquable) + modal achat + toast
+  BankScreen.java          → Screen Fabric banque : 4 onglets (Compte | Economie | Classement | Credits) + modal nouveau crédit + toast
 
 resourcepack/
   ResourcePackManager.java → Génère ZIP dark-theme, calcule hash SHA-1 (télécharge depuis URL directe)
@@ -177,6 +199,43 @@ C_DIM     = 0xFF565C6A   // labels, placeholders
 - **Dropdown joueurs** (cards 2 et 3) : pas de `TextFieldWidget`, dropdown custom rendu APRÈS `super.render()`. Un seul ouvert à la fois. Quand ouvert : overlay `0xAA000000` + bordure or + ombre. Les champs montant sont cachés via `setY(-200)` quand un dropdown est ouvert (sinon ils passent à travers l'overlay via `super.render()`).
 - **Virement récurrent** : `RecurringTransferManager` tick-based persisté JSON. Intervalles : 1h/6h/12h/24h (constantes INTERVALS[]). Sélecteur `< label >` dans card 3. Liste actifs avec countdown + bouton Annuler (rouge au hover).
 - **Positions UI calculées dans render()** : `profileDropX/Y/W`, `recurDropX/Y/W`, `profileTransferBtnY`, `recurCreateBtnY`, `recurIntervalBtnY`, `recurCancelBtnY[]` — champs d'instance relus dans les click handlers.
+
+## GUI Bank — architecture client-serveur
+
+### Flux BANK_OPEN / BANK_RESULT — format paquet
+```
+BANK_OPEN  : int balance | int ticksReward | txs[] | int totalShards | int playerCount | leaderboard[] | loansAsLender[] | loansAsBorrower[] | known[]
+BANK_RESULT: bool ok | string msg | [même contenu que BANK_OPEN]
+txs[]          : int count → (int type, string label, int amount, long timestamp) × count
+leaderboard[]  : int count → (string name, int balance) × count
+loansAs*[]     : int count → (int id, string other, int principal, long dueMs, int daysOverdue, int totalPenalty, int nextPenalty, bool repaid) × count
+known[]        : int count → string × count
+```
+
+### BankScreen — onglets
+| Onglet | Description |
+|---|---|
+| Compte | Header balance + barre récompense + liste transactions (scrollable) |
+| Economie | 4 stats : shards en circulation, joueurs enregistrés, solde moyen, joueur le plus riche |
+| Classement | Top 10 joueurs par solde, rang coloré (#1=or #2=argent #3=bronze), joueur courant surligné |
+| Credits | Bouton "Nouveau crédit" + section "Prêts accordés" + section "Mes emprunts" + modal création |
+
+### Système crédit — règles métier
+- Création → montant prélevé du prêteur et versé à l'emprunteur (transfert atomique)
+- Pénalité jour N = `penaltyBase + (N-1) * 5` ◆ (penaltyIncrease = 5 fixé côté client)
+- Solde peut passer négatif via `LocalEconomy.forceDeduct()` (uniquement pénalités crédit)
+- Remboursement = principal seulement (les pénalités ont déjà été déduites du compte)
+- Pardon = prêteur clôt le crédit sans remboursement (argent perdu, pas de retour)
+- Persistance : `nouvelle-terre-credits.json` (liste complète, jamais supprimée, `repaid = true`)
+
+### Décisions techniques BankScreen
+- Tick-based penalty check : toutes les 1200 ticks (1 min), horodatage réel `System.currentTimeMillis()`
+- Le `while` dans `LoanManager.tick()` rattrape plusieurs jours de pénalité si le serveur était éteint
+- `lastPenaltyMs` initialisé à `dueTimestamp` → premier jour de retard = J+1 après échéance
+- Dropdown emprunteur caché via `setY(-200)` quand ouvert (même pattern que HDV Profil)
+- Bouton "Pardonner" (prêteur) = rouge ; bouton "Rembourser" (emprunteur) = vert si solde ≥ principal
+- Date d'échéance affichée en `dd/MM/yyyy` via `SimpleDateFormat`
+- `buildCasingMap` extrait aussi les vendeurs HDV pour la liste des joueurs connus
 
 ## UI — Constantes visuelles (EconomieCommand.java)
 ```java

@@ -96,6 +96,22 @@ public class LocalEconomy {
         EventDispatcher.envoyer("ECONOMY_DEDUCT", data);
     }
 
+    /** Retire des shards, peut passer en négatif (pénalités de crédit). */
+    public synchronized void forceDeduct(String pseudo, int montant) {
+        String key = pseudo.toLowerCase();
+        soldes.merge(key, -montant, Integer::sum);
+        save();
+        Map<String, Object> data = new HashMap<>();
+        data.put("player", pseudo);
+        data.put("amount", montant);
+        EventDispatcher.envoyer("ECONOMY_DEDUCT", data);
+    }
+
+    /** Retourne une copie de tous les soldes (pour stats bancaires). */
+    public synchronized Map<String, Integer> getAllBalances() {
+        return new HashMap<>(soldes);
+    }
+
     // ── Persistance ──────────────────────────────────────────────────────────
 
     private void load() {
