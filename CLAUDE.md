@@ -161,7 +161,6 @@ listings[]: int count → (int id, string seller, string itemId, int qty, int pr
 | 💰 Vendre | Inventaire joueur lu client-side → formulaire qté/prix → `sellByItemId()` serveur |
 | 🛒 Mon Shop | Mes annonces avec bouton Retirer (strip bas = rouge au hover) |
 | 👥 Boutiques | Liste vendeurs → détail boutique → achat |
-| ★ Profil | Accessible via chip solde (haut droite). Header strip (nom + solde) + 3 cards : Récompense (barre prog auto) \| Virement ponctuel (dropdown + montant + envoyer) \| Virement récurrent (dropdown + montant + sélecteur < 1h/6h/12h/24h > + créer). Liste virements récurrents actifs avec bouton Annuler. Transactions au bas. |
 
 ### Couleurs (HdvScreen)
 ```java
@@ -196,7 +195,6 @@ C_DIM     = 0xFF565C6A   // labels, placeholders
 - 💎 → ◆ (U+25C6) partout : les emoji BMP-ext sont hors BMP et Minecraft ne les rend pas
 - **Chip solde** (haut droite HdvScreen) : cliquable → envoie `BANK_REQUEST` au serveur → ouvre BankScreen. Texte sans shadow ni bold (`drawText(..., false)`)
 - **Modal achat z-order** : `renderBuyModal()` enveloppé dans `ctx.getMatrices().push()` / `translate(0,0,300)` / `pop()` — sinon le texte des cards passe devant l'overlay (batching Minecraft)
-- **Positions UI calculées dans render()** : `trfDropX/Y/W`, `recurDropX/Y/W`, `trfSendBtnY`, `recurCreateBtnY`, `recurCancelBtnY[]` — champs d'instance relus dans les click handlers.
 
 ## GUI Bank — architecture client-serveur
 
@@ -231,10 +229,11 @@ recurring[]    : int count → (int id, string to, int amount, int intervalTicks
 ### Décisions techniques BankScreen
 - **Onglet Virements** : 2 cards (`cardW = (pw - GAP) / 2`), `renderInfoCard()` partagé. Dropdown custom + `TextFieldWidget` cachés via `setY(-200)`. Un seul dropdown ouvert à la fois. `recurCancelBtnY[]` liste des boutons Annuler, remplie dans render(), lue dans mouseClicked().
 - **Dropdown virements** : rendu dans render() après le tab content, avec overlay `0xAA000000` + scissor + scroll. Intercepté dans mouseClicked() avant la barre d'onglets.
+- **Positions UI calculées dans render()** : `trfDropX/Y/W`, `recurDropX/Y/W`, `trfSendBtnY`, `recurCreateBtnY`, `recurCancelBtnY[]` — champs d'instance relus dans les click handlers.
 - Tick-based penalty check : toutes les 1200 ticks (1 min), horodatage réel `System.currentTimeMillis()`
 - Le `while` dans `LoanManager.tick()` rattrape plusieurs jours de pénalité si le serveur était éteint
 - `lastPenaltyMs` initialisé à `dueTimestamp` → premier jour de retard = J+1 après échéance
-- Dropdown emprunteur caché via `setY(-200)` quand ouvert (même pattern que HDV Profil)
+- Dropdown emprunteur caché via `setY(-200)` quand ouvert (même pattern que l'onglet Virements)
 - Bouton "Pardonner" (prêteur) = rouge ; bouton "Rembourser" (emprunteur) = vert si solde ≥ principal
 - Date d'échéance affichée en `dd/MM/yyyy` via `SimpleDateFormat`
 - `buildCasingMap` extrait aussi les vendeurs HDV pour la liste des joueurs connus
