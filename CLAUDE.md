@@ -61,7 +61,9 @@ economy/
   LocalEconomy.java        → Singleton shards.json, estConnu(), addShards/removeShards/transfer, getSoldesKeys()
   TransactionLog.java      → Singleton in-memory, 50 dernières transactions par joueur (TYPE_BUY/SELL/TRANSFER_IN/TRANSFER_OUT/REWARD)
   KillRewards.java         → Récompenses kill mob
-  PlaytimeTracker.java     → Récompenses 30min (auto) + salaire horaire manuel + getTicksUntilReward/getTicksUntilSalary/tryClaimSalary
+  PlaytimeTracker.java     → Récompenses 30min (auto) uniquement + getTicksUntilReward (salaire supprimé)
+  RecurringTransfer.java   → POJO virement récurrent (id, from, to, amount, intervalTicks, ticksSince)
+  RecurringTransferManager.java → Singleton nouvelle-terre-virements.json, tick-based, add/cancel/getForPlayer
 
 events/
   PlayerEvents.java        → JOIN / LEAVE / première connexion + envoi resource pack
@@ -76,7 +78,7 @@ mixin/
   LivingEntityMixin.java   → Morts joueurs → PLAYER_DEATH
 
 network/
-  HdvNetworking.java       → Identifiants canaux HDV_OPEN / HDV_ACTION / HDV_RESULT + constantes ACTION_*
+  HdvNetworking.java       → Identifiants canaux HDV_OPEN / HDV_ACTION / HDV_RESULT + constantes ACTION_* (0-5 : BUY/SELL/WITHDRAW/TRANSFER/RECURRING_CREATE/RECURRING_CANCEL)
 
 client/                    ← Code client uniquement (@Environment(CLIENT))
   HdvScreen.java           → Screen Fabric fenêtré semi-transparent : 4 onglets + onglet Profil (chip cliquable) + modal achat + toast
@@ -120,12 +122,12 @@ shop/
 
 ### Flux HDV_OPEN / HDV_RESULT — format paquet
 ```
-HDV_OPEN  : int balance | listings[] | int ticksReward | int ticksSalary | transactions[] | bool isOp | int knownCount | string[] known | int onlineCount | string[] online
-HDV_RESULT: bool ok | string msg | int balance | listings[] | int ticksReward | int ticksSalary | transactions[] | bool isOp | int knownCount | string[] known | int onlineCount | string[] online
+HDV_OPEN  : int balance | listings[] | int ticksReward | transactions[] | known[] | recurring[]
+HDV_RESULT: bool ok | string msg | int balance | listings[] | int ticksReward | transactions[] | known[] | recurring[]
 listings[]    : int count → (int id, string seller, string itemId, int qty, int price) × count
 transactions[]: int count → (int type, string label, int amount, long timestamp) × count
-known[]       : joueurs connus de l'économie (clés lowercase overridées par casing online/market)
-online[]      : joueurs actuellement connectés (pour le sélecteur admin salaire)
+known[]       : int count → string[] — joueurs connus (casing correct, triés alphabétiquement)
+recurring[]   : int count → (int id, string to, int amount, int intervalTicks, int ticksUntilNext) × count
 ```
 
 ### HdvScreen — onglets
@@ -135,7 +137,7 @@ online[]      : joueurs actuellement connectés (pour le sélecteur admin salair
 | 💰 Vendre | Inventaire joueur lu client-side → formulaire qté/prix → `sellByItemId()` serveur |
 | 🛒 Mon Shop | Mes annonces avec bouton Retirer (strip bas = rouge au hover) |
 | 👥 Boutiques | Liste vendeurs → détail boutique → achat |
-| ★ Profil | Accessible via chip solde (haut droite). Header strip (nom + solde) + 3 cards : Récompense (barre prog + auto) \| Salaire (barre prog + claim manuel) \| Virement (dropdown + montant + envoyer). Admin pleine largeur si op. Transactions au bas. |
+| ★ Profil | Accessible via chip solde (haut droite). Header strip (nom + solde) + 3 cards : Récompense (barre prog auto) \| Virement ponctuel (dropdown + montant + envoyer) \| Virement récurrent (dropdown + montant + sélecteur < 1h/6h/12h/24h > + créer). Liste virements récurrents actifs avec bouton Annuler. Transactions au bas. |
 
 ### Couleurs (HdvScreen)
 ```java
@@ -167,15 +169,14 @@ C_DIM     = 0xFF565C6A   // labels, placeholders
 - Onglet actif = texte sans shadow (`drawText(..., false)`) sur fond or pour éviter l'effet "gras"
 - Mon Shop : strip bas (24px) bascule entre prix et "Retirer" selon hover — même draw call, pas d'overlay séparé (évite le batching text-over-fill de Minecraft)
 - TransactionLog : in-memory uniquement (50 entries / joueur), pas persisté sur disque — reset au restart serveur
-- Countdown salary/reward dans l'onglet Profil : calculé en soustrayant (now - screenOpenTime) / 50ms des ticks initiaux reçus du serveur — live sans round-trip réseau
+- Countdown reward dans l'onglet Profil : calculé en soustrayant (now - screenOpenTime) / 50ms des ticks initiaux reçus du serveur — live sans round-trip réseau
 - 💎 → ◆ (U+25C6) partout : les emoji BMP-ext sont hors BMP et Minecraft ne les rend pas
 - **Chip solde** (haut droite) : cliquable → ouvre onglet Profil. Texte sans shadow ni bold (`drawText(..., false)`)
-- **Profil — layout** : header strip pleine largeur (nom + solde) + 3 cards égales (`cardW = (pw - GAP*2) / 3`) : Récompense | Salaire | Virement. Helper `renderInfoCard()` dessine le fond + bordure + accent coloré gauche. Admin section pleine largeur si `isOp`. Transactions scrollables en bas.
-- **Barres de progression** dans les cards revenus : `1f - ticks / totalTicks` → 0 = vide (pas commencé), 1 = plein (prêt).
-- **Salaire manuel** : `PlaytimeTracker` ne paie plus automatiquement. Timer caps à `TICKS_SALAIRE` (72 000 = 1h). Bouton "Réclamer" (card 2) → `ACTION_CLAIM_SALARY` → `tryClaimSalary()` atomique → `addShards()`. Vert si dispo, grisé sinon.
-- **Dropdown joueur** (virement, card 3) : pas de `TextFieldWidget`, dropdown custom rendu APRÈS `super.render()`. Quand ouvert : overlay `0x55000000` + bordure or + ombre.
-- **Admin salary** : 5 colonnes de checkboxes `onlinePlayers[]`, multi-select `Set<String> selectedForSalary`, bouton "Verser" → `ACTION_ADMIN_SALARY`.
-- **Positions UI calculées dans render()** : `profileDropX/Y/W`, `profileTransferBtnY`, `profileClaimSalaryBtnY`, `profileSalaryBtnY`, `profileSalaryCheckStartY` — champs d'instance relus dans les click handlers.
+- **Profil — layout** : header strip pleine largeur (nom + solde) + 3 cards égales (`cardW = (pw - GAP*2) / 3`) : Récompense | Virement ponctuel | Virement récurrent. `renderInfoCard()` dessine fond + bordure + accent gauche. Liste virements récurrents actifs. Transactions scrollables en bas.
+- **Barre de progression** card Récompense : `1f - ticks / totalTicks` → 0 = vide, 1 = plein (prêt).
+- **Dropdown joueurs** (cards 2 et 3) : pas de `TextFieldWidget`, dropdown custom rendu APRÈS `super.render()`. Un seul ouvert à la fois. Quand ouvert : overlay `0xAA000000` + bordure or + ombre. Les champs montant sont cachés via `setY(-200)` quand un dropdown est ouvert (sinon ils passent à travers l'overlay via `super.render()`).
+- **Virement récurrent** : `RecurringTransferManager` tick-based persisté JSON. Intervalles : 1h/6h/12h/24h (constantes INTERVALS[]). Sélecteur `< label >` dans card 3. Liste actifs avec countdown + bouton Annuler (rouge au hover).
+- **Positions UI calculées dans render()** : `profileDropX/Y/W`, `recurDropX/Y/W`, `profileTransferBtnY`, `recurCreateBtnY`, `recurIntervalBtnY`, `recurCancelBtnY[]` — champs d'instance relus dans les click handlers.
 
 ## UI — Constantes visuelles (EconomieCommand.java)
 ```java
