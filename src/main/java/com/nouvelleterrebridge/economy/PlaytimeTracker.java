@@ -52,23 +52,12 @@ public class PlaytimeTracker {
             }
             ticksDepuisRecompense.put(uuid, ticksR);
 
-            // Salaire métier (toutes les heures)
-            // addShards envoie déjà ECONOMY_REWARD pour synchroniser le bot.
-            // ECONOMY_SALARY est envoyé séparément SANS montant pour que le bot
-            // affiche uniquement la notification dans #système sans re-créditer.
-            int ticksS = ticksDepuisSalaire.getOrDefault(uuid, 0) + 1;
-            if (ticksS >= TICKS_SALAIRE) {
-                ticksS = 0;
-                LocalEconomy.getInstance().addShards(pseudo, SALAIRE_BASE);
-                java.util.Map<String, Object> data = new java.util.HashMap<>();
-                data.put("player", pseudo);
-                data.put("amount", SALAIRE_BASE);
-                data.put("metier", "");
-                data.put("notificationOnly", true);
-                com.nouvelleterrebridge.http.EventDispatcher.envoyer("ECONOMY_SALARY", data);
-                NouvelleTerreBridge.LOGGER.info("[PlaytimeTracker] Salaire versé à {} ({} shards).", pseudo, SALAIRE_BASE);
+            // Salaire : le timer monte jusqu'à TICKS_SALAIRE puis s'arrête.
+            // Le joueur réclame manuellement via le GUI HDV (ACTION_CLAIM_SALARY).
+            int ticksS = ticksDepuisSalaire.getOrDefault(uuid, 0);
+            if (ticksS < TICKS_SALAIRE) {
+                ticksDepuisSalaire.put(uuid, ticksS + 1);
             }
-            ticksDepuisSalaire.put(uuid, ticksS);
         }
     }
 
@@ -86,4 +75,15 @@ public class PlaytimeTracker {
     }
 
     public static int getSalaireBase() { return SALAIRE_BASE; }
+
+    /**
+     * Si le timer de salaire est écoulé, remet le compteur à 0 et retourne le montant à payer.
+     * Sinon retourne 0 (pas encore disponible).
+     */
+    public static synchronized int tryClaimSalary(UUID uuid) {
+        int ticks = ticksDepuisSalaire.getOrDefault(uuid, 0);
+        if (ticks < TICKS_SALAIRE) return 0;
+        ticksDepuisSalaire.put(uuid, 0);
+        return SALAIRE_BASE;
+    }
 }

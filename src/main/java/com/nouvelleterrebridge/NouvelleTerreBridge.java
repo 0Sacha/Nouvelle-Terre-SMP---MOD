@@ -124,6 +124,16 @@ public class NouvelleTerreBridge implements ModInitializer {
                         result = "§a✅ Salaire versé à " + targets.size() + " joueur(s).";
                     }
                 }
+                case HdvNetworking.ACTION_CLAIM_SALARY -> {
+                    String pseudo = player.getName().getString();
+                    int amount = PlaytimeTracker.tryClaimSalary(player.getUuid());
+                    if (amount > 0) {
+                        LocalEconomy.getInstance().addShards(pseudo, amount);
+                        result = "§a✅ Salaire réclamé : +" + amount + " ◆ !";
+                    } else {
+                        result = "§cSalaire pas encore disponible.";
+                    }
+                }
                 default -> result = "§cAction inconnue.";
             }
 

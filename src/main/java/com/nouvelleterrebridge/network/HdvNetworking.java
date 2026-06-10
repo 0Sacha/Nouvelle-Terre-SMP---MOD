@@ -18,6 +18,7 @@ public final class HdvNetworking {
     public static final int ACTION_WITHDRAW      = 2;
     public static final int ACTION_TRANSFER      = 3;
     public static final int ACTION_ADMIN_SALARY  = 4;
+    public static final int ACTION_CLAIM_SALARY  = 5;
 
     private HdvNetworking() {}
 }

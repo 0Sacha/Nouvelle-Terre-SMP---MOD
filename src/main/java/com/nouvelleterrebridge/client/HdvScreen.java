@@ -156,8 +156,10 @@ public class HdvScreen extends Screen {
     private int profileTransferBtnY = -1;
 
     private final Set<String> selectedForSalary = new LinkedHashSet<>();
-    private int profileSalaryBtnY       = -1;
+    private int profileSalaryBtnY        = -1;
     private int profileSalaryCheckStartY = -1;
+    private int profileClaimSalaryBtnY   = -1;
+    private boolean profileSalaryReady   = false;
 
     private String toastMsg = null;
     private boolean toastOk = true;
@@ -284,8 +286,11 @@ public class HdvScreen extends Screen {
         if (buyingListing != null) renderBuyModal(ctx, mx, my);
         renderToast(ctx);
         super.render(ctx, mx, my, delta);
-        // Dropdown rendered last so it appears above text fields
-        if (playerDropOpen && activeTab == Tab.PROFILE) renderPlayerDropdown(ctx, mx, my);
+        if (playerDropOpen && activeTab == Tab.PROFILE) {
+            // Dim the profile area below the dropdown button to separate it visually
+            ctx.fill(winX, winY + TOP_H, winX + winW, winY + winH, 0x55000000);
+            renderPlayerDropdown(ctx, mx, my);
+        }
     }
 
     // ── Top bar ───────────────────────────────────────────────────────────────
@@ -1192,26 +1197,39 @@ public class HdvScreen extends Screen {
             leftY += h + 8;
         }
 
-        // ── Revenus auto card (left) ──────────────────────────────────────────
+        // ── Revenus + bouton réclamer (left) ─────────────────────────────────
+        profileClaimSalaryBtnY = -1;
+        profileSalaryReady     = false;
         {
             int rewardTicks = Math.max(0, ticksUntilReward - elapsedTicks);
             int salaryTicks = Math.max(0, ticksUntilSalary - elapsedTicks);
-            int h = 96;
+            profileSalaryReady = (salaryTicks == 0);
+            int h = 118;
             ctx.fill(leftX, leftY, leftX + colW, leftY + h, C_PANEL);
             ctx.fill(leftX, leftY, leftX + colW, leftY + 1, C_BORDER);
             ctx.fill(leftX, leftY + h - 1, leftX + colW, leftY + h, C_BORDER);
             ctx.fill(leftX, leftY, leftX + 1, leftY + h, C_BORDER);
             ctx.fill(leftX + colW - 1, leftY, leftX + colW, leftY + h, C_BORDER);
-            ctx.drawText(textRenderer, "REVENUS AUTOMATIQUES", leftX + 10, leftY + 10, C_DIM, false);
-            ctx.drawText(textRenderer, "Récompense  +5 ◆ / 30 min", leftX + 10, leftY + 30, C_MID, false);
-            ctx.drawText(textRenderer, "Prochain : " + ticksToTime(rewardTicks), leftX + 10, leftY + 44, C_GOLD, false);
-            ctx.drawText(textRenderer, "Salaire     +8 ◆ / heure",   leftX + 10, leftY + 64, C_MID, false);
-            ctx.drawText(textRenderer, "Prochain : " + ticksToTime(salaryTicks), leftX + 10, leftY + 78, C_GOLD, false);
+            ctx.drawText(textRenderer, "REVENUS", leftX + 10, leftY + 10, C_DIM, false);
+            ctx.drawText(textRenderer, "Récompense  +5 ◆ / 30 min", leftX + 10, leftY + 28, C_MID, false);
+            ctx.drawText(textRenderer, "Prochain : " + ticksToTime(rewardTicks), leftX + 10, leftY + 41, C_GOLD, false);
+            ctx.drawText(textRenderer, "Salaire     +8 ◆ / heure",   leftX + 10, leftY + 60, C_MID, false);
+            String salCountdown = profileSalaryReady ? "Disponible !" : "Prochain : " + ticksToTime(salaryTicks);
+            ctx.drawText(textRenderer, salCountdown, leftX + 10, leftY + 73, profileSalaryReady ? C_GREEN : C_GOLD, false);
+
+            int btnY = leftY + h - 30;
+            profileClaimSalaryBtnY = btnY;
+            boolean btnHov = profileSalaryReady && mx >= leftX + 10 && mx < leftX + colW - 10 && my >= btnY && my < btnY + 22;
+            ctx.fill(leftX + 10, btnY, leftX + colW - 10, btnY + 22,
+                profileSalaryReady ? (btnHov ? 0xFF1A8050 : C_GREEN) : C_BORDER);
+            ctx.drawCenteredTextWithShadow(textRenderer,
+                profileSalaryReady ? "Réclamer mon salaire" : "Salaire pas encore disponible",
+                leftX + colW / 2, btnY + 7, profileSalaryReady ? C_WHITE : C_DARK);
             leftY += h + 8;
         }
 
         // ── Admin salary section (left, isOp only) ────────────────────────────
-        profileSalaryBtnY       = -1;
+        profileSalaryBtnY        = -1;
         profileSalaryCheckStartY = -1;
         if (isOp && !onlinePlayers.isEmpty()) {
             int rows  = (int) Math.ceil(onlinePlayers.size() / 4.0);
@@ -1363,11 +1381,15 @@ public class HdvScreen extends Screen {
         int dy = profileDropY + 20;
         if (dy + dropH > winY + winH - PAD) dy = profileDropY - dropH;
 
+        // Shadow
+        ctx.fill(dx + 3, dy + 3, dx + dw + 3, dy + dropH + 3, 0x44000000);
+        // Background
         ctx.fill(dx, dy, dx + dw, dy + dropH, C_SURFACE);
-        ctx.fill(dx - 1, dy - 1, dx + dw + 1, dy, C_BORDER);
-        ctx.fill(dx - 1, dy + dropH, dx + dw + 1, dy + dropH + 1, C_BORDER);
-        ctx.fill(dx - 1, dy, dx, dy + dropH, C_BORDER);
-        ctx.fill(dx + dw, dy, dx + dw + 1, dy + dropH, C_BORDER);
+        // Gold border
+        ctx.fill(dx - 1, dy - 1, dx + dw + 1, dy, C_GOLD);
+        ctx.fill(dx - 1, dy + dropH, dx + dw + 1, dy + dropH + 1, C_GOLD);
+        ctx.fill(dx - 1, dy - 1, dx, dy + dropH + 1, C_GOLD);
+        ctx.fill(dx + dw, dy - 1, dx + dw + 1, dy + dropH + 1, C_GOLD);
 
         ctx.enableScissor(dx, dy, dx + dw, dy + dropH);
         int end = Math.min(playerDropScroll + maxVis, knownPlayers.size());
@@ -1409,6 +1431,16 @@ public class HdvScreen extends Screen {
             playerDropOpen = !playerDropOpen;
             playerDropScroll = 0;
             return;
+        }
+
+        // Claim salary button
+        if (profileClaimSalaryBtnY >= 0 && profileSalaryReady) {
+            int salColW = (winW - PAD * 2 - 12) / 2;
+            if (mx >= winX + PAD + 10 && mx < winX + PAD + salColW - 10
+                    && my >= profileClaimSalaryBtnY && my < profileClaimSalaryBtnY + 22) {
+                sendClaimSalary();
+                return;
+            }
         }
 
         // Transfer "Envoyer" button
@@ -1462,6 +1494,12 @@ public class HdvScreen extends Screen {
         buf.writeInt(HdvNetworking.ACTION_ADMIN_SALARY);
         buf.writeInt(targets.size());
         for (String t : targets) buf.writeString(t);
+        ClientPlayNetworking.send(HdvNetworking.HDV_ACTION, buf);
+    }
+
+    private void sendClaimSalary() {
+        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        buf.writeInt(HdvNetworking.ACTION_CLAIM_SALARY);
         ClientPlayNetworking.send(HdvNetworking.HDV_ACTION, buf);
     }
 
