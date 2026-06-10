@@ -17,7 +17,7 @@ Lit ce fichier automatiquement pour avoir le contexte complet avant de coder.
 ```powershell
 .\gradlew.bat build          # Windows
 ./gradlew build              # Linux/Mac
-# JAR → build/libs/nouvelle-terre-bridge-1.0.0.jar
+# JAR → build/libs/nouvelle-terre-bridge-{mod_version}.jar
 # Nécessite Java 17
 ```
 GitHub Action crée une Release automatique à chaque push sur `main`.
@@ -58,10 +58,10 @@ commands/
   EventNarratifCommand.java → /evenement
 
 economy/
-  LocalEconomy.java        → Singleton shards.json, estConnu(), addShards/removeShards/transfer
+  LocalEconomy.java        → Singleton shards.json, estConnu(), addShards/removeShards/transfer, getSoldesKeys()
   TransactionLog.java      → Singleton in-memory, 50 dernières transactions par joueur (TYPE_BUY/SELL/TRANSFER_IN/TRANSFER_OUT/REWARD)
   KillRewards.java         → Récompenses kill mob
-  PlaytimeTracker.java     → Récompenses 30min + salaire horaire + getTicksUntilReward/getTicksUntilSalary
+  PlaytimeTracker.java     → Récompenses 30min (auto) + salaire horaire manuel + getTicksUntilReward/getTicksUntilSalary/tryClaimSalary
 
 events/
   PlayerEvents.java        → JOIN / LEAVE / première connexion + envoi resource pack
@@ -79,7 +79,7 @@ network/
   HdvNetworking.java       → Identifiants canaux HDV_OPEN / HDV_ACTION / HDV_RESULT + constantes ACTION_*
 
 client/                    ← Code client uniquement (@Environment(CLIENT))
-  HdvScreen.java           → Screen Fabric full-screen : 5 onglets + modal achat + toast
+  HdvScreen.java           → Screen Fabric fenêtré semi-transparent : 4 onglets + onglet Profil (chip cliquable) + modal achat + toast
 
 resourcepack/
   ResourcePackManager.java → Génère ZIP dark-theme, calcule hash SHA-1 (télécharge depuis URL directe)
@@ -120,10 +120,12 @@ shop/
 
 ### Flux HDV_OPEN / HDV_RESULT — format paquet
 ```
-HDV_OPEN  : int balance | listings[] | int ticksReward | int ticksSalary | transactions[]
-HDV_RESULT: bool ok | string msg | int balance | listings[] | int ticksReward | int ticksSalary | transactions[]
-listings[] : int count → (int id, string seller, string itemId, int qty, int price) × count
+HDV_OPEN  : int balance | listings[] | int ticksReward | int ticksSalary | transactions[] | bool isOp | int knownCount | string[] known | int onlineCount | string[] online
+HDV_RESULT: bool ok | string msg | int balance | listings[] | int ticksReward | int ticksSalary | transactions[] | bool isOp | int knownCount | string[] known | int onlineCount | string[] online
+listings[]    : int count → (int id, string seller, string itemId, int qty, int price) × count
 transactions[]: int count → (int type, string label, int amount, long timestamp) × count
+known[]       : joueurs connus de l'économie (clés lowercase overridées par casing online/market)
+online[]      : joueurs actuellement connectés (pour le sélecteur admin salaire)
 ```
 
 ### HdvScreen — onglets
@@ -133,7 +135,7 @@ transactions[]: int count → (int type, string label, int amount, long timestam
 | 💰 Vendre | Inventaire joueur lu client-side → formulaire qté/prix → `sellByItemId()` serveur |
 | 🛒 Mon Shop | Mes annonces avec bouton Retirer (strip bas = rouge au hover) |
 | 👥 Boutiques | Liste vendeurs → détail boutique → achat |
-| ★ Profil | Solde, countdown salary/reward, formulaire virement bancaire, liste transactions récentes |
+| ★ Profil | Accessible via chip solde (haut droite). Layout 2 colonnes : gauche = cards (solde, revenus+claim, admin salary si op) ; droite = virement (dropdown joueur). Bas = transactions récentes. |
 
 ### Couleurs (HdvScreen)
 ```java
@@ -167,6 +169,11 @@ C_DIM     = 0xFF565C6A   // labels, placeholders
 - TransactionLog : in-memory uniquement (50 entries / joueur), pas persisté sur disque — reset au restart serveur
 - Countdown salary/reward dans l'onglet Profil : calculé en soustrayant (now - screenOpenTime) / 50ms des ticks initiaux reçus du serveur — live sans round-trip réseau
 - 💎 → ◆ (U+25C6) partout : les emoji BMP-ext sont hors BMP et Minecraft ne les rend pas
+- **Chip solde** (haut droite, à côté du pseudo) : cliquable → ouvre onglet Profil. Texte sans shadow ni bold (`drawText(..., false)`)
+- **Salaire manuel** : `PlaytimeTracker` ne paie plus automatiquement. Le timer monte jusqu'à `TICKS_SALAIRE` (72 000 ticks = 1h) puis s'arrête. Le joueur clique "Réclamer mon salaire" → `ACTION_CLAIM_SALARY` → `tryClaimSalary()` atomique (check+reset) → `addShards()`. Bouton vert si disponible, grisé sinon.
+- **Dropdown joueur** (virement) : pas de `TextFieldWidget`, seulement un dropdown rendu custom. Rendu APRÈS `super.render()` pour passer au-dessus des widgets. Quand ouvert : overlay `0x55000000` sur toute la zone profil + bordure or + ombre sur la liste déroulante.
+- **Admin salary** : section visible uniquement si `isOp`. Liste de checkboxes des joueurs en ligne (`onlinePlayers[]`), multi-select via `Set<String> selectedForSalary`, bouton "Verser le salaire" → `ACTION_ADMIN_SALARY` avec liste des sélectionnés.
+- **Positions UI calculées dans render()** : `profileDropX/Y/W`, `profileTransferBtnY`, `profileClaimSalaryBtnY`, `profileSalaryBtnY`, `profileSalaryCheckStartY` sont des champs d'instance mis à jour à chaque frame et relus dans les click handlers — évite de dupliquer le calcul de layout.
 
 ## UI — Constantes visuelles (EconomieCommand.java)
 ```java
