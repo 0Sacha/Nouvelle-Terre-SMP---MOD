@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Économie locale — balances stockées dans shards.json côté serveur.
@@ -77,6 +78,11 @@ public class LocalEconomy {
     /** Retourne true si le joueur a déjà eu un solde enregistré. */
     public synchronized boolean estConnu(String pseudo) {
         return soldes.containsKey(pseudo.toLowerCase());
+    }
+
+    /** Retourne les clés (lowercase) de tous les joueurs connus. */
+    public synchronized Set<String> getSoldesKeys() {
+        return new java.util.HashSet<>(soldes.keySet());
     }
 
     /** Retire des shards à un joueur (ne passe pas en négatif). */

@@ -84,4 +84,6 @@ public class PlaytimeTracker {
     public static int getTicksUntilSalary(UUID uuid) {
         return TICKS_SALAIRE - ticksDepuisSalaire.getOrDefault(uuid, 0);
     }
+
+    public static int getSalaireBase() { return SALAIRE_BASE; }
 }

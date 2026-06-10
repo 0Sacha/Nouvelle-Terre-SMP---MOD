@@ -20,7 +20,7 @@ public class HdvCommand {
                         return 0;
                     }
                     ServerPlayNetworking.send(player, HdvNetworking.HDV_OPEN,
-                        NouvelleTerreBridge.buildHdvOpenPacket(player));
+                        NouvelleTerreBridge.buildHdvOpenPacket(player, ctx.getSource().getServer()));
                     return 1;
                 })
         );

@@ -28,7 +28,10 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             int ticksReward  = buf.readInt();
             int ticksSalary  = buf.readInt();
             List<HdvScreen.TransactionData> transactions = readTransactions(buf);
-            client.execute(() -> client.setScreen(new HdvScreen(balance, listings, ticksReward, ticksSalary, transactions)));
+            boolean isOp = buf.readBoolean();
+            List<String> knownPlayers  = readPlayerList(buf);
+            List<String> onlinePlayers = readPlayerList(buf);
+            client.execute(() -> client.setScreen(new HdvScreen(balance, listings, ticksReward, ticksSalary, transactions, isOp, knownPlayers, onlinePlayers)));
         });
 
         // S2C : vérification de version — alerte si le client est en retard
@@ -62,9 +65,12 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             int ticksReward  = buf.readInt();
             int ticksSalary  = buf.readInt();
             List<HdvScreen.TransactionData> transactions = readTransactions(buf);
+            boolean isOp = buf.readBoolean();
+            List<String> knownPlayers  = readPlayerList(buf);
+            List<String> onlinePlayers = readPlayerList(buf);
             client.execute(() -> {
                 if (client.currentScreen instanceof HdvScreen screen) {
-                    screen.handleResult(ok, message, newBalance, listings, ticksReward, ticksSalary, transactions);
+                    screen.handleResult(ok, message, newBalance, listings, ticksReward, ticksSalary, transactions, isOp, knownPlayers, onlinePlayers);
                 }
             });
         });
@@ -96,6 +102,13 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
                 buf.readLong()    // timestamp
             ));
         }
+        return list;
+    }
+
+    private static List<String> readPlayerList(PacketByteBuf buf) {
+        int count = buf.readInt();
+        List<String> list = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) list.add(buf.readString());
         return list;
     }
 }

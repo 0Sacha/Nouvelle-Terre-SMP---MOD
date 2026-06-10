@@ -13,10 +13,11 @@ public final class HdvNetworking {
     // S2C — version du mod serveur envoyée à la connexion pour vérification client
     public static final Identifier NT_VERSION = new Identifier("nouvelle-terre-bridge", "nt_version");
 
-    public static final int ACTION_BUY      = 0;
-    public static final int ACTION_SELL     = 1;
-    public static final int ACTION_WITHDRAW = 2;
-    public static final int ACTION_TRANSFER = 3;
+    public static final int ACTION_BUY           = 0;
+    public static final int ACTION_SELL          = 1;
+    public static final int ACTION_WITHDRAW      = 2;
+    public static final int ACTION_TRANSFER      = 3;
+    public static final int ACTION_ADMIN_SALARY  = 4;
 
     private HdvNetworking() {}
 }

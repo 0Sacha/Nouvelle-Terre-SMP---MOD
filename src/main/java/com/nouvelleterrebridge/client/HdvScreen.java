@@ -19,6 +19,7 @@ import io.netty.buffer.Unpooled;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.LinkedHashSet;
 
 @Environment(EnvType.CLIENT)
 public class HdvScreen extends Screen {
@@ -141,10 +142,22 @@ public class HdvScreen extends Screen {
     private int ticksUntilSalary = 72000;
     private List<TransactionData> transactions = new ArrayList<>();
     private long screenOpenTime = System.currentTimeMillis();
-    private TextFieldWidget transferToField;
     private TextFieldWidget transferAmountField;
     private String transferTarget = "";
     private int transferAmount = 0;
+
+    private boolean isOp = false;
+    private List<String> knownPlayers  = new ArrayList<>();
+    private List<String> onlinePlayers = new ArrayList<>();
+
+    private boolean playerDropOpen  = false;
+    private int     playerDropScroll = 0;
+    private int profileDropX = -1, profileDropY = -1, profileDropW = 0;
+    private int profileTransferBtnY = -1;
+
+    private final Set<String> selectedForSalary = new LinkedHashSet<>();
+    private int profileSalaryBtnY       = -1;
+    private int profileSalaryCheckStartY = -1;
 
     private String toastMsg = null;
     private boolean toastOk = true;
@@ -152,7 +165,8 @@ public class HdvScreen extends Screen {
 
     // ── Constructeur ──────────────────────────────────────────────────────────
 
-    public HdvScreen(int balance, List<ListingData> listings, int ticksUntilReward, int ticksUntilSalary, List<TransactionData> transactions) {
+    public HdvScreen(int balance, List<ListingData> listings, int ticksUntilReward, int ticksUntilSalary,
+                     List<TransactionData> transactions, boolean isOp, List<String> knownPlayers, List<String> onlinePlayers) {
         super(Text.literal("HDV — Nouvelle Terre"));
         this.balance          = balance;
         this.listings         = new ArrayList<>(listings);
@@ -160,6 +174,9 @@ public class HdvScreen extends Screen {
         this.ticksUntilSalary = ticksUntilSalary;
         this.transactions     = new ArrayList<>(transactions);
         this.screenOpenTime   = System.currentTimeMillis();
+        this.isOp             = isOp;
+        this.knownPlayers     = new ArrayList<>(knownPlayers);
+        this.onlinePlayers    = new ArrayList<>(onlinePlayers);
     }
 
     // ── Init ──────────────────────────────────────────────────────────────────
@@ -195,11 +212,6 @@ public class HdvScreen extends Screen {
         });
         addSelectableChild(sellPriceField);
 
-        transferToField = new TextFieldWidget(textRenderer, winX, winY, 160, 18, Text.literal(""));
-        transferToField.setPlaceholder(Text.literal("Pseudo du joueur..."));
-        transferToField.setChangedListener(s -> transferTarget = s.trim());
-        addSelectableChild(transferToField);
-
         transferAmountField = new TextFieldWidget(textRenderer, winX, winY, 100, 18, Text.literal(""));
         transferAmountField.setPlaceholder(Text.literal("Montant..."));
         transferAmountField.setChangedListener(s -> {
@@ -224,13 +236,17 @@ public class HdvScreen extends Screen {
 
     // ── Résultat réseau ───────────────────────────────────────────────────────
 
-    public void handleResult(boolean ok, String msg, int newBalance, List<ListingData> newListings, int newTicksReward, int newTicksSalary, List<TransactionData> newTransactions) {
+    public void handleResult(boolean ok, String msg, int newBalance, List<ListingData> newListings, int newTicksReward, int newTicksSalary,
+                             List<TransactionData> newTransactions, boolean newIsOp, List<String> newKnownPlayers, List<String> newOnlinePlayers) {
         balance           = newBalance;
         listings          = new ArrayList<>(newListings);
         ticksUntilReward  = newTicksReward;
         ticksUntilSalary  = newTicksSalary;
         transactions      = new ArrayList<>(newTransactions);
         screenOpenTime    = System.currentTimeMillis();
+        isOp              = newIsOp;
+        knownPlayers      = new ArrayList<>(newKnownPlayers);
+        onlinePlayers     = new ArrayList<>(newOnlinePlayers);
         buyingListing    = null;
         selectedSellItem = null;
         sellQtyField.setText("1");
@@ -268,6 +284,8 @@ public class HdvScreen extends Screen {
         if (buyingListing != null) renderBuyModal(ctx, mx, my);
         renderToast(ctx);
         super.render(ctx, mx, my, delta);
+        // Dropdown rendered last so it appears above text fields
+        if (playerDropOpen && activeTab == Tab.PROFILE) renderPlayerDropdown(ctx, mx, my);
     }
 
     // ── Top bar ───────────────────────────────────────────────────────────────
@@ -290,7 +308,7 @@ public class HdvScreen extends Screen {
         tx += textRenderer.getWidth("Nouvelle Terre") + 20;
 
         // Tabs — pill style: active = gold bg dark text, hover = subtle, normal = muted
-        for (Tab tab : Tab.values()) {
+        for (Tab tab : new Tab[]{Tab.MARKET, Tab.SELL, Tab.MY_SHOP, Tab.SHOPS}) {
             boolean active = activeTab == tab;
             int tw = textRenderer.getWidth(tab.label) + 18;
             boolean hov = mx >= tx && mx <= tx + tw && my >= winY && my <= winY + TOP_H - 1;
@@ -308,14 +326,16 @@ public class HdvScreen extends Screen {
             tx += tw + 4;
         }
 
-        // Balance — right-aligned chip
+        // Balance — right-aligned chip, cliquable pour ouvrir le profil
         String bal = balance + " ◆";
         int bw = textRenderer.getWidth(bal) + 18;
         int bx = winX + winW - bw - PAD;
         int by = winY + (TOP_H - 20) / 2;
-        ctx.fill(bx, by, bx + bw, by + 20, C_STRIP);
+        boolean balActive = activeTab == Tab.PROFILE;
+        boolean balHov    = mx >= bx && mx < bx + bw && my >= winY && my <= winY + TOP_H - 1;
+        ctx.fill(bx, by, bx + bw, by + 20, balActive ? C_GOLD : (balHov ? C_HOVER : C_STRIP));
         ctx.fill(bx, by, bx + 2, by + 20, C_GOLD);
-        ctx.drawCenteredTextWithShadow(textRenderer, bal, bx + 9 + bw / 2, by + 6, C_GOLD);
+        ctx.drawText(textRenderer, bal, bx + 10, by + 6, balActive ? C_BG : C_GOLD, false);
     }
 
     // ── Sidebar ───────────────────────────────────────────────────────────────
@@ -866,6 +886,23 @@ public class HdvScreen extends Screen {
             return true;
         }
 
+        // Dropdown item click (intercept before tab/profile handling)
+        if (activeTab == Tab.PROFILE && playerDropOpen && profileDropX >= 0) {
+            int maxVis = Math.min(8, knownPlayers.size());
+            int dropH  = maxVis * 18 + 4;
+            int dy     = profileDropY + 20;
+            if (dy + dropH > winY + winH - PAD) dy = profileDropY - dropH;
+            if (x >= profileDropX && x < profileDropX + profileDropW && y >= dy && y < dy + dropH) {
+                int idx = (y - dy - 2) / 18 + playerDropScroll;
+                if (idx >= 0 && idx < knownPlayers.size()) {
+                    transferTarget = knownPlayers.get(idx);
+                }
+                playerDropOpen = false;
+                return true;
+            }
+            playerDropOpen = false;
+        }
+
         if (y <= winY + TOP_H - 1) {
             handleTabClick(x, y);
             return true;
@@ -891,8 +928,19 @@ public class HdvScreen extends Screen {
     }
 
     private void handleTabClick(int mx, int my) {
+        // Clic sur le chip balance → profil
+        String bal = balance + " ◆";
+        int bw = textRenderer.getWidth(bal) + 18;
+        int bx = winX + winW - bw - PAD;
+        if (mx >= bx && mx < bx + bw) {
+            activeTab    = Tab.PROFILE;
+            scrollOffset = 0;
+            selectedShop = null;
+            return;
+        }
+
         int tx = winX + PAD + textRenderer.getWidth("HDV") + 13 + textRenderer.getWidth("Nouvelle Terre") + 20;
-        for (Tab tab : Tab.values()) {
+        for (Tab tab : new Tab[]{Tab.MARKET, Tab.SELL, Tab.MY_SHOP, Tab.SHOPS}) {
             int tw = textRenderer.getWidth(tab.label) + 18;
             if (mx >= tx && mx <= tx + tw) {
                 activeTab    = tab;
@@ -1060,6 +1108,12 @@ public class HdvScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mx, double my, double delta) {
+        if (activeTab == Tab.PROFILE && playerDropOpen) {
+            int maxVis  = Math.min(8, knownPlayers.size());
+            int maxScrl = Math.max(0, knownPlayers.size() - maxVis);
+            playerDropScroll = Math.max(0, Math.min(maxScrl, playerDropScroll - (int) Math.signum(delta)));
+            return true;
+        }
         if (activeTab == Tab.MARKET && buyingListing == null) {
             scrollOffset = Math.max(0, scrollOffset - (int) Math.signum(delta));
         }
@@ -1071,8 +1125,9 @@ public class HdvScreen extends Screen {
     @Override
     public boolean keyPressed(int key, int scan, int mod) {
         if (key == 256) {
-            if (buyingListing != null) { buyingListing = null; return true; }
-            if (selectedShop  != null) { selectedShop  = null; return true; }
+            if (playerDropOpen)         { playerDropOpen = false;  return true; }
+            if (buyingListing != null)  { buyingListing = null;    return true; }
+            if (selectedShop  != null)  { selectedShop  = null;    return true; }
         }
         return super.keyPressed(key, scan, mod);
     }
@@ -1108,89 +1163,163 @@ public class HdvScreen extends Screen {
     private void renderProfile(DrawContext ctx, int mx, int my) {
         String me = client != null && client.player != null ? client.player.getName().getString() : "";
         int px = winX + PAD;
-        int py = winY + TOP_H + PAD;
         int pw = winW - PAD * 2;
-
-        ctx.drawText(textRenderer, "PROFIL — " + me.toUpperCase(), px, py, C_DIM, false);
-        py += textRenderer.fontHeight + 12;
-
         int colW = (pw - 12) / 2;
+        int leftX = px;
+        int rightX = px + colW + 12;
+        int pyBase = winY + TOP_H + PAD;
+
+        ctx.drawText(textRenderer, "PROFIL — " + me.toUpperCase(), px, pyBase, C_DIM, false);
+
+        int leftY  = pyBase + textRenderer.fontHeight + 12;
+        int rightY = leftY;
+
         long elapsed = System.currentTimeMillis() - screenOpenTime;
         int elapsedTicks = (int) (elapsed / 50);
 
-        // ── Balance card ──────────────────────────────────────────────────────
-        int cardX = px, cardY = py, cardH = 80;
-        ctx.fill(cardX, cardY, cardX + colW, cardY + cardH, C_PANEL);
-        ctx.fill(cardX, cardY, cardX + colW, cardY + 1, C_BORDER);
-        ctx.fill(cardX, cardY + cardH - 1, cardX + colW, cardY + cardH, C_BORDER);
-        ctx.fill(cardX, cardY, cardX + 1, cardY + cardH, C_BORDER);
-        ctx.fill(cardX + colW - 1, cardY, cardX + colW, cardY + cardH, C_BORDER);
-        ctx.fill(cardX, cardY + 1, cardX + 3, cardY + cardH - 1, C_GOLD);
-        ctx.drawText(textRenderer, "SOLDE", cardX + 12, cardY + 12, C_DIM, false);
-        ctx.drawCenteredTextWithShadow(textRenderer, balance + " ◆", cardX + colW / 2, cardY + 34, C_GOLD);
-        ctx.drawText(textRenderer, me, cardX + 12, cardY + 56, C_MID, false);
+        // ── Balance card (left) ───────────────────────────────────────────────
+        {
+            int h = 62;
+            ctx.fill(leftX, leftY, leftX + colW, leftY + h, C_PANEL);
+            ctx.fill(leftX, leftY, leftX + colW, leftY + 1, C_BORDER);
+            ctx.fill(leftX, leftY + h - 1, leftX + colW, leftY + h, C_BORDER);
+            ctx.fill(leftX, leftY, leftX + 1, leftY + h, C_BORDER);
+            ctx.fill(leftX + colW - 1, leftY, leftX + colW, leftY + h, C_BORDER);
+            ctx.fill(leftX + 1, leftY + 1, leftX + 3, leftY + h - 1, C_GOLD);
+            ctx.drawText(textRenderer, "SOLDE", leftX + 12, leftY + 10, C_DIM, false);
+            ctx.drawCenteredTextWithShadow(textRenderer, balance + " ◆", leftX + colW / 2, leftY + 28, C_GOLD);
+            ctx.drawText(textRenderer, me, leftX + 12, leftY + 47, C_MID, false);
+            leftY += h + 8;
+        }
 
-        // ── Salary card ───────────────────────────────────────────────────────
-        int salY = py + cardH + 6;
-        int salH = 90;
-        ctx.fill(cardX, salY, cardX + colW, salY + salH, C_PANEL);
-        ctx.fill(cardX, salY, cardX + colW, salY + 1, C_BORDER);
-        ctx.fill(cardX, salY + salH - 1, cardX + colW, salY + salH, C_BORDER);
-        ctx.fill(cardX, salY, cardX + 1, salY + salH, C_BORDER);
-        ctx.fill(cardX + colW - 1, salY, cardX + colW, salY + salH, C_BORDER);
-        ctx.drawText(textRenderer, "REVENUS AUTOMATIQUES", cardX + 10, salY + 10, C_DIM, false);
-        int rewardTicks = Math.max(0, ticksUntilReward - elapsedTicks);
-        int salaryTicks = Math.max(0, ticksUntilSalary - elapsedTicks);
-        ctx.drawText(textRenderer, "Récompense  +5 ◆ / 30 min", cardX + 10, salY + 28, C_MID, false);
-        ctx.drawText(textRenderer, "Prochain : " + ticksToTime(rewardTicks), cardX + 10, salY + 40, C_GOLD, false);
-        ctx.drawText(textRenderer, "Salaire     +8 ◆ / heure", cardX + 10, salY + 58, C_MID, false);
-        ctx.drawText(textRenderer, "Prochain : " + ticksToTime(salaryTicks), cardX + 10, salY + 70, C_GOLD, false);
+        // ── Revenus auto card (left) ──────────────────────────────────────────
+        {
+            int rewardTicks = Math.max(0, ticksUntilReward - elapsedTicks);
+            int salaryTicks = Math.max(0, ticksUntilSalary - elapsedTicks);
+            int h = 96;
+            ctx.fill(leftX, leftY, leftX + colW, leftY + h, C_PANEL);
+            ctx.fill(leftX, leftY, leftX + colW, leftY + 1, C_BORDER);
+            ctx.fill(leftX, leftY + h - 1, leftX + colW, leftY + h, C_BORDER);
+            ctx.fill(leftX, leftY, leftX + 1, leftY + h, C_BORDER);
+            ctx.fill(leftX + colW - 1, leftY, leftX + colW, leftY + h, C_BORDER);
+            ctx.drawText(textRenderer, "REVENUS AUTOMATIQUES", leftX + 10, leftY + 10, C_DIM, false);
+            ctx.drawText(textRenderer, "Récompense  +5 ◆ / 30 min", leftX + 10, leftY + 30, C_MID, false);
+            ctx.drawText(textRenderer, "Prochain : " + ticksToTime(rewardTicks), leftX + 10, leftY + 44, C_GOLD, false);
+            ctx.drawText(textRenderer, "Salaire     +8 ◆ / heure",   leftX + 10, leftY + 64, C_MID, false);
+            ctx.drawText(textRenderer, "Prochain : " + ticksToTime(salaryTicks), leftX + 10, leftY + 78, C_GOLD, false);
+            leftY += h + 8;
+        }
 
-        // ── Transfer form ─────────────────────────────────────────────────────
-        int formX = px + colW + 12;
-        int formY = py;
-        int formW = colW;
-        int formH = 176;
-        ctx.fill(formX, formY, formX + formW, formY + formH, C_SURFACE);
-        ctx.fill(formX, formY, formX + formW, formY + 1, C_BORDER);
-        ctx.fill(formX, formY + formH - 1, formX + formW, formY + formH, C_BORDER);
-        ctx.fill(formX, formY, formX + 1, formY + formH, C_BORDER);
-        ctx.fill(formX + formW - 1, formY, formX + formW, formY + formH, C_BORDER);
+        // ── Admin salary section (left, isOp only) ────────────────────────────
+        profileSalaryBtnY       = -1;
+        profileSalaryCheckStartY = -1;
+        if (isOp && !onlinePlayers.isEmpty()) {
+            int rows  = (int) Math.ceil(onlinePlayers.size() / 4.0);
+            int checkW = (colW - 20) / 4;
+            int h = 28 + rows * 24 + 30;
+            ctx.fill(leftX, leftY, leftX + colW, leftY + h, C_SURFACE);
+            ctx.fill(leftX, leftY, leftX + colW, leftY + 1, C_BORDER);
+            ctx.fill(leftX, leftY + h - 1, leftX + colW, leftY + h, C_BORDER);
+            ctx.fill(leftX, leftY, leftX + 1, leftY + h, C_BORDER);
+            ctx.fill(leftX + colW - 1, leftY, leftX + colW, leftY + h, C_BORDER);
+            ctx.fill(leftX + 1, leftY + 1, leftX + 3, leftY + h - 1, C_RED);
+            ctx.drawText(textRenderer, "ADMIN — DISTRIBUER SALAIRE", leftX + 12, leftY + 10, C_DIM, false);
 
-        int fy = formY + 12;
-        ctx.drawText(textRenderer, "VIREMENT BANCAIRE", formX + 10, fy, C_DIM, false);
-        fy += textRenderer.fontHeight + 8;
-        ctx.drawText(textRenderer, "DESTINATAIRE", formX + 10, fy, C_DIM, false);
-        fy += textRenderer.fontHeight + 3;
-        transferToField.setX(formX + 10);
-        transferToField.setY(fy);
-        transferToField.setWidth(formW - 20);
-        transferToField.render(ctx, mx, my, 0);
-        fy += 26;
-        ctx.drawText(textRenderer, "MONTANT (◆)", formX + 10, fy, C_DIM, false);
-        fy += textRenderer.fontHeight + 3;
-        transferAmountField.setX(formX + 10);
-        transferAmountField.setY(fy);
-        transferAmountField.setWidth(formW - 20);
-        transferAmountField.render(ctx, mx, my, 0);
-        fy += 26 + 4;
-        boolean canTransfer = !transferTarget.isEmpty() && transferAmount > 0 && transferAmount <= balance;
-        boolean sendHov = mx >= formX + 10 && mx < formX + formW - 10 && my >= fy && my < fy + 24;
-        ctx.fill(formX + 10, fy, formX + formW - 10, fy + 24, canTransfer ? (sendHov ? 0xFF1A8050 : C_GREEN) : C_BORDER);
-        ctx.drawCenteredTextWithShadow(textRenderer, "Envoyer", formX + formW / 2, fy + 8, canTransfer ? C_WHITE : C_DARK);
+            int checkStartY = leftY + 28;
+            profileSalaryCheckStartY = checkStartY;
+            for (int i = 0; i < onlinePlayers.size(); i++) {
+                String p  = onlinePlayers.get(i);
+                int col   = i % 4;
+                int row   = i / 4;
+                int cx    = leftX + 10 + col * checkW;
+                int cy    = checkStartY + row * 24;
+                boolean checked = selectedForSalary.contains(p);
+                boolean chHov   = mx >= cx && mx < cx + checkW - 2 && my >= cy && my < cy + 18;
+                ctx.fill(cx, cy + 3, cx + 12, cy + 15, checked ? C_GREEN : (chHov ? C_HOVER : C_DARK));
+                ctx.fill(cx, cy + 3, cx + 12, cy + 4, C_BORDER);
+                ctx.fill(cx, cy + 14, cx + 12, cy + 15, C_BORDER);
+                ctx.fill(cx, cy + 3, cx + 1, cy + 15, C_BORDER);
+                ctx.fill(cx + 11, cy + 3, cx + 12, cy + 15, C_BORDER);
+                if (checked) ctx.drawText(textRenderer, "✓", cx + 2, cy + 4, C_WHITE, false);
+                ctx.drawText(textRenderer, truncate(p, checkW - 18), cx + 16, cy + 5, chHov ? C_WHITE : C_MID, false);
+            }
+
+            int btnY = leftY + h - 26;
+            profileSalaryBtnY = btnY;
+            boolean anySelected = !selectedForSalary.isEmpty();
+            boolean btnHov = anySelected && mx >= leftX + 10 && mx < leftX + colW - 10 && my >= btnY && my < btnY + 20;
+            ctx.fill(leftX + 10, btnY, leftX + colW - 10, btnY + 20,
+                anySelected ? (btnHov ? 0xFF1A8050 : C_GREEN) : C_BORDER);
+            ctx.drawCenteredTextWithShadow(textRenderer,
+                anySelected ? "Verser à " + selectedForSalary.size() + " joueur(s)" : "Sélectionner des joueurs",
+                leftX + colW / 2, btnY + 6, anySelected ? C_WHITE : C_DARK);
+            leftY += h + 8;
+        }
+
+        // ── Virement bancaire form (right) ────────────────────────────────────
+        {
+            int fW = colW;
+            int fH = 160;
+            ctx.fill(rightX, rightY, rightX + fW, rightY + fH, C_SURFACE);
+            ctx.fill(rightX, rightY, rightX + fW, rightY + 1, C_BORDER);
+            ctx.fill(rightX, rightY + fH - 1, rightX + fW, rightY + fH, C_BORDER);
+            ctx.fill(rightX, rightY, rightX + 1, rightY + fH, C_BORDER);
+            ctx.fill(rightX + fW - 1, rightY, rightX + fW, rightY + fH, C_BORDER);
+
+            int fy = rightY + 12;
+            ctx.drawText(textRenderer, "VIREMENT BANCAIRE", rightX + 10, fy, C_DIM, false);
+            fy += textRenderer.fontHeight + 10;
+
+            ctx.drawText(textRenderer, "DESTINATAIRE", rightX + 10, fy, C_DIM, false);
+            fy += textRenderer.fontHeight + 4;
+
+            // Player dropdown button
+            int dropW = fW - 20;
+            profileDropX = rightX + 10;
+            profileDropY = fy;
+            profileDropW = dropW;
+            boolean dropHov = !playerDropOpen && mx >= profileDropX && mx < profileDropX + dropW && my >= fy && my < fy + 20;
+            ctx.fill(profileDropX - 1, fy - 1, profileDropX + dropW + 1, fy + 21, C_BORDER);
+            ctx.fill(profileDropX, fy, profileDropX + dropW, fy + 20,
+                playerDropOpen ? C_HOVER : (dropHov ? C_HOVER : C_DARK));
+            String dropLabel = transferTarget.isEmpty() ? "Sélectionner un joueur..." : transferTarget;
+            ctx.drawText(textRenderer, truncate(dropLabel, dropW - 20), profileDropX + 6, fy + 6,
+                transferTarget.isEmpty() ? C_DIM : C_WHITE, false);
+            ctx.drawText(textRenderer, playerDropOpen ? "▲" : "▼", profileDropX + dropW - 14, fy + 6, C_DIM, false);
+            fy += 26;
+
+            ctx.drawText(textRenderer, "MONTANT (◆)", rightX + 10, fy, C_DIM, false);
+            fy += textRenderer.fontHeight + 4;
+            transferAmountField.setX(rightX + 10);
+            transferAmountField.setY(fy);
+            transferAmountField.setWidth(fW - 20);
+            transferAmountField.render(ctx, mx, my, 0);
+            fy += 28;
+
+            boolean canTransfer = !transferTarget.isEmpty() && transferAmount > 0 && transferAmount <= balance;
+            boolean sendHov = canTransfer && mx >= rightX + 10 && mx < rightX + fW - 10 && my >= fy && my < fy + 22;
+            profileTransferBtnY = fy;
+            ctx.fill(rightX + 10, fy, rightX + fW - 10, fy + 22,
+                canTransfer ? (sendHov ? 0xFF1A8050 : C_GREEN) : C_BORDER);
+            ctx.drawCenteredTextWithShadow(textRenderer, "Envoyer",
+                rightX + fW / 2, fy + 7, canTransfer ? C_WHITE : C_DARK);
+        }
 
         // ── Transactions ──────────────────────────────────────────────────────
-        int listStartY = py + Math.max(cardH + 6 + salH, formH) + 14;
-        ctx.drawText(textRenderer, "TRANSACTIONS RECENTES", px, listStartY - textRenderer.fontHeight - 4, C_DIM, false);
+        int listStartY = Math.max(leftY, rightY + 160 + 8) + 14;
+
+        ctx.drawText(textRenderer, "TRANSACTIONS RECENTES", px, listStartY - textRenderer.fontHeight - 6, C_DIM, false);
 
         int rowH = 24;
         ctx.enableScissor(px, listStartY, px + pw, winY + winH - PAD);
         if (transactions.isEmpty()) {
-            ctx.drawCenteredTextWithShadow(textRenderer, "Aucune transaction récente", px + pw / 2, listStartY + 20, C_DIM);
+            ctx.drawCenteredTextWithShadow(textRenderer, "Aucune transaction récente",
+                px + pw / 2, listStartY + 16, C_DIM);
         }
         for (int i = 0; i < transactions.size(); i++) {
             TransactionData tx = transactions.get(i);
             int ry = listStartY + i * (rowH + 2);
+            if (ry + rowH > winY + winH - PAD) break;
             boolean hov = mx >= px && mx < px + pw && my >= ry && my < ry + rowH;
             ctx.fill(px, ry, px + pw, ry + rowH, hov ? C_HOVER : C_PANEL);
             ctx.fill(px, ry, px + pw, ry + 1, C_BORDER);
@@ -1201,7 +1330,7 @@ public class HdvScreen extends Screen {
                 case 1, 2 -> C_GREEN;
                 default   -> C_GOLD;
             };
-            ctx.fill(px, ry + 1, px + 3, ry + rowH - 1, accent);
+            ctx.fill(px + 1, ry + 1, px + 3, ry + rowH - 1, accent);
 
             String typeLabel = switch (tx.type()) {
                 case 0 -> "Achat";
@@ -1215,32 +1344,108 @@ public class HdvScreen extends Screen {
             ctx.drawText(textRenderer, truncate(tx.label(), pw - 160), px + 72, midY, C_WHITE, false);
 
             boolean isOut = tx.type() == 0 || tx.type() == 3;
-            String amtStr = (isOut ? "-" : "+") + tx.amount() + " ◆";
-            int amtColor = isOut ? C_RED : C_GREEN;
+            String amtStr  = (isOut ? "-" : "+") + tx.amount() + " ◆";
+            int amtColor   = isOut ? C_RED : C_GREEN;
             String timeStr = formatAgo(System.currentTimeMillis() - tx.timestamp());
-            int timeW = textRenderer.getWidth(timeStr) + 4;
-            ctx.drawText(textRenderer, timeStr, px + pw - timeW, midY, C_DIM, false);
-            ctx.drawText(textRenderer, amtStr, px + pw - timeW - textRenderer.getWidth(amtStr) - 10, midY, amtColor, false);
+            int timeW = textRenderer.getWidth(timeStr);
+            ctx.drawText(textRenderer, timeStr, px + pw - timeW - 4, midY, C_DIM, false);
+            ctx.drawText(textRenderer, amtStr,  px + pw - timeW - textRenderer.getWidth(amtStr) - 14, midY, amtColor, false);
         }
         ctx.disableScissor();
     }
 
+    private void renderPlayerDropdown(DrawContext ctx, int mx, int my) {
+        if (knownPlayers.isEmpty() || profileDropX < 0) { playerDropOpen = false; return; }
+        int itemH    = 18;
+        int maxVis   = Math.min(8, knownPlayers.size());
+        int dropH    = maxVis * itemH + 4;
+        int dx = profileDropX, dw = profileDropW;
+        int dy = profileDropY + 20;
+        if (dy + dropH > winY + winH - PAD) dy = profileDropY - dropH;
+
+        ctx.fill(dx, dy, dx + dw, dy + dropH, C_SURFACE);
+        ctx.fill(dx - 1, dy - 1, dx + dw + 1, dy, C_BORDER);
+        ctx.fill(dx - 1, dy + dropH, dx + dw + 1, dy + dropH + 1, C_BORDER);
+        ctx.fill(dx - 1, dy, dx, dy + dropH, C_BORDER);
+        ctx.fill(dx + dw, dy, dx + dw + 1, dy + dropH, C_BORDER);
+
+        ctx.enableScissor(dx, dy, dx + dw, dy + dropH);
+        int end = Math.min(playerDropScroll + maxVis, knownPlayers.size());
+        for (int i = playerDropScroll; i < end; i++) {
+            String p   = knownPlayers.get(i);
+            int iy     = dy + 2 + (i - playerDropScroll) * itemH;
+            boolean sel = p.equalsIgnoreCase(transferTarget);
+            boolean hov = mx >= dx && mx < dx + dw && my >= iy && my < iy + itemH;
+            if (sel) {
+                ctx.fill(dx + 1, iy, dx + dw - 1, iy + itemH, C_HOVER);
+                ctx.fill(dx + 1, iy, dx + 3, iy + itemH, C_GOLD);
+            } else if (hov) {
+                ctx.fill(dx + 1, iy, dx + dw - 1, iy + itemH, 0x18FFFFFF);
+            }
+            ctx.drawText(textRenderer, p, dx + 8, iy + (itemH - textRenderer.fontHeight) / 2,
+                (sel || hov) ? C_WHITE : C_MID, false);
+        }
+        ctx.disableScissor();
+
+        if (knownPlayers.size() > maxVis) {
+            int sbH = Math.max(12, dropH * maxVis / knownPlayers.size());
+            int maxSc = knownPlayers.size() - maxVis;
+            int sbY = dy + (maxSc > 0 ? (dropH - sbH) * playerDropScroll / maxSc : 0);
+            ctx.fill(dx + dw - 4, dy, dx + dw, dy + dropH, C_BORDER);
+            ctx.fill(dx + dw - 4, sbY, dx + dw, sbY + sbH, 0x60FFFFFF);
+        }
+    }
+
     private void handleProfileClick(int mx, int my) {
-        int px = winX + PAD;
-        int pw = winW - PAD * 2;
+        int px   = winX + PAD;
+        int pw   = winW - PAD * 2;
         int colW = (pw - 12) / 2;
-        int formX = px + colW + 12;
-        int formW = colW;
-        // fy mirrors the send button position from renderProfile
-        int formY = winY + TOP_H + PAD + textRenderer.fontHeight + 12;
-        int fy = formY + 12 + textRenderer.fontHeight + 8 + textRenderer.fontHeight + 3 + 26 + textRenderer.fontHeight + 3 + 26 + 4;
-        boolean canTransfer = !transferTarget.isEmpty() && transferAmount > 0 && transferAmount <= balance;
-        if (canTransfer && mx >= formX + 10 && mx < formX + formW - 10 && my >= fy && my < fy + 24) {
-            sendTransfer(transferTarget, transferAmount);
-            transferToField.setText("");
-            transferAmountField.setText("");
-            transferTarget = "";
-            transferAmount = 0;
+        int leftX  = px;
+        int rightX = px + colW + 12;
+
+        // Dropdown button
+        if (profileDropX >= 0 && mx >= profileDropX && mx < profileDropX + profileDropW
+                && my >= profileDropY && my < profileDropY + 20) {
+            playerDropOpen = !playerDropOpen;
+            playerDropScroll = 0;
+            return;
+        }
+
+        // Transfer "Envoyer" button
+        if (profileTransferBtnY >= 0) {
+            boolean canTransfer = !transferTarget.isEmpty() && transferAmount > 0 && transferAmount <= balance;
+            if (canTransfer && mx >= rightX + 10 && mx < rightX + colW - 10
+                    && my >= profileTransferBtnY && my < profileTransferBtnY + 22) {
+                sendTransfer(transferTarget, transferAmount);
+                transferTarget = "";
+                transferAmountField.setText("");
+                transferAmount = 0;
+                playerDropOpen = false;
+                return;
+            }
+        }
+
+        // Admin salary checkboxes
+        if (isOp && profileSalaryCheckStartY >= 0 && !onlinePlayers.isEmpty()) {
+            int checkW = (colW - 20) / 4;
+            for (int i = 0; i < onlinePlayers.size(); i++) {
+                String p  = onlinePlayers.get(i);
+                int col   = i % 4;
+                int row   = i / 4;
+                int cx    = leftX + 10 + col * checkW;
+                int cy    = profileSalaryCheckStartY + row * 24;
+                if (mx >= cx && mx < cx + checkW - 2 && my >= cy && my < cy + 18) {
+                    if (selectedForSalary.contains(p)) selectedForSalary.remove(p);
+                    else selectedForSalary.add(p);
+                    return;
+                }
+            }
+            if (profileSalaryBtnY >= 0 && !selectedForSalary.isEmpty()
+                    && mx >= leftX + 10 && mx < leftX + colW - 10
+                    && my >= profileSalaryBtnY && my < profileSalaryBtnY + 20) {
+                sendAdminSalary(new ArrayList<>(selectedForSalary));
+                selectedForSalary.clear();
+            }
         }
     }
 
@@ -1249,6 +1454,14 @@ public class HdvScreen extends Screen {
         buf.writeInt(HdvNetworking.ACTION_TRANSFER);
         buf.writeString(target);
         buf.writeInt(amount);
+        ClientPlayNetworking.send(HdvNetworking.HDV_ACTION, buf);
+    }
+
+    private void sendAdminSalary(List<String> targets) {
+        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        buf.writeInt(HdvNetworking.ACTION_ADMIN_SALARY);
+        buf.writeInt(targets.size());
+        for (String t : targets) buf.writeString(t);
         ClientPlayNetworking.send(HdvNetworking.HDV_ACTION, buf);
     }
 
