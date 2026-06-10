@@ -38,7 +38,6 @@ import org.slf4j.LoggerFactory;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 public class NouvelleTerreBridge implements ModInitializer {
@@ -160,7 +159,6 @@ public class NouvelleTerreBridge implements ModInitializer {
         resp.writeString(message);
         resp.writeInt(LocalEconomy.getInstance().getBalance(player.getName().getString()));
         writeListings(resp);
-        writeProfileData(resp, player, server);
         ServerPlayNetworking.send(player, HdvNetworking.HDV_RESULT, resp);
     }
 
@@ -168,7 +166,6 @@ public class NouvelleTerreBridge implements ModInitializer {
         PacketByteBuf buf = PacketByteBufs.create();
         buf.writeInt(LocalEconomy.getInstance().getBalance(player.getName().getString()));
         writeListings(buf);
-        writeProfileData(buf, player, server);
         return buf;
     }
 
@@ -187,6 +184,10 @@ public class NouvelleTerreBridge implements ModInitializer {
     // ── Bank networking ──────────────────────────────────────────────────────
 
     private void registerBankNetworking() {
+        ServerPlayNetworking.registerGlobalReceiver(BankNetworking.BANK_REQUEST, (server, player, handler, buf, responseSender) -> {
+            server.execute(() -> ServerPlayNetworking.send(player, BankNetworking.BANK_OPEN, buildBankOpenPacket(player, server)));
+        });
+
         ServerPlayNetworking.registerGlobalReceiver(BankNetworking.BANK_ACTION, (server, player, handler, buf, responseSender) -> {
             int type = buf.readInt();
             final String result;
@@ -240,6 +241,49 @@ public class NouvelleTerreBridge implements ModInitializer {
                     int loanId = buf.readInt();
                     String err = LoanManager.getInstance().forgive(player.getName().getString(), loanId);
                     result = err != null ? "§c" + err : "§a✅ Credit pardonne.";
+                }
+                case BankNetworking.ACTION_TRANSFER -> {
+                    String target = buf.readString();
+                    int amount = buf.readInt();
+                    String sender = player.getName().getString();
+                    if (sender.equalsIgnoreCase(target)) {
+                        result = "§cVous ne pouvez pas vous envoyer des fonds.";
+                    } else {
+                        boolean ok = LocalEconomy.getInstance().transfer(sender, target, amount);
+                        if (ok) {
+                            result = "§a✅ " + amount + " ◆ envoyés à §f" + target + "§a.";
+                            server.execute(() -> {
+                                ServerPlayerEntity t = server.getPlayerManager().getPlayer(target);
+                                if (t != null) t.sendMessage(Text.literal(
+                                    "§a[Nouvelle Terre] §f" + sender + " §avous a envoyé §f" + amount + " ◆§a !"));
+                            });
+                        } else {
+                            result = "§cSolde insuffisant ou joueur inconnu.";
+                        }
+                    }
+                }
+                case BankNetworking.ACTION_RECURRING_CREATE -> {
+                    String to = buf.readString();
+                    int amount = buf.readInt();
+                    int intervalTicks = buf.readInt();
+                    String from = player.getName().getString();
+                    if (from.equalsIgnoreCase(to)) {
+                        result = "§cVous ne pouvez pas vous faire de virement récurrent.";
+                    } else if (!LocalEconomy.getInstance().estConnu(to)) {
+                        result = "§cJoueur inconnu.";
+                    } else if (amount <= 0) {
+                        result = "§cMontant invalide.";
+                    } else if (intervalTicks < 1200) {
+                        result = "§cIntervalle minimum : 1 minute.";
+                    } else {
+                        RecurringTransferManager.getInstance().add(from, to, amount, intervalTicks);
+                        result = "§a✅ Virement récurrent créé vers §f" + to + "§a !";
+                    }
+                }
+                case BankNetworking.ACTION_RECURRING_CANCEL -> {
+                    int id = buf.readInt();
+                    boolean ok = RecurringTransferManager.getInstance().cancel(id, player.getName().getString());
+                    result = ok ? "§a✅ Virement récurrent annulé." : "§cVirement introuvable.";
                 }
                 default -> result = "§cAction inconnue.";
             }
@@ -312,6 +356,17 @@ public class NouvelleTerreBridge implements ModInitializer {
             .collect(Collectors.toList());
         buf.writeInt(known.size());
         for (String p : known) buf.writeString(p);
+
+        // Virements récurrents du joueur
+        List<RecurringTransfer> recurring = RecurringTransferManager.getInstance().getForPlayer(name);
+        buf.writeInt(recurring.size());
+        for (RecurringTransfer rt : recurring) {
+            buf.writeInt(rt.id);
+            buf.writeString(rt.to);
+            buf.writeInt(rt.amount);
+            buf.writeInt(rt.intervalTicks);
+            buf.writeInt(rt.intervalTicks - rt.ticksSince);
+        }
     }
 
     private static void writeLoanData(PacketByteBuf buf, String other, Loan l) {
@@ -334,44 +389,4 @@ public class NouvelleTerreBridge implements ModInitializer {
         return casing;
     }
 
-    // ── HDV profile data ─────────────────────────────────────────────────────
-
-    private static void writeProfileData(PacketByteBuf buf, ServerPlayerEntity player, MinecraftServer server) {
-        // Récompense
-        buf.writeInt(PlaytimeTracker.getTicksUntilReward(player.getUuid()));
-
-        // Transactions
-        List<TransactionLog.Entry> txs = TransactionLog.getLast(player.getName().getString(), 15);
-        buf.writeInt(txs.size());
-        for (TransactionLog.Entry e : txs) {
-            buf.writeInt(e.type());
-            buf.writeString(e.label());
-            buf.writeInt(e.amount());
-            buf.writeLong(e.timestamp());
-        }
-
-        // Joueurs connus (dropdown virement) avec casing correct
-        Set<String> knownLower = LocalEconomy.getInstance().getSoldesKeys();
-        Map<String, String> casing = server.getPlayerManager().getPlayerList().stream()
-            .collect(Collectors.toMap(p -> p.getName().getString().toLowerCase(), p -> p.getName().getString(), (a, b) -> a));
-        MarketManager.getInstance().getAll().forEach(l -> casing.putIfAbsent(l.seller.toLowerCase(), l.seller));
-        List<String> known = knownLower.stream()
-            .map(k -> casing.getOrDefault(k, k))
-            .sorted(String.CASE_INSENSITIVE_ORDER)
-            .collect(Collectors.toList());
-        buf.writeInt(known.size());
-        for (String p : known) buf.writeString(p);
-
-        // Virements récurrents du joueur
-        List<RecurringTransfer> recurring = RecurringTransferManager.getInstance()
-            .getForPlayer(player.getName().getString());
-        buf.writeInt(recurring.size());
-        for (RecurringTransfer rt : recurring) {
-            buf.writeInt(rt.id);
-            buf.writeString(rt.to);
-            buf.writeInt(rt.amount);
-            buf.writeInt(rt.intervalTicks);
-            buf.writeInt(rt.intervalTicks - rt.ticksSince); // ticksUntilNext
-        }
-    }
 }

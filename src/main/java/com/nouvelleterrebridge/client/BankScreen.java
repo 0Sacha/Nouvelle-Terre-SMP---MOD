@@ -23,11 +23,12 @@ public class BankScreen extends Screen {
     public record LoanData(int id, String other, int principal, long dueMs,
                            int daysOverdue, int totalPenalty, int nextPenalty, boolean repaid) {}
     public record LeaderboardEntry(String name, int balance) {}
+    public record RecurringData(int id, String to, int amount, int intervalTicks, int ticksUntilNext) {}
 
     // ── Tabs ───────────────────────────────────────────────────────────────────
 
     private enum Tab {
-        ACCOUNT("Compte"), ECONOMY("Economie"), LEADERBOARD("Classement"), CREDITS("Credits");
+        ACCOUNT("Compte"), ECONOMY("Economie"), LEADERBOARD("Classement"), CREDITS("Credits"), TRANSFERS("Virements");
         final String label;
         Tab(String l) { this.label = l; }
     }
@@ -74,6 +75,7 @@ public class BankScreen extends Screen {
     private List<LoanData> loansAsLender;
     private List<LoanData> loansAsBorrower;
     private List<String> knownPlayers;
+    private List<RecurringData> recurringList;
 
     // ── UI State ───────────────────────────────────────────────────────────────
 
@@ -84,6 +86,27 @@ public class BankScreen extends Screen {
     private String toastMsg;
     private boolean toastOk;
     private long toastEnd;
+
+    // ── Virements ──────────────────────────────────────────────────────────────
+
+    private boolean trfDropOpen    = false;
+    private int     trfDropScroll  = 0;
+    private String  trfTarget      = "";
+    private int     trfAmount      = 0;
+    private TextFieldWidget trfAmountField;
+    private int trfDropX = -1, trfDropY = -1, trfDropW = 0;
+    private int trfSendBtnY = -1;
+
+    private boolean recurDropOpen   = false;
+    private int     recurDropScroll = 0;
+    private String  recurTarget     = "";
+    private int     recurAmount     = 0;
+    private int     recurIntervalMins = 60;
+    private TextFieldWidget recurAmountField;
+    private TextFieldWidget recurIntervalMinsField;
+    private int recurDropX = -1, recurDropY = -1, recurDropW = 0;
+    private int recurCreateBtnY = -1;
+    private final List<Integer> recurCancelBtnY = new ArrayList<>();
 
     // ── Modal — nouveau crédit ──────────────────────────────────────────────────
 
@@ -109,18 +132,19 @@ public class BankScreen extends Screen {
     public BankScreen(int balance, int ticksReward, List<TxData> transactions,
                       int totalShards, int playerCount, List<LeaderboardEntry> leaderboard,
                       List<LoanData> loansAsLender, List<LoanData> loansAsBorrower,
-                      List<String> knownPlayers) {
+                      List<String> knownPlayers, List<RecurringData> recurring) {
         super(Text.literal("Banque — Nouvelle Terre"));
-        this.balance        = balance;
-        this.ticksReward    = ticksReward;
-        this.transactions   = new ArrayList<>(transactions);
-        this.totalShards    = totalShards;
-        this.playerCount    = playerCount;
-        this.leaderboard    = new ArrayList<>(leaderboard);
-        this.loansAsLender  = new ArrayList<>(loansAsLender);
+        this.balance         = balance;
+        this.ticksReward     = ticksReward;
+        this.transactions    = new ArrayList<>(transactions);
+        this.totalShards     = totalShards;
+        this.playerCount     = playerCount;
+        this.leaderboard     = new ArrayList<>(leaderboard);
+        this.loansAsLender   = new ArrayList<>(loansAsLender);
         this.loansAsBorrower = new ArrayList<>(loansAsBorrower);
-        this.knownPlayers   = new ArrayList<>(knownPlayers);
-        this.screenOpenTime = System.currentTimeMillis();
+        this.knownPlayers    = new ArrayList<>(knownPlayers);
+        this.recurringList   = new ArrayList<>(recurring);
+        this.screenOpenTime  = System.currentTimeMillis();
     }
 
     // ── Init ───────────────────────────────────────────────────────────────────
@@ -133,6 +157,24 @@ public class BankScreen extends Screen {
         modalAmountField.setMaxLength(8);
         modalAmountField.setPlaceholder(Text.literal("Montant..."));
         addSelectableChild(modalAmountField);
+
+        trfAmountField = new TextFieldWidget(textRenderer, 0, -200, 100, 18, Text.empty());
+        trfAmountField.setMaxLength(8);
+        trfAmountField.setPlaceholder(Text.literal("Montant..."));
+        trfAmountField.setChangedListener(s -> { try { trfAmount = Math.max(0, Integer.parseInt(s.trim())); } catch (NumberFormatException ignored) { trfAmount = 0; } });
+        addSelectableChild(trfAmountField);
+
+        recurAmountField = new TextFieldWidget(textRenderer, 0, -200, 100, 18, Text.empty());
+        recurAmountField.setMaxLength(8);
+        recurAmountField.setPlaceholder(Text.literal("Montant..."));
+        recurAmountField.setChangedListener(s -> { try { recurAmount = Math.max(0, Integer.parseInt(s.trim())); } catch (NumberFormatException ignored) { recurAmount = 0; } });
+        addSelectableChild(recurAmountField);
+
+        recurIntervalMinsField = new TextFieldWidget(textRenderer, 0, -200, 100, 18, Text.empty());
+        recurIntervalMinsField.setMaxLength(6);
+        recurIntervalMinsField.setText("60");
+        recurIntervalMinsField.setChangedListener(s -> { try { recurIntervalMins = Math.max(1, Integer.parseInt(s.trim())); } catch (NumberFormatException ignored) { recurIntervalMins = 0; } });
+        addSelectableChild(recurIntervalMinsField);
     }
 
     private void recomputeWin() {
@@ -148,20 +190,24 @@ public class BankScreen extends Screen {
                              List<TxData> transactions, int totalShards, int playerCount,
                              List<LeaderboardEntry> leaderboard,
                              List<LoanData> loansAsLender, List<LoanData> loansAsBorrower,
-                             List<String> knownPlayers) {
-        this.balance        = balance;
-        this.ticksReward    = ticksReward;
-        this.transactions   = new ArrayList<>(transactions);
-        this.totalShards    = totalShards;
-        this.playerCount    = playerCount;
-        this.leaderboard    = new ArrayList<>(leaderboard);
-        this.loansAsLender  = new ArrayList<>(loansAsLender);
+                             List<String> knownPlayers, List<RecurringData> recurring) {
+        this.balance         = balance;
+        this.ticksReward     = ticksReward;
+        this.transactions    = new ArrayList<>(transactions);
+        this.totalShards     = totalShards;
+        this.playerCount     = playerCount;
+        this.leaderboard     = new ArrayList<>(leaderboard);
+        this.loansAsLender   = new ArrayList<>(loansAsLender);
         this.loansAsBorrower = new ArrayList<>(loansAsBorrower);
-        this.knownPlayers   = new ArrayList<>(knownPlayers);
-        this.screenOpenTime = System.currentTimeMillis();
-        modalOpen       = false;
+        this.knownPlayers    = new ArrayList<>(knownPlayers);
+        this.recurringList   = new ArrayList<>(recurring);
+        this.screenOpenTime  = System.currentTimeMillis();
+        modalOpen        = false;
         borrowerDropOpen = false;
-        txScroll        = 0;
+        txScroll         = 0;
+        trfDropOpen      = false;
+        recurDropOpen    = false;
+        recurCancelBtnY.clear();
         toast(message, ok);
     }
 
@@ -189,6 +235,7 @@ public class BankScreen extends Screen {
             case ECONOMY     -> renderEconomyTab(ctx, mx, my, cy, ch);
             case LEADERBOARD -> renderLeaderboardTab(ctx, mx, my, cy, ch);
             case CREDITS     -> renderCreditsTab(ctx, mx, my, cy, ch);
+            case TRANSFERS   -> renderTransfersTab(ctx, mx, my, cy, ch, delta);
         }
 
         renderToast(ctx);
@@ -208,6 +255,17 @@ public class BankScreen extends Screen {
             }
         } else if (modalAmountField != null) {
             modalAmountField.setY(-200);
+        }
+
+        // Dropdowns virements — APRÈS le tab mais AVANT super.render()
+        if (activeTab == Tab.TRANSFERS) {
+            if (trfDropOpen) {
+                ctx.fill(winX, winY + TOP_H, winX + winW, winY + winH, 0xAA000000);
+                renderTrfDropdown(ctx, mx, my);
+            } else if (recurDropOpen) {
+                ctx.fill(winX, winY + TOP_H, winX + winW, winY + winH, 0xAA000000);
+                renderRecurDropdown(ctx, mx, my);
+            }
         }
 
         super.render(ctx, mx, my, delta);
@@ -648,6 +706,32 @@ public class BankScreen extends Screen {
             return super.mouseClicked(mx0, my0, btn);
         }
 
+        // ── Dropdowns virements (intercept avant onglets) ──
+        if (activeTab == Tab.TRANSFERS && trfDropOpen && trfDropX >= 0) {
+            int maxVis = Math.min(8, knownPlayers.size());
+            int dropH  = maxVis * 18 + 4;
+            int dy = trfDropY + 20;
+            if (dy + dropH > winY + winH - PAD) dy = trfDropY - dropH;
+            if (x >= trfDropX && x < trfDropX + trfDropW && y >= dy && y < dy + dropH) {
+                int idx = (y - dy - 2) / 18 + trfDropScroll;
+                if (idx >= 0 && idx < knownPlayers.size()) trfTarget = knownPlayers.get(idx);
+            }
+            trfDropOpen = false;
+            return true;
+        }
+        if (activeTab == Tab.TRANSFERS && recurDropOpen && recurDropX >= 0) {
+            int maxVis = Math.min(8, knownPlayers.size());
+            int dropH  = maxVis * 18 + 4;
+            int dy = recurDropY + 20;
+            if (dy + dropH > winY + winH - PAD) dy = recurDropY - dropH;
+            if (x >= recurDropX && x < recurDropX + recurDropW && y >= dy && y < dy + dropH) {
+                int idx = (y - dy - 2) / 18 + recurDropScroll;
+                if (idx >= 0 && idx < knownPlayers.size()) recurTarget = knownPlayers.get(idx);
+            }
+            recurDropOpen = false;
+            return true;
+        }
+
         // ── Barre onglets ──
         if (y >= winY && y <= winY + TOP_H) {
             int tx = winX + PAD
@@ -691,6 +775,12 @@ public class BankScreen extends Screen {
             }
         }
 
+        // ── Onglet Virements ──
+        if (activeTab == Tab.TRANSFERS) {
+            handleTransfersClick(x, y);
+            return true;
+        }
+
         return super.mouseClicked(mx0, my0, btn);
     }
 
@@ -709,6 +799,14 @@ public class BankScreen extends Screen {
         if (borrowerDropOpen) {
             borrowerDropScroll = Math.max(0,
                 Math.min(Math.max(0, knownPlayers.size() - 6), borrowerDropScroll - (int) amount));
+            return true;
+        }
+        if (trfDropOpen) {
+            trfDropScroll = Math.max(0, Math.min(Math.max(0, knownPlayers.size() - 8), trfDropScroll - (int) amount));
+            return true;
+        }
+        if (recurDropOpen) {
+            recurDropScroll = Math.max(0, Math.min(Math.max(0, knownPlayers.size() - 8), recurDropScroll - (int) amount));
             return true;
         }
         return super.mouseScrolled(mx, my, amount);
@@ -745,6 +843,30 @@ public class BankScreen extends Screen {
         ClientPlayNetworking.send(BankNetworking.BANK_ACTION, buf);
     }
 
+    private void sendTransfer(String target, int amount) {
+        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        buf.writeInt(BankNetworking.ACTION_TRANSFER);
+        buf.writeString(target);
+        buf.writeInt(amount);
+        ClientPlayNetworking.send(BankNetworking.BANK_ACTION, buf);
+    }
+
+    private void sendRecurringCreate(String to, int amount, int intervalTicks) {
+        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        buf.writeInt(BankNetworking.ACTION_RECURRING_CREATE);
+        buf.writeString(to);
+        buf.writeInt(amount);
+        buf.writeInt(intervalTicks);
+        ClientPlayNetworking.send(BankNetworking.BANK_ACTION, buf);
+    }
+
+    private void sendRecurringCancel(int id) {
+        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        buf.writeInt(BankNetworking.ACTION_RECURRING_CANCEL);
+        buf.writeInt(id);
+        ClientPlayNetworking.send(BankNetworking.BANK_ACTION, buf);
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────────
 
     private int parseAmount() {
@@ -762,5 +884,231 @@ public class BankScreen extends Screen {
     private static String ticksToTime(int ticks) {
         int s = ticks / 20, min = s / 60;
         return min > 0 ? min + "m " + (s % 60) + "s" : s + "s";
+    }
+
+    private static String ticksToInterval(int ticks) {
+        int totalMins = ticks / 1200;
+        int h = totalMins / 60, m = totalMins % 60;
+        if (h > 0 && m > 0) return h + "h " + m + "min";
+        if (h > 0) return h + "h";
+        if (m > 0) return m + "min";
+        return ticks + "t";
+    }
+
+    private String truncate(String s, int maxPx) {
+        if (textRenderer.getWidth(s) <= maxPx) return s;
+        while (s.length() > 1 && textRenderer.getWidth(s + "…") > maxPx)
+            s = s.substring(0, s.length() - 1);
+        return s + "…";
+    }
+
+    private void renderInfoCard(DrawContext ctx, int x, int y, int w, int h, int accent) {
+        ctx.fill(x, y, x + w, y + h, C_PANEL);
+        ctx.fill(x, y, x + w, y + 1, C_BORDER);
+        ctx.fill(x, y + h - 1, x + w, y + h, C_BORDER);
+        ctx.fill(x, y, x + 1, y + h, C_BORDER);
+        ctx.fill(x + w - 1, y, x + w, y + h, C_BORDER);
+        ctx.fill(x + 1, y + 1, x + 3, y + h - 1, accent);
+    }
+
+    // ── Onglet Virements ───────────────────────────────────────────────────────
+
+    private void renderTransfersTab(DrawContext ctx, int mx, int my, int cy, int ch, float delta) {
+        String me = client != null && client.player != null ? client.player.getName().getString() : "";
+        int px = winX + PAD, pw = winW - PAD * 2;
+        int cardH = 148, cardW = (pw - GAP) / 2;
+        int c1x = px, c2x = px + cardW + GAP;
+        trfSendBtnY = -1; recurCreateBtnY = -1; recurCancelBtnY.clear();
+
+        // Card 1 — Virement ponctuel
+        renderInfoCard(ctx, c1x, cy, cardW, cardH, C_GOLD);
+        {
+            int fy = cy + 12;
+            ctx.drawText(textRenderer, "VIREMENT PONCTUEL", c1x + 10, fy, C_DIM, false);
+            fy += textRenderer.fontHeight + 8;
+            trfDropX = c1x + 10; trfDropY = fy; trfDropW = cardW - 20;
+            boolean dropHov = !trfDropOpen && !recurDropOpen
+                && mx >= trfDropX && mx < trfDropX + trfDropW && my >= fy && my < fy + 20;
+            ctx.fill(trfDropX - 1, fy - 1, trfDropX + trfDropW + 1, fy + 21, C_BORDER);
+            ctx.fill(trfDropX, fy, trfDropX + trfDropW, fy + 20, trfDropOpen ? C_HOVER : (dropHov ? C_HOVER : C_DARK));
+            ctx.drawText(textRenderer, truncate(trfTarget.isEmpty() ? "Destinataire..." : trfTarget, trfDropW - 20),
+                trfDropX + 6, fy + 6, trfTarget.isEmpty() ? C_DIM : C_WHITE, false);
+            ctx.drawText(textRenderer, trfDropOpen ? "▲" : "▼", trfDropX + trfDropW - 14, fy + 6, C_DIM, false);
+            fy += 24;
+            if (trfDropOpen || recurDropOpen) {
+                trfAmountField.setY(-200);
+            } else {
+                trfAmountField.setX(c1x + 10); trfAmountField.setY(fy); trfAmountField.setWidth(cardW - 20);
+                trfAmountField.render(ctx, mx, my, delta);
+                fy += 26;
+                boolean canSend = !trfTarget.isEmpty() && !trfTarget.equalsIgnoreCase(me)
+                    && trfAmount > 0 && trfAmount <= balance;
+                boolean sendHov = canSend && mx >= c1x + 10 && mx < c1x + cardW - 10 && my >= fy && my < fy + 22;
+                trfSendBtnY = fy;
+                ctx.fill(c1x + 10, fy, c1x + cardW - 10, fy + 22, canSend ? (sendHov ? 0xFF1A8050 : C_GREEN) : C_DARK);
+                ctx.drawCenteredTextWithShadow(textRenderer, "Envoyer", c1x + cardW / 2, fy + 7, canSend ? C_WHITE : C_DIM);
+            }
+        }
+
+        // Card 2 — Virement récurrent
+        renderInfoCard(ctx, c2x, cy, cardW, cardH, C_GOLD);
+        {
+            int fy = cy + 12;
+            ctx.drawText(textRenderer, "VIREMENT RECURRENT", c2x + 10, fy, C_DIM, false);
+            fy += textRenderer.fontHeight + 8;
+            recurDropX = c2x + 10; recurDropY = fy; recurDropW = cardW - 20;
+            boolean rdropHov = !recurDropOpen && !trfDropOpen
+                && mx >= recurDropX && mx < recurDropX + recurDropW && my >= fy && my < fy + 20;
+            ctx.fill(recurDropX - 1, fy - 1, recurDropX + recurDropW + 1, fy + 21, C_BORDER);
+            ctx.fill(recurDropX, fy, recurDropX + recurDropW, fy + 20, recurDropOpen ? C_HOVER : (rdropHov ? C_HOVER : C_DARK));
+            ctx.drawText(textRenderer, truncate(recurTarget.isEmpty() ? "Destinataire..." : recurTarget, recurDropW - 20),
+                recurDropX + 6, fy + 6, recurTarget.isEmpty() ? C_DIM : C_WHITE, false);
+            ctx.drawText(textRenderer, recurDropOpen ? "▲" : "▼", recurDropX + recurDropW - 14, fy + 6, C_DIM, false);
+            fy += 24;
+            if (recurDropOpen || trfDropOpen) {
+                recurAmountField.setY(-200); recurIntervalMinsField.setY(-200);
+            } else {
+                recurAmountField.setX(c2x + 10); recurAmountField.setY(fy); recurAmountField.setWidth(cardW - 20);
+                recurAmountField.render(ctx, mx, my, delta);
+                fy += 26;
+                ctx.drawText(textRenderer, "INTERVALLE (minutes)", c2x + 10, fy, C_DIM, false);
+                fy += textRenderer.fontHeight + 4;
+                recurIntervalMinsField.setX(c2x + 10); recurIntervalMinsField.setY(fy); recurIntervalMinsField.setWidth(cardW - 20);
+                recurIntervalMinsField.render(ctx, mx, my, delta);
+                if (recurIntervalMins > 0) {
+                    String preview = "= " + ticksToInterval(recurIntervalMins * 1200);
+                    ctx.drawText(textRenderer, preview, c2x + cardW - 10 - textRenderer.getWidth(preview),
+                        fy - textRenderer.fontHeight - 4, C_GOLD, false);
+                }
+                fy += 22;
+                boolean canCreate = !recurTarget.isEmpty() && recurAmount > 0 && recurIntervalMins >= 1
+                    && !recurTarget.equalsIgnoreCase(me);
+                boolean createHov = canCreate && mx >= c2x + 10 && mx < c2x + cardW - 10 && my >= fy && my < fy + 22;
+                recurCreateBtnY = fy;
+                ctx.fill(c2x + 10, fy, c2x + cardW - 10, fy + 22, canCreate ? (createHov ? 0xFF1A8050 : C_GREEN) : C_DARK);
+                ctx.drawCenteredTextWithShadow(textRenderer, "Creer", c2x + cardW / 2, fy + 7, canCreate ? C_WHITE : C_DIM);
+            }
+        }
+
+        // Liste des virements récurrents actifs
+        int listY = cy + cardH + GAP;
+        if (recurringList != null && !recurringList.isEmpty()) {
+            ctx.drawText(textRenderer, "VIREMENTS RECURRENTS ACTIFS", px, listY + 4, C_DIM, false);
+            listY += textRenderer.fontHeight + 10;
+            int rowH = 28;
+            for (int i = 0; i < recurringList.size(); i++) {
+                RecurringData r = recurringList.get(i);
+                int ry = listY + i * (rowH + 4);
+                if (ry + rowH > winY + winH - PAD) break;
+                boolean rowHov = mx >= px && mx < px + pw && my >= ry && my < ry + rowH;
+                ctx.fill(px, ry, px + pw, ry + rowH, rowHov ? C_HOVER : C_PANEL);
+                ctx.fill(px, ry, px + pw, ry + 1, C_BORDER);
+                ctx.fill(px, ry + rowH - 1, px + pw, ry + rowH, C_BORDER);
+                ctx.fill(px + 1, ry + 1, px + 3, ry + rowH - 1, C_GOLD);
+                int midY = ry + (rowH - textRenderer.fontHeight) / 2;
+                String toStr = "→ " + r.to();
+                ctx.drawText(textRenderer, toStr, px + 8, midY, C_MID, false);
+                String amtLabel = r.amount() + " ◆ / " + ticksToInterval(r.intervalTicks());
+                ctx.drawText(textRenderer, amtLabel, px + 8 + textRenderer.getWidth(toStr) + 8, midY, C_GOLD, false);
+                String countStr = "dans " + ticksToTime(r.ticksUntilNext());
+                ctx.drawText(textRenderer, countStr, px + pw - textRenderer.getWidth(countStr) - 70, midY, C_DIM, false);
+                int cancelX = px + pw - 58, cancelBtnY = ry + (rowH - 14) / 2;
+                boolean cancelHov = mx >= cancelX && mx < cancelX + 54 && my >= cancelBtnY && my < cancelBtnY + 14;
+                ctx.fill(cancelX, cancelBtnY, cancelX + 54, cancelBtnY + 14, cancelHov ? C_RED : C_DARK);
+                ctx.fill(cancelX, cancelBtnY, cancelX + 54, cancelBtnY + 1, C_BORDER);
+                ctx.fill(cancelX, cancelBtnY + 13, cancelX + 54, cancelBtnY + 14, C_BORDER);
+                ctx.fill(cancelX, cancelBtnY, cancelX + 1, cancelBtnY + 14, C_BORDER);
+                ctx.fill(cancelX + 53, cancelBtnY, cancelX + 54, cancelBtnY + 14, C_BORDER);
+                ctx.drawCenteredTextWithShadow(textRenderer, "Annuler", cancelX + 27, cancelBtnY + 3, cancelHov ? C_WHITE : C_DIM);
+                recurCancelBtnY.add(cancelBtnY);
+            }
+        }
+    }
+
+    private void handleTransfersClick(int mx, int my) {
+        String me = client != null && client.player != null ? client.player.getName().getString() : "";
+        int px = winX + PAD, pw = winW - PAD * 2;
+        int cardW = (pw - GAP) / 2;
+        int c1x = winX + PAD, c2x = c1x + cardW + GAP;
+
+        // Dropdown toggle — card 1
+        if (trfDropX >= 0 && mx >= trfDropX && mx < trfDropX + trfDropW && my >= trfDropY && my < trfDropY + 20) {
+            trfDropOpen = !trfDropOpen; recurDropOpen = false; trfDropScroll = 0; return;
+        }
+        // Dropdown toggle — card 2
+        if (recurDropX >= 0 && mx >= recurDropX && mx < recurDropX + recurDropW && my >= recurDropY && my < recurDropY + 20) {
+            recurDropOpen = !recurDropOpen; trfDropOpen = false; recurDropScroll = 0; return;
+        }
+        // Bouton Envoyer
+        if (trfSendBtnY >= 0) {
+            boolean canSend = !trfTarget.isEmpty() && !trfTarget.equalsIgnoreCase(me) && trfAmount > 0 && trfAmount <= balance;
+            if (canSend && mx >= c1x + 10 && mx < c1x + cardW - 10 && my >= trfSendBtnY && my < trfSendBtnY + 22) {
+                sendTransfer(trfTarget, trfAmount);
+                trfTarget = ""; trfAmountField.setText(""); trfAmount = 0; return;
+            }
+        }
+        // Bouton Créer virement récurrent
+        if (recurCreateBtnY >= 0) {
+            boolean canCreate = !recurTarget.isEmpty() && recurAmount > 0 && recurIntervalMins >= 1 && !recurTarget.equalsIgnoreCase(me);
+            if (canCreate && mx >= c2x + 10 && mx < c2x + cardW - 10 && my >= recurCreateBtnY && my < recurCreateBtnY + 22) {
+                sendRecurringCreate(recurTarget, recurAmount, recurIntervalMins * 1200);
+                recurTarget = ""; recurAmountField.setText(""); recurAmount = 0; return;
+            }
+        }
+        // Boutons Annuler
+        for (int i = 0; i < recurCancelBtnY.size(); i++) {
+            int cancelBtnY = recurCancelBtnY.get(i);
+            int cancelX = px + pw - 58;
+            if (my >= cancelBtnY && my < cancelBtnY + 14 && mx >= cancelX && mx < cancelX + 54) {
+                if (i < recurringList.size()) sendRecurringCancel(recurringList.get(i).id());
+                return;
+            }
+        }
+    }
+
+    private void renderTrfDropdown(DrawContext ctx, int mx, int my) {
+        if (knownPlayers.isEmpty() || trfDropX < 0) { trfDropOpen = false; return; }
+        int itemH = 18, maxVis = Math.min(8, knownPlayers.size()), dropH = maxVis * itemH + 4;
+        int dx = trfDropX, dw = trfDropW, dy = trfDropY + 20;
+        if (dy + dropH > winY + winH - PAD) dy = trfDropY - dropH;
+        ctx.fill(dx + 3, dy + 3, dx + dw + 3, dy + dropH + 3, 0x44000000);
+        ctx.fill(dx, dy, dx + dw, dy + dropH, C_SURFACE);
+        ctx.fill(dx - 1, dy - 1, dx + dw + 1, dy, C_GOLD);
+        ctx.fill(dx - 1, dy + dropH, dx + dw + 1, dy + dropH + 1, C_GOLD);
+        ctx.fill(dx - 1, dy - 1, dx, dy + dropH + 1, C_GOLD);
+        ctx.fill(dx + dw, dy - 1, dx + dw + 1, dy + dropH + 1, C_GOLD);
+        ctx.enableScissor(dx, dy, dx + dw, dy + dropH);
+        int end = Math.min(trfDropScroll + maxVis, knownPlayers.size());
+        for (int i = trfDropScroll; i < end; i++) {
+            String p = knownPlayers.get(i); int iy = dy + 2 + (i - trfDropScroll) * itemH;
+            boolean sel = p.equalsIgnoreCase(trfTarget), hov = mx >= dx && mx < dx + dw && my >= iy && my < iy + itemH;
+            if (sel) { ctx.fill(dx + 1, iy, dx + dw - 1, iy + itemH, C_HOVER); ctx.fill(dx + 1, iy, dx + 3, iy + itemH, C_GOLD); }
+            else if (hov) ctx.fill(dx + 1, iy, dx + dw - 1, iy + itemH, 0x18FFFFFF);
+            ctx.drawText(textRenderer, p, dx + 8, iy + (itemH - textRenderer.fontHeight) / 2, (sel || hov) ? C_WHITE : C_MID, false);
+        }
+        ctx.disableScissor();
+    }
+
+    private void renderRecurDropdown(DrawContext ctx, int mx, int my) {
+        if (knownPlayers.isEmpty() || recurDropX < 0) { recurDropOpen = false; return; }
+        int itemH = 18, maxVis = Math.min(8, knownPlayers.size()), dropH = maxVis * itemH + 4;
+        int dx = recurDropX, dw = recurDropW, dy = recurDropY + 20;
+        if (dy + dropH > winY + winH - PAD) dy = recurDropY - dropH;
+        ctx.fill(dx + 3, dy + 3, dx + dw + 3, dy + dropH + 3, 0x44000000);
+        ctx.fill(dx, dy, dx + dw, dy + dropH, C_SURFACE);
+        ctx.fill(dx - 1, dy - 1, dx + dw + 1, dy, C_GOLD);
+        ctx.fill(dx - 1, dy + dropH, dx + dw + 1, dy + dropH + 1, C_GOLD);
+        ctx.fill(dx - 1, dy - 1, dx, dy + dropH + 1, C_GOLD);
+        ctx.fill(dx + dw, dy - 1, dx + dw + 1, dy + dropH + 1, C_GOLD);
+        ctx.enableScissor(dx, dy, dx + dw, dy + dropH);
+        int end = Math.min(recurDropScroll + maxVis, knownPlayers.size());
+        for (int i = recurDropScroll; i < end; i++) {
+            String p = knownPlayers.get(i); int iy = dy + 2 + (i - recurDropScroll) * itemH;
+            boolean sel = p.equalsIgnoreCase(recurTarget), hov = mx >= dx && mx < dx + dw && my >= iy && my < iy + itemH;
+            if (sel) { ctx.fill(dx + 1, iy, dx + dw - 1, iy + itemH, C_HOVER); ctx.fill(dx + 1, iy, dx + 3, iy + itemH, C_GOLD); }
+            else if (hov) ctx.fill(dx + 1, iy, dx + dw - 1, iy + itemH, 0x18FFFFFF);
+            ctx.drawText(textRenderer, p, dx + 8, iy + (itemH - textRenderer.fontHeight) / 2, (sel || hov) ? C_WHITE : C_MID, false);
+        }
+        ctx.disableScissor();
     }
 }

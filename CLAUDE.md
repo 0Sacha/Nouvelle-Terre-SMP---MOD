@@ -26,7 +26,7 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `0.x.y-beta` (dans `gradle.properties` → `mod_version`)
 - **Incrémenter `y` à chaque modification de code avant de rebuild et push.**
-- Version actuelle : `0.1.8-beta` (ajout système crédit + `/bank`)
+- Version actuelle : `0.1.9-beta` (onglet HDV Profile supprimé → onglet Virements dans BankScreen, chip solde HDV ouvre /bank via BANK_REQUEST, fix z-order modal)
 - À chaque rebuild : mettre à jour `mod_version` dans `gradle.properties`, puis `git commit` + `git push`
 
 ## Architecture économie
@@ -98,12 +98,12 @@ mixin/
   LivingEntityMixin.java   → Morts joueurs → PLAYER_DEATH
 
 network/
-  HdvNetworking.java       → Identifiants canaux HDV_OPEN / HDV_ACTION / HDV_RESULT + constantes ACTION_* (0-5 : BUY/SELL/WITHDRAW/TRANSFER/RECURRING_CREATE/RECURRING_CANCEL)
-  BankNetworking.java      → Identifiants canaux BANK_OPEN / BANK_ACTION / BANK_RESULT + constantes ACTION_* (0-2 : LOAN_CREATE/LOAN_REPAY/LOAN_FORGIVE)
+  HdvNetworking.java       → Identifiants canaux HDV_OPEN / HDV_ACTION / HDV_RESULT + constantes ACTION_* (0-2 : BUY/SELL/WITHDRAW)
+  BankNetworking.java      → Identifiants canaux BANK_OPEN / BANK_ACTION / BANK_RESULT / BANK_REQUEST + constantes ACTION_* (0-5 : LOAN_CREATE/LOAN_REPAY/LOAN_FORGIVE/TRANSFER/RECURRING_CREATE/RECURRING_CANCEL)
 
 client/                    ← Code client uniquement (@Environment(CLIENT))
-  HdvScreen.java           → Screen Fabric fenêtré semi-transparent : 4 onglets + onglet Profil (chip cliquable) + modal achat + toast
-  BankScreen.java          → Screen Fabric banque : 4 onglets (Compte | Economie | Classement | Credits) + modal nouveau crédit + toast
+  HdvScreen.java           → Screen Fabric fenêtré semi-transparent : 4 onglets marché (pas de Profil) + modal achat + toast. Chip solde → BANK_REQUEST
+  BankScreen.java          → Screen Fabric banque : 5 onglets (Compte | Economie | Classement | Credits | Virements) + modal nouveau crédit + toast
 
 resourcepack/
   ResourcePackManager.java → Génère ZIP dark-theme, calcule hash SHA-1 (télécharge depuis URL directe)
@@ -136,20 +136,22 @@ shop/
 2. `HdvCommand` → `ServerPlayNetworking.send(player, HDV_OPEN, buf)` avec balance + toutes les annonces
 3. `NouvelleTerreBridgeClient` reçoit → `client.setScreen(new HdvScreen(...))`
 
-### Flux d'action (achat / vente / retrait / virement)
+### Flux d'action (achat / vente / retrait)
 1. `HdvScreen` → `ClientPlayNetworking.send(HDV_ACTION, buf)` avec type + données
-2. `NouvelleTerreBridge.registerHdvNetworking()` reçoit → appelle `MarketActions.*` ou `LocalEconomy.transfer()`
-3. Réponse → `ServerPlayNetworking.send(HDV_RESULT, buf)` avec ok + message + nouvelles annonces + données profil
+2. `NouvelleTerreBridge.registerHdvNetworking()` reçoit → appelle `MarketActions.*`
+3. Réponse → `ServerPlayNetworking.send(HDV_RESULT, buf)` avec ok + message + balance + annonces
 4. `NouvelleTerreBridgeClient` reçoit → `screen.handleResult(...)` met à jour l'UI
 
-### Flux HDV_OPEN / HDV_RESULT — format paquet
+### Flux chip solde → /bank
+1. Clic chip solde dans HdvScreen → `ClientPlayNetworking.send(BANK_REQUEST, buf vide)`
+2. Serveur reçoit BANK_REQUEST → répond `BANK_OPEN` avec toutes les données bank
+3. Client reçoit BANK_OPEN → ouvre `BankScreen`
+
+### Flux HDV_OPEN / HDV_RESULT — format paquet (simplifié)
 ```
-HDV_OPEN  : int balance | listings[] | int ticksReward | transactions[] | known[] | recurring[]
-HDV_RESULT: bool ok | string msg | int balance | listings[] | int ticksReward | transactions[] | known[] | recurring[]
-listings[]    : int count → (int id, string seller, string itemId, int qty, int price) × count
-transactions[]: int count → (int type, string label, int amount, long timestamp) × count
-known[]       : int count → string[] — joueurs connus (casing correct, triés alphabétiquement)
-recurring[]   : int count → (int id, string to, int amount, int intervalTicks, int ticksUntilNext) × count
+HDV_OPEN  : int balance | listings[]
+HDV_RESULT: bool ok | string msg | int balance | listings[]
+listings[]: int count → (int id, string seller, string itemId, int qty, int price) × count
 ```
 
 ### HdvScreen — onglets
@@ -191,25 +193,22 @@ C_DIM     = 0xFF565C6A   // labels, placeholders
 - Onglet actif = texte sans shadow (`drawText(..., false)`) sur fond or pour éviter l'effet "gras"
 - Mon Shop : strip bas (24px) bascule entre prix et "Retirer" selon hover — même draw call, pas d'overlay séparé (évite le batching text-over-fill de Minecraft)
 - TransactionLog : in-memory uniquement (50 entries / joueur), pas persisté sur disque — reset au restart serveur
-- Countdown reward dans l'onglet Profil : calculé en soustrayant (now - screenOpenTime) / 50ms des ticks initiaux reçus du serveur — live sans round-trip réseau
 - 💎 → ◆ (U+25C6) partout : les emoji BMP-ext sont hors BMP et Minecraft ne les rend pas
-- **Chip solde** (haut droite) : cliquable → ouvre onglet Profil. Texte sans shadow ni bold (`drawText(..., false)`)
-- **Profil — layout** : header strip pleine largeur (nom + solde) + 3 cards égales (`cardW = (pw - GAP*2) / 3`) : Récompense | Virement ponctuel | Virement récurrent. `renderInfoCard()` dessine fond + bordure + accent gauche. Liste virements récurrents actifs. Transactions scrollables en bas.
-- **Barre de progression** card Récompense : `1f - ticks / totalTicks` → 0 = vide, 1 = plein (prêt).
-- **Dropdown joueurs** (cards 2 et 3) : pas de `TextFieldWidget`, dropdown custom rendu APRÈS `super.render()`. Un seul ouvert à la fois. Quand ouvert : overlay `0xAA000000` + bordure or + ombre. Les champs montant sont cachés via `setY(-200)` quand un dropdown est ouvert (sinon ils passent à travers l'overlay via `super.render()`).
-- **Virement récurrent** : `RecurringTransferManager` tick-based persisté JSON. Intervalles : 1h/6h/12h/24h (constantes INTERVALS[]). Sélecteur `< label >` dans card 3. Liste actifs avec countdown + bouton Annuler (rouge au hover).
-- **Positions UI calculées dans render()** : `profileDropX/Y/W`, `recurDropX/Y/W`, `profileTransferBtnY`, `recurCreateBtnY`, `recurIntervalBtnY`, `recurCancelBtnY[]` — champs d'instance relus dans les click handlers.
+- **Chip solde** (haut droite HdvScreen) : cliquable → envoie `BANK_REQUEST` au serveur → ouvre BankScreen. Texte sans shadow ni bold (`drawText(..., false)`)
+- **Modal achat z-order** : `renderBuyModal()` enveloppé dans `ctx.getMatrices().push()` / `translate(0,0,300)` / `pop()` — sinon le texte des cards passe devant l'overlay (batching Minecraft)
+- **Positions UI calculées dans render()** : `trfDropX/Y/W`, `recurDropX/Y/W`, `trfSendBtnY`, `recurCreateBtnY`, `recurCancelBtnY[]` — champs d'instance relus dans les click handlers.
 
 ## GUI Bank — architecture client-serveur
 
 ### Flux BANK_OPEN / BANK_RESULT — format paquet
 ```
-BANK_OPEN  : int balance | int ticksReward | txs[] | int totalShards | int playerCount | leaderboard[] | loansAsLender[] | loansAsBorrower[] | known[]
+BANK_OPEN  : int balance | int ticksReward | txs[] | int totalShards | int playerCount | leaderboard[] | loansAsLender[] | loansAsBorrower[] | known[] | recurring[]
 BANK_RESULT: bool ok | string msg | [même contenu que BANK_OPEN]
 txs[]          : int count → (int type, string label, int amount, long timestamp) × count
 leaderboard[]  : int count → (string name, int balance) × count
 loansAs*[]     : int count → (int id, string other, int principal, long dueMs, int daysOverdue, int totalPenalty, int nextPenalty, bool repaid) × count
 known[]        : int count → string × count
+recurring[]    : int count → (int id, string to, int amount, int intervalTicks, int ticksUntilNext) × count
 ```
 
 ### BankScreen — onglets
@@ -219,6 +218,7 @@ known[]        : int count → string × count
 | Economie | 4 stats : shards en circulation, joueurs enregistrés, solde moyen, joueur le plus riche |
 | Classement | Top 10 joueurs par solde, rang coloré (#1=or #2=argent #3=bronze), joueur courant surligné |
 | Credits | Bouton "Nouveau crédit" + section "Prêts accordés" + section "Mes emprunts" + modal création |
+| Virements | 2 cards côte à côte : Virement ponctuel | Virement récurrent + liste virements actifs en bas |
 
 ### Système crédit — règles métier
 - Création → montant prélevé du prêteur et versé à l'emprunteur (transfert atomique)
@@ -229,6 +229,8 @@ known[]        : int count → string × count
 - Persistance : `nouvelle-terre-credits.json` (liste complète, jamais supprimée, `repaid = true`)
 
 ### Décisions techniques BankScreen
+- **Onglet Virements** : 2 cards (`cardW = (pw - GAP) / 2`), `renderInfoCard()` partagé. Dropdown custom + `TextFieldWidget` cachés via `setY(-200)`. Un seul dropdown ouvert à la fois. `recurCancelBtnY[]` liste des boutons Annuler, remplie dans render(), lue dans mouseClicked().
+- **Dropdown virements** : rendu dans render() après le tab content, avec overlay `0xAA000000` + scissor + scroll. Intercepté dans mouseClicked() avant la barre d'onglets.
 - Tick-based penalty check : toutes les 1200 ticks (1 min), horodatage réel `System.currentTimeMillis()`
 - Le `while` dans `LoanManager.tick()` rattrape plusieurs jours de pénalité si le serveur était éteint
 - `lastPenaltyMs` initialisé à `dueTimestamp` → premier jour de retard = J+1 après échéance
