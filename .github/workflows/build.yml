@@ -63,8 +63,16 @@ jobs:
 
       - name: Redémarrer le serveur via RCON
         run: |
-          curl -sL https://github.com/itzg/rcon-cli/releases/latest/download/rcon-cli_linux_amd64.tar.gz | tar -xz
-          ./rcon-cli --host 91.197.6.86 --port 40539 --password "${{ secrets.RCON_PASSWORD }}" stop || true
+          pip install mcrcon -q
+          python3 -c "
+          from mcrcon import MCRcon
+          try:
+              with MCRcon('91.197.6.86', '${{ secrets.RCON_PASSWORD }}', port=40539) as mcr:
+                  mcr.command('stop')
+                  print('Serveur arrete via RCON')
+          except Exception as e:
+              print(f'RCON warning: {e}')
+          "
 
       - name: Déclencher la mise à jour du modpack
         uses: peter-evans/repository-dispatch@v3
