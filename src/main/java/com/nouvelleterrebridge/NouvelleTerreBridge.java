@@ -6,6 +6,7 @@ import com.nouvelleterrebridge.commands.EconomieCommand;
 import com.nouvelleterrebridge.commands.EventNarratifCommand;
 import com.nouvelleterrebridge.commands.HdvCommand;
 import com.nouvelleterrebridge.commands.LierCommand;
+import com.nouvelleterrebridge.commands.PayCommand;
 import com.nouvelleterrebridge.economy.Loan;
 import com.nouvelleterrebridge.economy.LoanManager;
 import com.nouvelleterrebridge.economy.LocalEconomy;
@@ -68,6 +69,7 @@ public class NouvelleTerreBridge implements ModInitializer {
             HdvCommand.register(dispatcher);
             BankCommand.register(dispatcher);
             EconomieCommand.register(dispatcher);
+            PayCommand.register(dispatcher);
             LierCommand.register(dispatcher);
             ConflitCommand.register(dispatcher);
             EventNarratifCommand.register(dispatcher);
