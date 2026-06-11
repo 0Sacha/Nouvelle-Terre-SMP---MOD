@@ -49,6 +49,18 @@ jobs:
             build/libs/nouvelle-terre-bridge-${{ steps.version.outputs.version }}.jar
           make_latest: true
 
+      - name: Mettre à jour le mod sur le serveur
+        run: |
+          sudo apt-get install -y sshpass
+          JAR="nouvelle-terre-bridge-${{ steps.version.outputs.version }}.jar"
+          # Supprimer l'ancien JAR du mod
+          sshpass -p "${{ secrets.SFTP_PASSWORD }}" sftp -P 2022 -o StrictHostKeyChecking=no yellox605.30551e80@7017.mystrator.com << EOF
+          cd /mods
+          rm nouvelle-terre-bridge-*.jar
+          put build/libs/$JAR /mods/$JAR
+          bye
+          EOF
+
       - name: Déclencher la mise à jour du modpack
         uses: peter-evans/repository-dispatch@v3
         with:
