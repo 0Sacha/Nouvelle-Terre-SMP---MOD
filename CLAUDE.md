@@ -21,25 +21,26 @@ Lit ce fichier automatiquement pour avoir le contexte complet avant de coder.
 # Nécessite Java 17
 ```
 GitHub Action crée une Release automatique à chaque push sur `main`.
-Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueurs doivent installer le JAR Fabric côté client pour le GUI HDV.
+Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueurs doivent installer le JAR Fabric côté client pour le GUI HDV/Bank.
 
 ## Convention de version
 - Format : `0.x.y-beta` (dans `gradle.properties` → `mod_version`)
-- **Incrémenter `y` à chaque modification de code avant de rebuild et push.**
-- Version actuelle : `0.1.9-beta` (onglet HDV Profile supprimé → onglet Virements dans BankScreen, chip solde HDV ouvre /bank via BANK_REQUEST, fix z-order modal)
+- **Incrémenter la version avant chaque rebuild/push.**
 - À chaque rebuild : mettre à jour `mod_version` dans `gradle.properties`, puis `git commit` + `git push`
+
+---
 
 ## Architecture économie
 - Source de vérité : `shards.json` sur le serveur (`LocalEconomy.java`)
 - Toutes les opérations sont instantanées (pas d'HTTP pour le gameplay)
 - Après chaque op, événement async vers le bot pour sync DB Discord
-- ECONOMY_SALARY = notification only côté bot (ne pas appeler db.addShards, déjà fait via ECONOMY_REWARD)
+- `ECONOMY_SALARY` = notification only côté bot (ne pas appeler `db.addShards`, déjà fait via `ECONOMY_REWARD`)
 
 ## Architecture marché
 - Annonces : `marche.json` sur le serveur (`MarketManager.java`)
-- MARKET_SYNC envoyé au bot 3s après SERVER_START et à chaque reconnexion
+- `MARKET_SYNC` envoyé au bot 3s après `SERVER_START` et à chaque reconnexion
 - Achat au meilleur prix automatique, peut fractionner sur plusieurs vendeurs
-- `FrenchItemNames.toDisplay()` strip n'importe quel namespace (pas seulement minecraft:)
+- `FrenchItemNames.toDisplay()` strip n'importe quel namespace (pas seulement `minecraft:`)
 
 ## Architecture crédits
 - Crédits : `nouvelle-terre-credits.json` sur le serveur (`LoanManager.java`)
@@ -51,123 +52,145 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 - Remboursement : l'emprunteur renvoie le principal au prêteur via `/bank`
 - Pardon : le prêteur peut annuler un crédit sans remboursement
 
-## Commandes in-game actuelles
+---
+
+## Commandes in-game
 | Commande | Description |
 |---|---|
 | `/economie bourse` | Solde du joueur (redondant avec le HUD, conservé pour admin/debug) |
 | `/economie admin give/take/check <joueur>` | Admin (op 2) |
-| `/hdv` | Ouvre le GUI HDV custom (screen client Fabric) |
+| `/hdv` | Ouvre le GUI Marché (screen client Fabric) |
 | `/bank` | Ouvre le GUI Banque (screen client Fabric) |
 | `/discord` | Lier compte Minecraft ↔ Discord |
 | `/conflit <cible> <raison>` | Déclarer un conflit RP |
 | `/evenement <message>` | Narration (op only) |
 
-> Toutes les opérations marché (vendre, acheter, retirer) se font **uniquement via `/hdv`** — aucune commande chat `/marche`.
-> `/economie virer` supprimé — les virements passent par l'onglet Profil du HDV.
+> Toutes les opérations marché (vendre, acheter, retirer) se font **uniquement via `/hdv`**.
+> Virements, crédits et historique se gèrent via `/bank`.
+
+---
 
 ## Structure des fichiers Java
 ```
+NouvelleTerreBridge.java       → Point d'entrée serveur : init config, events, commands, networking
+NouvelleTerreBridgeClient.java → Point d'entrée client : récepteurs packets, init HUD
+ModConfig.java                 → Config serveur (config/nouvelle-terre-bridge.json)
+                                 Champs : botUrl, sharedSecret, activerEvenementServeur/Joueur, delaiVideFileAttente
+
 commands/
-  EconomieCommand.java     → /economie (bourse, virer, admin) + constantes SEP_* + fmt()
+  EconomieCommand.java     → /economie bourse + admin give/take/check + constantes SEP_* + fmt()
   HdvCommand.java          → /hdv : envoie HDV_OPEN au client via ServerPlayNetworking
   BankCommand.java         → /bank : envoie BANK_OPEN au client
-  LierCommand.java         → /discord
-  ConflitCommand.java      → /conflit
-  EventNarratifCommand.java → /evenement
+  LierCommand.java         → /discord — liaison compte Minecraft ↔ Discord
+  ConflitCommand.java      → /conflit — déclaration conflit RP
+  EventNarratifCommand.java → /evenement — narration (op only)
 
 economy/
-  LocalEconomy.java        → Singleton shards.json, estConnu(), addShards/removeShards/forceDeduct/transfer, getAllBalances/getSoldesKeys()
-  TransactionLog.java      → Singleton in-memory, 50 dernières transactions par joueur (TYPE_BUY/SELL/TRANSFER_IN/TRANSFER_OUT/REWARD/LOAN_OUT/LOAN_IN/LOAN_REPAY_OUT/LOAN_REPAY_IN/LOAN_PENALTY)
-  KillRewards.java         → Récompenses kill mob
-  PlaytimeTracker.java     → Récompenses 30min (auto) uniquement + getTicksUntilReward (salaire supprimé)
+  LocalEconomy.java        → Singleton shards.json
+                             API : getBalance/addShards/removeShards/forceDeduct/transfer/estConnu/getSoldesKeys
+  TransactionLog.java      → In-memory 50 dernières transactions/joueur (non persisté, reset au restart)
+                             Types : BUY/SELL/TRANSFER_IN/TRANSFER_OUT/REWARD/LOAN_OUT/LOAN_IN/LOAN_REPAY_OUT/LOAN_REPAY_IN/LOAN_PENALTY
+  KillRewards.java         → Récompenses ◆ par kill mob (map Class → shards)
+  PlaytimeTracker.java     → Récompense +5 ◆ / 30 min de jeu + getTicksUntilReward
   RecurringTransfer.java   → POJO virement récurrent (id, from, to, amount, intervalTicks, ticksSince)
-  RecurringTransferManager.java → Singleton nouvelle-terre-virements.json, tick-based, add/cancel/getForPlayer
-  Loan.java                → POJO crédit (id, lender, borrower, principal, dueTimestamp, penaltyBase, penaltyIncrease, daysOverdue, totalPenalty, repaid, lastPenaltyMs)
-  LoanManager.java         → Singleton nouvelle-terre-credits.json, tick-based (toutes les minutes), pénalités auto jour J+N, add/repay/forgive/getLoansAs*
+  RecurringTransferManager.java → Singleton nouvelle-terre-virements.json, tick-based
+  Loan.java                → POJO crédit (id, lender, borrower, principal, dueTimestamp, penaltyBase,
+                             penaltyIncrease, daysOverdue, totalPenalty, repaid, lastPenaltyMs)
+  LoanManager.java         → Singleton nouvelle-terre-credits.json, check pénalités toutes les 1200 ticks
 
 events/
-  PlayerEvents.java        → JOIN / LEAVE / première connexion + envoi resource pack
-  ServerEvents.java        → SERVER_START / SERVER_STOP / MARKET_SYNC + init ResourcePackManager
-  TerritoryEvents.java     → Cadmus stub (non implémenté)
+  PlayerEvents.java        → JOIN (premier/retour) / LEAVE — dispatch bot + sendBalanceToPlayer à la connexion
+  ServerEvents.java        → SERVER_START / SERVER_STOP / MARKET_SYNC 3s après démarrage
 
 http/
-  EventDispatcher.java     → HTTP async vers bot, file d'attente offline
-  EventQueue.java          → File persistante JSON
+  EventDispatcher.java     → HTTP async vers bot Railway, file d'attente offline
+  EventQueue.java          → Persistance JSON de la file d'attente
 
 mixin/
-  LivingEntityMixin.java   → Morts joueurs → PLAYER_DEATH
+  LivingEntityMixin.java   → Intercepte les morts joueurs → event PLAYER_DEATH
 
 network/
-  HdvNetworking.java       → Identifiants canaux HDV_OPEN / HDV_ACTION / HDV_RESULT / NT_VERSION / NT_BALANCE + constantes ACTION_* (0-2 : BUY/SELL/WITHDRAW)
-  BankNetworking.java      → Identifiants canaux BANK_OPEN / BANK_ACTION / BANK_RESULT / BANK_REQUEST + constantes ACTION_* (0-5 : LOAN_CREATE/LOAN_REPAY/LOAN_FORGIVE/TRANSFER/RECURRING_CREATE/RECURRING_CANCEL)
+  HdvNetworking.java       → Canaux : HDV_OPEN / HDV_ACTION / HDV_RESULT / NT_VERSION / NT_BALANCE
+                             Actions : ACTION_BUY(0) / ACTION_SELL(1) / ACTION_WITHDRAW(2)
+  BankNetworking.java      → Canaux : BANK_OPEN / BANK_ACTION / BANK_RESULT / BANK_REQUEST
+                             Actions : LOAN_CREATE(0) / LOAN_REPAY(1) / LOAN_FORGIVE(2) /
+                                       TRANSFER(3) / RECURRING_CREATE(4) / RECURRING_CANCEL(5)
 
-client/                    ← Code client uniquement (@Environment(CLIENT))
-  HdvScreen.java           → Screen Fabric fenêtré semi-transparent : 4 onglets marché (pas de Profil) + modal achat + toast. Chip solde → BANK_REQUEST
-  BankScreen.java          → Screen Fabric banque : 5 onglets (Compte | Economie | Classement | Credits | Virements) + modal nouveau crédit + toast
-  BalanceHudOverlay.java   → HUD solde toujours visible (coin haut-droit) via HudRenderCallback. cachedBalance mis à jour par NT_BALANCE / HDV_OPEN / HDV_RESULT / BANK_RESULT
-  ClientConfig.java        → Config client-only (hudEnabled). Persisté dans config/nouvelle-terre-client.json
-  NouvelleSettingsScreen.java → Écran paramètres : toggle HUD solde. Accessible via ModMenu ou directement
-  ModMenuIntegration.java  → Hook ModMenu (dépendance optionnelle). Enregistré via entrypoint "modmenu" dans fabric.mod.json
+client/                    ← @Environment(CLIENT) uniquement
+  HdvScreen.java           → Screen marché : 4 onglets (Marché / Vendre / Mon Shop / Boutiques)
+                             Chip solde haut-droit → BANK_REQUEST → ouvre BankScreen
+  BankScreen.java          → Screen banque : 5 onglets (Compte / Economie / Classement / Credits / Virements)
+  BalanceHudOverlay.java   → HUD solde (coin haut-droit) via HudRenderCallback
+                             cachedBalance mis à jour par NT_BALANCE / HDV_OPEN / HDV_RESULT / BANK_RESULT
+  ClientConfig.java        → Config client-only (config/nouvelle-terre-client.json) — champ : hudEnabled
+  NouvelleSettingsScreen.java → Écran paramètres : toggle HUD solde
+  ModMenuIntegration.java  → Hook ModMenu optionnel (modCompileOnly)
 
-resourcepack/
-  ResourcePackManager.java → Génère ZIP dark-theme, calcule hash SHA-1 (télécharge depuis URL directe)
-
-shop/
-  MarketManager.java       → Singleton marche.json, CRUD annonces
-  MarketListing.java       → POJO annonce
-  MarketActions.java       → Logique métier buy / sell / sellByItemId / withdraw
-  FrenchItemNames.java     → Dico FR↔MC, toDisplay() strip namespace
-  HdvGui.java              → ⚠️ DEAD CODE — ancien GUI coffre, plus appelé
-  HdvState.java            → ⚠️ DEAD CODE — état ancien GUI
-  HdvScreenHandler.java    → ⚠️ DEAD CODE — sous-classe GenericContainerScreenHandler
-  HdvSearchHandler.java    → ⚠️ DEAD CODE — enclume recherche
-  HdvSellPriceHandler.java → ⚠️ DEAD CODE — enclume saisie prix
+market/
+  MarketManager.java       → Singleton marche.json — CRUD annonces
+  MarketListing.java       → POJO annonce (id, seller, item, quantity, pricePerUnit)
+  MarketActions.java       → Logique métier : buy / sellByItemId / withdraw
+  FrenchItemNames.java     → Dictionnaire FR↔MC + toDisplay() (strip namespace)
 ```
 
-## Dead code — NE PAS RECRÉER
-- `VenteCommand`, `AchatCommand`, `MarcheCommand` — remplacées par HdvScreen + MarketActions
-- `EconomyManager` — remplacé par LocalEconomy
-- `EconomyEvents` — méthodes mortes
-- `VenteScreenHandler/Factory` — TYPE = null, jamais enregistrée
-- `CadmusIntegration` — stub vide
-- `HdvCategory` — supprimé
-- `HdvGui`, `HdvState`, `HdvScreenHandler`, `HdvSearchHandler`, `HdvSellPriceHandler` — ancien système coffre vanilla, remplacé par `HdvScreen`
+---
 
-## GUI HDV — architecture client-serveur
+## Format des paquets réseau
 
-### Flux d'ouverture
-1. Joueur tape `/hdv`
-2. `HdvCommand` → `ServerPlayNetworking.send(player, HDV_OPEN, buf)` avec balance + toutes les annonces
-3. `NouvelleTerreBridgeClient` reçoit → `client.setScreen(new HdvScreen(...))`
-
-### Flux d'action (achat / vente / retrait)
-1. `HdvScreen` → `ClientPlayNetworking.send(HDV_ACTION, buf)` avec type + données
-2. `NouvelleTerreBridge.registerHdvNetworking()` reçoit → appelle `MarketActions.*`
-3. Réponse → `ServerPlayNetworking.send(HDV_RESULT, buf)` avec ok + message + balance + annonces
-4. `NouvelleTerreBridgeClient` reçoit → `screen.handleResult(...)` met à jour l'UI
-
-### Flux chip solde → /bank
-1. Clic chip solde dans HdvScreen → `ClientPlayNetworking.send(BANK_REQUEST, buf vide)`
-2. Serveur reçoit BANK_REQUEST → répond `BANK_OPEN` avec toutes les données bank
-3. Client reçoit BANK_OPEN → ouvre `BankScreen`
-
-### Flux HDV_OPEN / HDV_RESULT — format paquet (simplifié)
+### HDV (marché)
 ```
 HDV_OPEN  : int balance | listings[]
 HDV_RESULT: bool ok | string msg | int balance | listings[]
-NT_BALANCE: int balance   — solde seul, envoyé hors HDV (join, kill, playtime, virement récurrent)
+NT_BALANCE: int balance   — sync solde hors HDV (join, kill, playtime, virement récurrent)
 listings[]: int count → (int id, string seller, string itemId, int qty, int price) × count
 ```
 
-### HdvScreen — onglets
-| Onglet | Description |
-|---|---|
-| 🏪 Marché | Grille 5 col filtrée par catégorie + recherche + tri Prix↑/↓/Nom + scrollbar |
-| 💰 Vendre | Inventaire joueur lu client-side → formulaire qté/prix → `sellByItemId()` serveur |
-| 🛒 Mon Shop | Mes annonces avec bouton Retirer (strip bas = rouge au hover) |
-| 👥 Boutiques | Liste vendeurs → détail boutique → achat |
+### Bank
+```
+BANK_OPEN  : int balance | int ticksReward | txs[] | int totalShards | int playerCount
+             | leaderboard[] | loansAsLender[] | loansAsBorrower[] | known[] | recurring[]
+BANK_RESULT: bool ok | string msg | [même contenu que BANK_OPEN]
+txs[]         : int count → (int type, string label, int amount, long timestamp) × count
+leaderboard[] : int count → (string name, int balance) × count
+loansAs*[]    : int count → (int id, string other, int principal, long dueMs,
+                             int daysOverdue, int totalPenalty, int nextPenalty, bool repaid) × count
+known[]       : int count → string × count
+recurring[]   : int count → (int id, string to, int amount, int intervalTicks, int ticksUntilNext) × count
+```
 
-### Couleurs (HdvScreen)
+---
+
+## GUI HDV — décisions techniques
+
+- Screen Fabric pur — pas de `ScreenHandler`, pas de slots vanilla
+- Items rendus en 2× (32×32 px) via `drawItemScaled()` — transform matricielle sur `ctx.getMatrices()`
+- La vente lit l'inventaire côté client (`client.player.getInventory().main`) — le serveur revalide
+- Sidebar catégories : icône item Minecraft + compteur d'annonces par catégorie (`CAT_ICONS` map)
+- Tri : enum `SortMode` (PRICE_ASC / PRICE_DESC / NAME) cyclé par le bouton "⇅"
+- Scrollbar visuelle 4 px — thumb proportionnel au ratio visRows/totalRows
+- Toast bottom-right avec accent coloré sur la bordure gauche (vert succès, rouge erreur)
+- **Chip solde** haut-droit : cliquable → envoie `BANK_REQUEST` → ouvre `BankScreen`
+- **Modal achat z-order** : `renderBuyModal()` dans `ctx.getMatrices().push() / translate(0,0,300) / pop()` — sinon texte des cards passe devant (batching Minecraft)
+
+## GUI Bank — décisions techniques
+
+- **Onglet Virements** : 2 cards (`cardW = (pw - GAP) / 2`), `renderInfoCard()` partagé
+- **Dropdowns** : rendu dans `render()` après le tab content, overlay `0xAA000000` + scissor + scroll. Champs montant cachés via `setY(-200)` quand dropdown ouvert
+- **Positions UI dans render()** : `trfDropX/Y/W`, `recurDropX/Y/W`, `trfSendBtnY`, `recurCreateBtnY`, `recurCancelBtnY[]` — relus dans `mouseClicked()`
+- Pénalité check : `while` dans `LoanManager.tick()` rattrape plusieurs jours si serveur éteint
+- `lastPenaltyMs` initialisé à `dueTimestamp` → premier jour de retard = J+1 après échéance
+- Solde peut passer négatif via `forceDeduct()` uniquement pour les pénalités crédit
+- `buildCasingMap` inclut les vendeurs HDV pour la liste joueurs connus dans dropdowns
+
+## HUD Solde — décisions techniques
+
+- `BalanceHudOverlay.cachedBalance` statique, initialisé à `-1` (affiche `? ◆`)
+- `NouvelleTerreBridge.sendBalanceToPlayer(player)` appelé : connexion JOIN, kill reward, playtime reward, virement récurrent (sender + destinataire si connectés)
+- Caché quand `HdvScreen` est ouvert (le solde est visible dans la chip du HDV)
+- `ClientConfig` chargé dans `onInitializeClient()`, persisté dans `config/nouvelle-terre-client.json`
+- ModMenu = `modCompileOnly "com.terraformersmc:modmenu:7.2.2"` — entrypoint `modmenu` dans `fabric.mod.json`
+
+## Couleurs communes (HdvScreen / BankScreen)
 ```java
 C_BG      = 0xFF14161A   // fond principal
 C_PANEL   = 0xFF1B1D22   // cartes / panneaux
@@ -183,96 +206,7 @@ C_MID     = 0xFF9096A3   // texte secondaire
 C_DIM     = 0xFF565C6A   // labels, placeholders
 ```
 
-### Décisions techniques à retenir
-- Le GUI est un `Screen` Fabric pur — pas de `ScreenHandler`, pas de slots vanilla
-- Items rendus en 2× (32×32 px) via `drawItemScaled()` qui pousse une transform matricielle sur `ctx.getMatrices()` avant `ctx.drawItem(stack, 0, 0)`
-- La vente lit l'inventaire côté client (`client.player.getInventory().main`) — le serveur revalide
-- `MarketActions.sell()` requiert l'item en main ; `MarketActions.sellByItemId()` cherche dans l'inventaire
-- `@Environment(EnvType.CLIENT)` sur `HdvScreen` et `NouvelleTerreBridgeClient`
-- Sidebar catégories : icône item Minecraft + compteur d'annonces par catégorie (CAT_ICONS map)
-- Tri : enum `SortMode` (PRICE_ASC / PRICE_DESC / NAME) cyclé par le bouton "⇅" à droite de la recherche
-- Scrollbar visuelle (4 px) à droite de la grille — thumb proportionnel au ratio visRows/totalRows
-- Toast bottom-right avec accent coloré sur la bordure gauche (vert = succès, rouge = erreur)
-- Modal achat : bouton MAX calcule `min(stock, balance / prixUnit)`
-- Onglet actif = texte sans shadow (`drawText(..., false)`) sur fond or pour éviter l'effet "gras"
-- Mon Shop : strip bas (24px) bascule entre prix et "Retirer" selon hover — même draw call, pas d'overlay séparé (évite le batching text-over-fill de Minecraft)
-- TransactionLog : in-memory uniquement (50 entries / joueur), pas persisté sur disque — reset au restart serveur
-- 💎 → ◆ (U+25C6) partout : les emoji BMP-ext sont hors BMP et Minecraft ne les rend pas
-- **Chip solde** (haut droite HdvScreen) : cliquable → envoie `BANK_REQUEST` au serveur → ouvre BankScreen. Texte sans shadow ni bold (`drawText(..., false)`)
-- **Modal achat z-order** : `renderBuyModal()` enveloppé dans `ctx.getMatrices().push()` / `translate(0,0,300)` / `pop()` — sinon le texte des cards passe devant l'overlay (batching Minecraft)
-
-## GUI Bank — architecture client-serveur
-
-### Flux BANK_OPEN / BANK_RESULT — format paquet
-```
-BANK_OPEN  : int balance | int ticksReward | txs[] | int totalShards | int playerCount | leaderboard[] | loansAsLender[] | loansAsBorrower[] | known[] | recurring[]
-BANK_RESULT: bool ok | string msg | [même contenu que BANK_OPEN]
-txs[]          : int count → (int type, string label, int amount, long timestamp) × count
-leaderboard[]  : int count → (string name, int balance) × count
-loansAs*[]     : int count → (int id, string other, int principal, long dueMs, int daysOverdue, int totalPenalty, int nextPenalty, bool repaid) × count
-known[]        : int count → string × count
-recurring[]    : int count → (int id, string to, int amount, int intervalTicks, int ticksUntilNext) × count
-```
-
-### BankScreen — onglets
-| Onglet | Description |
-|---|---|
-| Compte | Header balance + barre récompense + liste transactions (scrollable) |
-| Economie | 4 stats : shards en circulation, joueurs enregistrés, solde moyen, joueur le plus riche |
-| Classement | Top 10 joueurs par solde, rang coloré (#1=or #2=argent #3=bronze), joueur courant surligné |
-| Credits | Bouton "Nouveau crédit" + section "Prêts accordés" + section "Mes emprunts" + modal création |
-| Virements | 2 cards côte à côte : Virement ponctuel | Virement récurrent + liste virements actifs en bas |
-
-### Système crédit — règles métier
-- Création → montant prélevé du prêteur et versé à l'emprunteur (transfert atomique)
-- Pénalité jour N = `penaltyBase + (N-1) * 5` ◆ (penaltyIncrease = 5 fixé côté client)
-- Solde peut passer négatif via `LocalEconomy.forceDeduct()` (uniquement pénalités crédit)
-- Remboursement = principal seulement (les pénalités ont déjà été déduites du compte)
-- Pardon = prêteur clôt le crédit sans remboursement (argent perdu, pas de retour)
-- Persistance : `nouvelle-terre-credits.json` (liste complète, jamais supprimée, `repaid = true`)
-
-### Décisions techniques BankScreen
-- **Onglet Virements** : 2 cards (`cardW = (pw - GAP) / 2`), `renderInfoCard()` partagé. Dropdown custom + `TextFieldWidget` cachés via `setY(-200)`. Un seul dropdown ouvert à la fois. `recurCancelBtnY[]` liste des boutons Annuler, remplie dans render(), lue dans mouseClicked().
-- **Dropdown virements** : rendu dans render() après le tab content, avec overlay `0xAA000000` + scissor + scroll. Intercepté dans mouseClicked() avant la barre d'onglets.
-- **Positions UI calculées dans render()** : `trfDropX/Y/W`, `recurDropX/Y/W`, `trfSendBtnY`, `recurCreateBtnY`, `recurCancelBtnY[]` — champs d'instance relus dans les click handlers.
-- Tick-based penalty check : toutes les 1200 ticks (1 min), horodatage réel `System.currentTimeMillis()`
-- Le `while` dans `LoanManager.tick()` rattrape plusieurs jours de pénalité si le serveur était éteint
-- `lastPenaltyMs` initialisé à `dueTimestamp` → premier jour de retard = J+1 après échéance
-- Dropdown emprunteur caché via `setY(-200)` quand ouvert (même pattern que l'onglet Virements)
-- Bouton "Pardonner" (prêteur) = rouge ; bouton "Rembourser" (emprunteur) = vert si solde ≥ principal
-- Date d'échéance affichée en `dd/MM/yyyy` via `SimpleDateFormat`
-- `buildCasingMap` extrait aussi les vendeurs HDV pour la liste des joueurs connus
-
-## HUD Solde — BalanceHudOverlay
-
-Widget persistant affiché en coin **haut-droit** de l'écran en jeu.
-
-### Comportement
-- Rendu via `HudRenderCallback.EVENT` (Fabric client)
-- Caché quand : `HdvScreen` est ouvert, joueur absent, `hudEnabled = false`
-- Affiche `balance ◆` formatté (espaces pour milliers) — `? ◆` tant que le solde n'est pas reçu
-
-### Sync solde (NT_BALANCE)
-`NouvelleTerreBridge.sendBalanceToPlayer(player)` est appelé :
-- Connexion joueur (`ServerPlayConnectionEvents.JOIN`)
-- Récompense kill mob (`KillRewards`)
-- Récompense playtime 30 min (`PlaytimeTracker`)
-- Virement récurrent exécuté (`RecurringTransferManager`) — sender et destinataire si connectés
-- HDV_OPEN et HDV_RESULT mettent aussi à jour `cachedBalance`
-
-### Paramètres client
-- `ClientConfig` — singleton, `config/nouvelle-terre-client.json`, champ `hudEnabled: true`
-- `NouvelleSettingsScreen` — toggle unique, s'ouvre depuis ModMenu (si installé)
-- ModMenu = dépendance `modCompileOnly` (optionnelle runtime). Entrypoint `modmenu` dans `fabric.mod.json`
-
-### Style (identique HdvScreen)
-```
-fond   : 0xCC1B1D22  (C_PANEL semi-transparent)
-bordure gauche : 0xFFE8A838  (C_GOLD, 2 px)
-texte  : 0xFFE8A838  (C_GOLD)
-```
-
-## UI — Constantes visuelles (EconomieCommand.java)
+## UI — Constantes EconomieCommand.java
 ```java
 EconomieCommand.SEP_GOLD    // séparateur or
 EconomieCommand.SEP_GREEN   // séparateur vert (succès)
@@ -284,26 +218,14 @@ EconomieCommand.fmt(int)    // formatte un nombre avec espaces (1 250)
 Style général : blocs visuels avec `▬` en couleur, `§8»` comme séparateur label/valeur,
 éléments cliquables via `MutableText` + `ClickEvent` + `HoverEvent`.
 
-## Resource pack HDV dark-theme
+---
 
-Généré et servi automatiquement par le mod, style Paladium.
-> Le resource pack n'est plus nécessaire pour le GUI HDV (remplacé par le screen client), mais reste envoyé pour d'autres usages potentiels.
-
-### Envoi aux joueurs
-- `ResourcePackManager.init()` au démarrage : en mode URL directe, **télécharge le fichier** pour calculer le vrai SHA-1 (le ZIP Python de la CI ≠ ZIP Java en mémoire)
-- `PlayerEvents` envoie `ResourcePackSendS2CPacket(url, hash, required, null)` à chaque connexion
-- Config dans `nouvelle-terre-bridge.json` :
-  - `resourcePackUrl` — URL fixe GitHub Releases latest : `https://github.com/0Sacha/Nouvelle-Terre-SMP---MOD/releases/latest/download/nouvelle-terre-hdv.zip`
-  - `resourcePackHost` / `resourcePackPort` — fallback serveur HTTP intégré (port 25566 souvent bloqué)
-  - `resourcePackRequired` — si `true`, le joueur est déconnecté s'il refuse
-
-### Workflow resource pack (GitHub Releases)
-1. Push sur `main` → GitHub Actions génère `nouvelle-terre-hdv.zip` via `.github/scripts/gen_resourcepack.py`
-2. Le ZIP + le JAR sont attachés à la Release GitHub (tag `v{version}-{sha}`)
-3. L'URL `releases/latest/download/nouvelle-terre-hdv.zip` pointe toujours vers la dernière release → **ne jamais changer le config**
-
-### Décision technique
-- Port 25566 bloqué par Minestrator → passage au mode URL directe (GitHub Releases)
-- Encodeur PNG pur Java (pas d'AWT) — fonctionne sur serveur headless Linux
-- `slot.png` retiré du pack — chemin dans l'atlas 1.20.1 différent, faisait rejeter tout le pack
-- Hash calculé depuis le fichier téléchargé (pas le ZIP Java) pour éviter mismatch client
+## Dead code supprimé — NE PAS RECRÉER
+- `VenteCommand`, `AchatCommand`, `MarcheCommand` → remplacées par `HdvScreen` + `MarketActions`
+- `EconomyManager` → remplacé par `LocalEconomy`
+- `shop/` → renommé en `market/`
+- `TerritoryEvents` → stub Cadmus non implémenté, supprimé
+- `HdvGui`, `HdvState`, `HdvScreenHandler`, `HdvSearchHandler`, `HdvSellPriceHandler` → ancien GUI coffre vanilla
+- `CadmusIntegration`, `HdvCategory`, `EconomyEvents`, `VenteScreenHandler/Factory` → supprimés
+- `ResourcePackManager` → resource pack supprimé (plus nécessaire avec screen client)
+- `activerEvenementEconomie`, `activerEvenementTerritoire` → flags supprimés de `ModConfig`

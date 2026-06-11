@@ -1,4 +1,4 @@
-package com.nouvelleterrebridge.shop;
+package com.nouvelleterrebridge.market;
 
 import com.nouvelleterrebridge.commands.EconomieCommand;
 import com.nouvelleterrebridge.economy.LocalEconomy;

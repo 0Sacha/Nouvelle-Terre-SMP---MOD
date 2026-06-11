@@ -3,8 +3,8 @@ package com.nouvelleterrebridge.http;
 import com.google.gson.Gson;
 import com.nouvelleterrebridge.ModConfig;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
-import com.nouvelleterrebridge.shop.MarketListing;
-import com.nouvelleterrebridge.shop.MarketManager;
+import com.nouvelleterrebridge.market.MarketListing;
+import com.nouvelleterrebridge.market.MarketManager;
 
 import java.net.URI;
 import java.net.http.HttpClient;

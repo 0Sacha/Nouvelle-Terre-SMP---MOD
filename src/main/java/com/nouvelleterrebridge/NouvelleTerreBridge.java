@@ -16,14 +16,13 @@ import com.nouvelleterrebridge.economy.RecurringTransferManager;
 import com.nouvelleterrebridge.economy.TransactionLog;
 import com.nouvelleterrebridge.events.PlayerEvents;
 import com.nouvelleterrebridge.events.ServerEvents;
-import com.nouvelleterrebridge.events.TerritoryEvents;
 import com.nouvelleterrebridge.http.EventDispatcher;
 import com.nouvelleterrebridge.http.EventQueue;
 import com.nouvelleterrebridge.network.BankNetworking;
 import com.nouvelleterrebridge.network.HdvNetworking;
-import com.nouvelleterrebridge.shop.MarketActions;
-import com.nouvelleterrebridge.shop.MarketListing;
-import com.nouvelleterrebridge.shop.MarketManager;
+import com.nouvelleterrebridge.market.MarketActions;
+import com.nouvelleterrebridge.market.MarketListing;
+import com.nouvelleterrebridge.market.MarketManager;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
@@ -60,7 +59,6 @@ public class NouvelleTerreBridge implements ModInitializer {
 
         ServerEvents.register();
         PlayerEvents.register();
-        TerritoryEvents.register();
         KillRewards.register();
         PlaytimeTracker.register();
         RecurringTransferManager.register();

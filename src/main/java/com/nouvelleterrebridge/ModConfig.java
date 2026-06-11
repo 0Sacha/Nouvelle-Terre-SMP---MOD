@@ -7,9 +7,6 @@ import net.fabricmc.loader.api.FabricLoader;
 import java.io.*;
 import java.nio.file.Path;
 
-/**
- * Configuration du mod, lue depuis config/nouvelle-terre-bridge.json.
- */
 public class ModConfig {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -21,11 +18,8 @@ public class ModConfig {
     // Secret partagé avec le bot (doit être identique des deux côtés)
     private String sharedSecret = "changez_ce_secret";
 
-    // Activation individuelle des fonctionnalités
     private boolean activerEvenementServeur = true;
     private boolean activerEvenementJoueur = true;
-    private boolean activerEvenementEconomie = true;
-    private boolean activerEvenementTerritoire = true;
 
     // Délai en secondes avant de vider la file d'attente (si le bot revient en ligne)
     private int delaiVideFileAttente = 30;
@@ -68,8 +62,6 @@ public class ModConfig {
     public String getSharedSecret() { return sharedSecret; }
     public boolean isActiverEvenementServeur() { return activerEvenementServeur; }
     public boolean isActiverEvenementJoueur() { return activerEvenementJoueur; }
-    public boolean isActiverEvenementEconomie() { return activerEvenementEconomie; }
-    public boolean isActiverEvenementTerritoire() { return activerEvenementTerritoire; }
     public int getDelaiVideFileAttente() { return delaiVideFileAttente; }
 
 

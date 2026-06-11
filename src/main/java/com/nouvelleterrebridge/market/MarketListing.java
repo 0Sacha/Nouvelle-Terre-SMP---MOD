@@ -1,4 +1,4 @@
-package com.nouvelleterrebridge.shop;
+package com.nouvelleterrebridge.market;
 
 /**
  * POJO représentant une annonce de vente sur le marché (HDV).

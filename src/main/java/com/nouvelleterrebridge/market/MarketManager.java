@@ -1,4 +1,4 @@
-package com.nouvelleterrebridge.shop;
+package com.nouvelleterrebridge.market;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;

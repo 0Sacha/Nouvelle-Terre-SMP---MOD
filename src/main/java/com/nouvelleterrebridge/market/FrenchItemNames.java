@@ -1,4 +1,4 @@
-package com.nouvelleterrebridge.shop;
+package com.nouvelleterrebridge.market;
 
 import net.minecraft.registry.Registries;
 import net.minecraft.util.Identifier;
