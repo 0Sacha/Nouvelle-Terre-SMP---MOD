@@ -46,6 +46,7 @@ public class KillRewards {
 
             String pseudo = joueur.getName().getString();
             LocalEconomy.getInstance().addShards(pseudo, shards);
+            com.nouvelleterrebridge.NouvelleTerreBridge.sendBalanceToPlayer(joueur);
 
             joueur.sendMessage(net.minecraft.text.Text.literal(
                 String.format("§6+%d💎§e pour avoir tué §f%s§e !",

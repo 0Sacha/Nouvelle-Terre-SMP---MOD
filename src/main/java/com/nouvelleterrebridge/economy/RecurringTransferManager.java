@@ -71,8 +71,13 @@ public class RecurringTransferManager {
                 boolean ok = LocalEconomy.getInstance().transfer(rt.from, rt.to, rt.amount);
                 if (ok) {
                     ServerPlayerEntity dest = server.getPlayerManager().getPlayer(rt.to);
-                    if (dest != null) dest.sendMessage(Text.literal(
-                        "§a[Nouvelle Terre] §fVirement de §f" + rt.from + " §a: +§f" + rt.amount + " ◆"));
+                    if (dest != null) {
+                        dest.sendMessage(Text.literal(
+                            "§a[Nouvelle Terre] §fVirement de §f" + rt.from + " §a: +§f" + rt.amount + " ◆"));
+                        com.nouvelleterrebridge.NouvelleTerreBridge.sendBalanceToPlayer(dest);
+                    }
+                    ServerPlayerEntity src = server.getPlayerManager().getPlayer(rt.from);
+                    if (src != null) com.nouvelleterrebridge.NouvelleTerreBridge.sendBalanceToPlayer(src);
                 } else {
                     ServerPlayerEntity src = server.getPlayerManager().getPlayer(rt.from);
                     if (src != null) src.sendMessage(Text.literal(

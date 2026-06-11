@@ -54,8 +54,7 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Commandes in-game actuelles
 | Commande | Description |
 |---|---|
-| `/economie bourse` | Solde du joueur |
-| `/economie virer <joueur> <montant>` | Envoyer des shards |
+| `/economie bourse` | Solde du joueur (redondant avec le HUD, conservé pour admin/debug) |
 | `/economie admin give/take/check <joueur>` | Admin (op 2) |
 | `/hdv` | Ouvre le GUI HDV custom (screen client Fabric) |
 | `/bank` | Ouvre le GUI Banque (screen client Fabric) |
@@ -64,6 +63,7 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 | `/evenement <message>` | Narration (op only) |
 
 > Toutes les opérations marché (vendre, acheter, retirer) se font **uniquement via `/hdv`** — aucune commande chat `/marche`.
+> `/economie virer` supprimé — les virements passent par l'onglet Profil du HDV.
 
 ## Structure des fichiers Java
 ```
@@ -98,12 +98,16 @@ mixin/
   LivingEntityMixin.java   → Morts joueurs → PLAYER_DEATH
 
 network/
-  HdvNetworking.java       → Identifiants canaux HDV_OPEN / HDV_ACTION / HDV_RESULT + constantes ACTION_* (0-2 : BUY/SELL/WITHDRAW)
+  HdvNetworking.java       → Identifiants canaux HDV_OPEN / HDV_ACTION / HDV_RESULT / NT_VERSION / NT_BALANCE + constantes ACTION_* (0-2 : BUY/SELL/WITHDRAW)
   BankNetworking.java      → Identifiants canaux BANK_OPEN / BANK_ACTION / BANK_RESULT / BANK_REQUEST + constantes ACTION_* (0-5 : LOAN_CREATE/LOAN_REPAY/LOAN_FORGIVE/TRANSFER/RECURRING_CREATE/RECURRING_CANCEL)
 
 client/                    ← Code client uniquement (@Environment(CLIENT))
   HdvScreen.java           → Screen Fabric fenêtré semi-transparent : 4 onglets marché (pas de Profil) + modal achat + toast. Chip solde → BANK_REQUEST
   BankScreen.java          → Screen Fabric banque : 5 onglets (Compte | Economie | Classement | Credits | Virements) + modal nouveau crédit + toast
+  BalanceHudOverlay.java   → HUD solde toujours visible (coin haut-droit) via HudRenderCallback. cachedBalance mis à jour par NT_BALANCE / HDV_OPEN / HDV_RESULT / BANK_RESULT
+  ClientConfig.java        → Config client-only (hudEnabled). Persisté dans config/nouvelle-terre-client.json
+  NouvelleSettingsScreen.java → Écran paramètres : toggle HUD solde. Accessible via ModMenu ou directement
+  ModMenuIntegration.java  → Hook ModMenu (dépendance optionnelle). Enregistré via entrypoint "modmenu" dans fabric.mod.json
 
 resourcepack/
   ResourcePackManager.java → Génère ZIP dark-theme, calcule hash SHA-1 (télécharge depuis URL directe)
@@ -151,6 +155,7 @@ shop/
 ```
 HDV_OPEN  : int balance | listings[]
 HDV_RESULT: bool ok | string msg | int balance | listings[]
+NT_BALANCE: int balance   — solde seul, envoyé hors HDV (join, kill, playtime, virement récurrent)
 listings[]: int count → (int id, string seller, string itemId, int qty, int price) × count
 ```
 
@@ -237,6 +242,35 @@ recurring[]    : int count → (int id, string to, int amount, int intervalTicks
 - Bouton "Pardonner" (prêteur) = rouge ; bouton "Rembourser" (emprunteur) = vert si solde ≥ principal
 - Date d'échéance affichée en `dd/MM/yyyy` via `SimpleDateFormat`
 - `buildCasingMap` extrait aussi les vendeurs HDV pour la liste des joueurs connus
+
+## HUD Solde — BalanceHudOverlay
+
+Widget persistant affiché en coin **haut-droit** de l'écran en jeu.
+
+### Comportement
+- Rendu via `HudRenderCallback.EVENT` (Fabric client)
+- Caché quand : `HdvScreen` est ouvert, joueur absent, `hudEnabled = false`
+- Affiche `balance ◆` formatté (espaces pour milliers) — `? ◆` tant que le solde n'est pas reçu
+
+### Sync solde (NT_BALANCE)
+`NouvelleTerreBridge.sendBalanceToPlayer(player)` est appelé :
+- Connexion joueur (`ServerPlayConnectionEvents.JOIN`)
+- Récompense kill mob (`KillRewards`)
+- Récompense playtime 30 min (`PlaytimeTracker`)
+- Virement récurrent exécuté (`RecurringTransferManager`) — sender et destinataire si connectés
+- HDV_OPEN et HDV_RESULT mettent aussi à jour `cachedBalance`
+
+### Paramètres client
+- `ClientConfig` — singleton, `config/nouvelle-terre-client.json`, champ `hudEnabled: true`
+- `NouvelleSettingsScreen` — toggle unique, s'ouvre depuis ModMenu (si installé)
+- ModMenu = dépendance `modCompileOnly` (optionnelle runtime). Entrypoint `modmenu` dans `fabric.mod.json`
+
+### Style (identique HdvScreen)
+```
+fond   : 0xCC1B1D22  (C_PANEL semi-transparent)
+bordure gauche : 0xFFE8A838  (C_GOLD, 2 px)
+texte  : 0xFFE8A838  (C_GOLD)
+```
 
 ## UI — Constantes visuelles (EconomieCommand.java)
 ```java

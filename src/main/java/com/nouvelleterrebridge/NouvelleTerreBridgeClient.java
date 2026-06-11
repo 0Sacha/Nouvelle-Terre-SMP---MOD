@@ -1,6 +1,8 @@
 package com.nouvelleterrebridge;
 
+import com.nouvelleterrebridge.client.BalanceHudOverlay;
 import com.nouvelleterrebridge.client.BankScreen;
+import com.nouvelleterrebridge.client.ClientConfig;
 import com.nouvelleterrebridge.client.HdvScreen;
 import com.nouvelleterrebridge.network.BankNetworking;
 import com.nouvelleterrebridge.network.HdvNetworking;
@@ -23,11 +25,23 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        ClientConfig.load();
+        BalanceHudOverlay.register();
+
+        // S2C : mise à jour solde (hors HDV)
+        ClientPlayNetworking.registerGlobalReceiver(HdvNetworking.NT_BALANCE, (client, handler, buf, responseSender) -> {
+            int balance = buf.readInt();
+            client.execute(() -> BalanceHudOverlay.cachedBalance = balance);
+        });
+
         // S2C : serveur ouvre le HDV
         ClientPlayNetworking.registerGlobalReceiver(HdvNetworking.HDV_OPEN, (client, handler, buf, responseSender) -> {
             int balance = buf.readInt();
             List<HdvScreen.ListingData> listings = readListings(buf);
-            client.execute(() -> client.setScreen(new HdvScreen(balance, listings)));
+            client.execute(() -> {
+                BalanceHudOverlay.cachedBalance = balance;
+                client.setScreen(new HdvScreen(balance, listings));
+            });
         });
 
         // S2C : vérification de version
@@ -89,6 +103,7 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             int balance     = buf.readInt();
             List<HdvScreen.ListingData> listings = readListings(buf);
             client.execute(() -> {
+                BalanceHudOverlay.cachedBalance = balance;
                 if (client.currentScreen instanceof HdvScreen screen) {
                     screen.handleResult(ok, message, balance, listings);
                 }

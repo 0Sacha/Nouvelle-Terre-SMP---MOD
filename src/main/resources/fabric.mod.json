@@ -15,6 +15,9 @@
     ],
     "client": [
       "com.nouvelleterrebridge.NouvelleTerreBridgeClient"
+    ],
+    "modmenu": [
+      "com.nouvelleterrebridge.client.ModMenuIntegration"
     ]
   },
   "depends": {
@@ -23,6 +26,7 @@
     "minecraft": "~1.20.1"
   },
   "suggests": {
-    "cadmus": "*"
+    "cadmus": "*",
+    "modmenu": ">=7.0.0"
   }
 }

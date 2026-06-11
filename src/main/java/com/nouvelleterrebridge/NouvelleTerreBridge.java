@@ -27,6 +27,7 @@ import com.nouvelleterrebridge.shop.MarketManager;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.server.MinecraftServer;
@@ -76,6 +77,10 @@ public class NouvelleTerreBridge implements ModInitializer {
 
         registerHdvNetworking();
         registerBankNetworking();
+
+        // Envoie le solde au joueur dès qu'il est en jeu
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
+            server.execute(() -> sendBalanceToPlayer(handler.getPlayer())));
 
         LOGGER.info("[NouvelleTerreBridge] Mod initialisé avec succès.");
     }
@@ -150,6 +155,13 @@ public class NouvelleTerreBridge implements ModInitializer {
 
             server.execute(() -> sendHdvResult(player, result, server));
         });
+    }
+
+    public static void sendBalanceToPlayer(ServerPlayerEntity player) {
+        int balance = LocalEconomy.getInstance().getBalance(player.getName().getString());
+        PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeInt(balance);
+        ServerPlayNetworking.send(player, HdvNetworking.NT_BALANCE, buf);
     }
 
     public static void sendHdvResult(ServerPlayerEntity player, String message, MinecraftServer server) {

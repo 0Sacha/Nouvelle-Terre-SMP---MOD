@@ -27,6 +27,7 @@ public class PlaytimeTracker {
                 LocalEconomy.getInstance().addShards(joueur.getName().getString(), SHARDS_RECOMPENSE);
                 joueur.sendMessage(net.minecraft.text.Text.literal(
                     "§6⏱ §f+" + SHARDS_RECOMPENSE + " ◆§6 pour 30 min de jeu !"));
+                com.nouvelleterrebridge.NouvelleTerreBridge.sendBalanceToPlayer(joueur);
             }
             ticksDepuisRecompense.put(uuid, ticks);
         }
