@@ -63,8 +63,8 @@ jobs:
 
       - name: Redémarrer le serveur via RCON
         run: |
-          sudo apt-get install -y mcrcon
-          mcrcon -H 91.197.6.86 -P 40539 -p "${{ secrets.RCON_PASSWORD }}" stop || true
+          curl -sL https://github.com/itzg/rcon-cli/releases/latest/download/rcon-cli_linux_amd64.tar.gz | tar -xz
+          ./rcon-cli --host 91.197.6.86 --port 40539 --password "${{ secrets.RCON_PASSWORD }}" stop || true
 
       - name: Déclencher la mise à jour du modpack
         uses: peter-evans/repository-dispatch@v3
