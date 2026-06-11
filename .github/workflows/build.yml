@@ -48,3 +48,10 @@ jobs:
           files: |
             build/libs/nouvelle-terre-bridge-${{ steps.version.outputs.version }}.jar
           make_latest: true
+
+      - name: Déclencher la mise à jour du modpack
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.PACK_UPDATE_TOKEN }}
+          repository: 0Sacha/Nouvelle-Terre-SMP---Pack
+          event-type: mod-released
