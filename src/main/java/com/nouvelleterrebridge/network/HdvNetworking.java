@@ -9,6 +9,7 @@ public final class HdvNetworking {
     public static final Identifier HDV_RESULT = new Identifier("nouvelle-terre-bridge", "hdv_result");
     public static final Identifier NT_VERSION = new Identifier("nouvelle-terre-bridge", "nt_version");
     public static final Identifier NT_BALANCE = new Identifier("nouvelle-terre-bridge", "nt_balance");
+    public static final Identifier NT_TOAST   = new Identifier("nouvelle-terre-bridge", "nt_toast");
 
     public static final int ACTION_BUY              = 0;
     public static final int ACTION_SELL             = 1;

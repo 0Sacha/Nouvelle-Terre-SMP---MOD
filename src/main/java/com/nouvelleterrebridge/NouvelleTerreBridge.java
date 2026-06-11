@@ -164,6 +164,14 @@ public class NouvelleTerreBridge implements ModInitializer {
         ServerPlayNetworking.send(player, HdvNetworking.NT_BALANCE, buf);
     }
 
+    public static void sendToast(ServerPlayerEntity player, int color, String... lines) {
+        PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeInt(color);
+        buf.writeInt(lines.length);
+        for (String line : lines) buf.writeString(line);
+        ServerPlayNetworking.send(player, HdvNetworking.NT_TOAST, buf);
+    }
+
     public static void sendHdvResult(ServerPlayerEntity player, String message, MinecraftServer server) {
         boolean ok = !message.contains("§c");
         PacketByteBuf resp = PacketByteBufs.create();

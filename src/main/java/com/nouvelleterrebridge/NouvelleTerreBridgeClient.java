@@ -4,6 +4,7 @@ import com.nouvelleterrebridge.client.BalanceHudOverlay;
 import com.nouvelleterrebridge.client.BankScreen;
 import com.nouvelleterrebridge.client.ClientConfig;
 import com.nouvelleterrebridge.client.HdvScreen;
+import com.nouvelleterrebridge.client.NotificationHud;
 import com.nouvelleterrebridge.network.BankNetworking;
 import com.nouvelleterrebridge.network.HdvNetworking;
 import net.fabricmc.api.ClientModInitializer;
@@ -27,6 +28,16 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
     public void onInitializeClient() {
         ClientConfig.load();
         BalanceHudOverlay.register();
+        NotificationHud.register();
+
+        // S2C : notification HUD (toast)
+        ClientPlayNetworking.registerGlobalReceiver(HdvNetworking.NT_TOAST, (client, handler, buf, responseSender) -> {
+            int color = buf.readInt();
+            int count = buf.readInt();
+            String[] lines = new String[count];
+            for (int i = 0; i < count; i++) lines[i] = buf.readString();
+            client.execute(() -> NotificationHud.push(color, lines));
+        });
 
         // S2C : mise à jour solde (hors HDV)
         ClientPlayNetworking.registerGlobalReceiver(HdvNetworking.NT_BALANCE, (client, handler, buf, responseSender) -> {
