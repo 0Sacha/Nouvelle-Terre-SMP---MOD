@@ -1,0 +1,21 @@
+name: Setup restart.sh sur le serveur
+
+on:
+  workflow_dispatch:
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Créer restart.sh via SFTP
+        run: |
+          sudo apt-get install -y sshpass
+          echo '#!/bin/bash' > /tmp/restart.sh
+          echo 'cd "$(dirname "$0")"' >> /tmp/restart.sh
+          echo 'exec java -jar server.jar' >> /tmp/restart.sh
+          sshpass -p "${{ secrets.SFTP_PASSWORD }}" sftp -P 2022 -o StrictHostKeyChecking=no yellox605.30551e80@7017.mystrator.com << EOF
+          put /tmp/restart.sh /restart.sh
+          bye
+          EOF
+          echo "restart.sh uploadé"
