@@ -26,6 +26,7 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `0.x.y-beta` (dans `gradle.properties` → `mod_version`)
 - **Incrémenter la version avant chaque rebuild/push.**
+- Version actuelle : `0.2.5-beta` (éditeur HUD drag-and-drop, 4 widgets)
 - À chaque rebuild : mettre à jour `mod_version` dans `gradle.properties`, puis `git commit` + `git push`
 
 ---
@@ -120,11 +121,24 @@ client/                    ← @Environment(CLIENT) uniquement
   HdvScreen.java           → Screen marché : 4 onglets (Marché / Vendre / Mon Shop / Boutiques)
                              Chip solde haut-droit → BANK_REQUEST → ouvre BankScreen
   BankScreen.java          → Screen banque : 5 onglets (Compte / Economie / Classement / Credits / Virements)
-  BalanceHudOverlay.java   → HUD solde (coin haut-droit) via HudRenderCallback
-                             cachedBalance mis à jour par NT_BALANCE / HDV_OPEN / HDV_RESULT / BANK_RESULT
-  ClientConfig.java        → Config client-only (config/nouvelle-terre-client.json) — champ : hudEnabled
-  NouvelleSettingsScreen.java → Écran paramètres : toggle HUD solde
+  BalanceHudOverlay.java   → Contient uniquement `cachedBalance` statique (int, init -1)
+                             Mis à jour par NT_BALANCE / HDV_OPEN / HDV_RESULT. Plus de rendering ici.
+  HudEditorScreen.java     → Éditeur HUD drag-and-drop (touche H). Panneau compact 228px.
+                             WIDGETS (List<HudWidget>) statique — initialisé dans NouvelleTerreBridgeClient.
+                             Positions relatives (0.0-1.0), snap aux bords, sauvegarde sur close.
+  ClientConfig.java        → Config client-only (config/nouvelle-terre-client.json)
+                             Champs : discordRPCEnabled, hudEnabled/balanceX/Y, coordsEnabled/X/Y/ShowDecimals,
+                             compassEnabled/X/Y/ShowDegrees, timeEnabled/X/Y/ShowIcon
+  NouvelleSettingsScreen.java → Bouton "Éditeur HUD →" + toggle Discord RPC
   ModMenuIntegration.java  → Hook ModMenu optionnel (modCompileOnly)
+
+client/hud/                ← Widgets HUD individuels
+  HudWidget.java           → Classe abstraite : id, label, anchorX/Y, enabled, getPixelX/Y (clamped),
+                             resetToDefault(), renderCheckbox() helper. loadFromConfig/saveToConfig abstraits.
+  BalanceWidget.java       → Affiche cachedBalance + " ◆". Pas de paramètres.
+  CoordsWidget.java        → "XYZ x / y / z". Paramètre : coordsShowDecimals.
+  CompassWidget.java       → Direction (S/N-E/O…). Paramètre : compassShowDegrees.
+  TimeWidget.java          → Heure Minecraft HH:MM. Paramètre : timeShowIcon (☀/☽).
 
 market/
   MarketManager.java       → Singleton marche.json — CRUD annonces
@@ -182,12 +196,17 @@ recurring[]   : int count → (int id, string to, int amount, int intervalTicks,
 - Solde peut passer négatif via `forceDeduct()` uniquement pour les pénalités crédit
 - `buildCasingMap` inclut les vendeurs HDV pour la liste joueurs connus dans dropdowns
 
-## HUD Solde — décisions techniques
+## Système HUD — décisions techniques
 
-- `BalanceHudOverlay.cachedBalance` statique, initialisé à `-1` (affiche `? ◆`)
-- `NouvelleTerreBridge.sendBalanceToPlayer(player)` appelé : connexion JOIN, kill reward, playtime reward, virement récurrent (sender + destinataire si connectés)
-- Caché quand `HdvScreen` est ouvert (le solde est visible dans la chip du HDV)
-- `ClientConfig` chargé dans `onInitializeClient()`, persisté dans `config/nouvelle-terre-client.json`
+- `BalanceHudOverlay.cachedBalance` statique, initialisé à `-1` (affiche `? ◆`), mis à jour depuis réseau
+- `NouvelleTerreBridge.sendBalanceToPlayer(player)` appelé : JOIN, kill reward, playtime reward, virement récurrent
+- Rendering HUD : single `HudRenderCallback` dans `NouvelleTerreBridgeClient` itère `HudEditorScreen.WIDGETS`
+- HUD masqué quand n'importe quel screen est ouvert (`mc.currentScreen != null`) — sauf `HudEditorScreen` qui rend les widgets lui-même
+- `HudWidget.getPixelX/Y` clamp automatiquement pour rester dans les bords de l'écran
+- Positions stockées en fractions `0.0–1.0` → indépendantes de la résolution
+- Snap aux bords : si le widget passe à moins de 8px d'un bord pendant le drag, il se colle
+- `HudEditorScreen.removed()` → `saveAll()` → `ClientConfig.save()` — sauvegarde à la fermeture uniquement
+- Touche H par défaut (catégorie `key.categories.nouvelle-terre-bridge`), rebindable dans Contrôles
 - ModMenu = `modCompileOnly "com.terraformersmc:modmenu:7.2.2"` — entrypoint `modmenu` dans `fabric.mod.json`
 
 ## Couleurs communes (HdvScreen / BankScreen)
