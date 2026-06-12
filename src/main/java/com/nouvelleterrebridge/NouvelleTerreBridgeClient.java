@@ -5,22 +5,33 @@ import com.nouvelleterrebridge.client.BankScreen;
 import com.nouvelleterrebridge.client.ClientConfig;
 import com.nouvelleterrebridge.client.DiscordRPCManager;
 import com.nouvelleterrebridge.client.HdvScreen;
+import com.nouvelleterrebridge.client.HudEditorScreen;
 import com.nouvelleterrebridge.client.NotificationHud;
+import com.nouvelleterrebridge.client.hud.BalanceWidget;
+import com.nouvelleterrebridge.client.hud.CompassWidget;
+import com.nouvelleterrebridge.client.hud.CoordsWidget;
+import com.nouvelleterrebridge.client.hud.HudWidget;
+import com.nouvelleterrebridge.client.hud.TimeWidget;
 import com.nouvelleterrebridge.network.BankNetworking;
 import com.nouvelleterrebridge.network.HdvNetworking;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.network.ServerInfo;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.text.ClickEvent;
 import net.minecraft.text.HoverEvent;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -31,19 +42,48 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         ClientConfig.load();
-        BalanceHudOverlay.register();
         NotificationHud.register();
 
+        // ── HUD widgets ───────────────────────────────────────────────────────
+        HudEditorScreen.WIDGETS.add(new BalanceWidget());
+        HudEditorScreen.WIDGETS.add(new CoordsWidget());
+        HudEditorScreen.WIDGETS.add(new CompassWidget());
+        HudEditorScreen.WIDGETS.add(new TimeWidget());
+        HudEditorScreen.loadAll();
+
+        HudRenderCallback.EVENT.register((ctx, tickDelta) -> {
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc.player == null || mc.currentScreen != null) return;
+            for (HudWidget w : HudEditorScreen.WIDGETS) {
+                if (w.enabled) w.render(ctx, mc);
+            }
+        });
+
+        // ── Touche éditeur HUD ────────────────────────────────────────────────
+        KeyBinding hudKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+            "key.nouvelle-terre-bridge.hud_editor",
+            GLFW.GLFW_KEY_H,
+            "key.categories.nouvelle-terre-bridge"
+        ));
+
+        // ── Events ────────────────────────────────────────────────────────────
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
             ServerInfo info = client.getCurrentServerEntry();
             if (info != null) DiscordRPCManager.INSTANCE.onJoin(info.address);
         });
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->
             DiscordRPCManager.INSTANCE.onLeave());
-        ClientTickEvents.END_CLIENT_TICK.register(client ->
-            DiscordRPCManager.INSTANCE.tick());
 
-        // S2C : notification HUD (toast)
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            DiscordRPCManager.INSTANCE.tick();
+            while (hudKey.wasPressed()) {
+                if (client.currentScreen == null)
+                    client.setScreen(new HudEditorScreen());
+            }
+        });
+
+        // ── Réseau ────────────────────────────────────────────────────────────
+
         ClientPlayNetworking.registerGlobalReceiver(HdvNetworking.NT_TOAST, (client, handler, buf, responseSender) -> {
             int color = buf.readInt();
             int count = buf.readInt();
@@ -52,13 +92,11 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             client.execute(() -> NotificationHud.push(color, lines));
         });
 
-        // S2C : mise à jour solde (hors HDV)
         ClientPlayNetworking.registerGlobalReceiver(HdvNetworking.NT_BALANCE, (client, handler, buf, responseSender) -> {
             int balance = buf.readInt();
             client.execute(() -> BalanceHudOverlay.cachedBalance = balance);
         });
 
-        // S2C : serveur ouvre le HDV
         ClientPlayNetworking.registerGlobalReceiver(HdvNetworking.HDV_OPEN, (client, handler, buf, responseSender) -> {
             int balance = buf.readInt();
             List<HdvScreen.ListingData> listings = readListings(buf);
@@ -68,7 +106,6 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             });
         });
 
-        // S2C : vérification de version
         ClientPlayNetworking.registerGlobalReceiver(HdvNetworking.NT_VERSION, (client, handler, buf, responseSender) -> {
             String serverVer = buf.readString();
             String clientVer = FabricLoader.getInstance()
@@ -83,14 +120,11 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
                         .styled(s -> s
                             .withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, url))
                             .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal(url))));
-                    MutableText msg = Text.literal("§e[Nouvelle Terre] §cMod obsolète §7— client §f" + clientVer
-                            + " §7≠ serveur §f" + serverVer + " §7— ").append(link);
-                    client.player.sendMessage(msg, false);
+                    client.player.sendMessage(Text.literal("§e[Nouvelle Terre] §cMod obsolète §7— client §f"
+                        + clientVer + " §7≠ serveur §f" + serverVer + " §7— ").append(link), false);
                 });
             }
         });
-
-        // ── Bank ──────────────────────────────────────────────────────────────
 
         ClientPlayNetworking.registerGlobalReceiver(BankNetworking.BANK_OPEN, (client, handler, buf, responseSender) -> {
             BankScreen screen = readBankPacket(buf);
@@ -98,18 +132,18 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
         });
 
         ClientPlayNetworking.registerGlobalReceiver(BankNetworking.BANK_RESULT, (client, handler, buf, responseSender) -> {
-            boolean ok      = buf.readBoolean();
-            String  message = buf.readString();
-            int balance     = buf.readInt();
-            int ticksReward = buf.readInt();
-            List<BankScreen.TxData>            txs       = readBankTxs(buf);
+            boolean ok       = buf.readBoolean();
+            String  message  = buf.readString();
+            int balance      = buf.readInt();
+            int ticksReward  = buf.readInt();
+            List<BankScreen.TxData>           txs       = readBankTxs(buf);
             int totalShards  = buf.readInt();
             int playerCount  = buf.readInt();
-            List<BankScreen.LeaderboardEntry>  lb        = readLeaderboard(buf);
-            List<BankScreen.LoanData>          asLender  = readLoans(buf);
-            List<BankScreen.LoanData>          asBorrow  = readLoans(buf);
-            List<String>                       known     = readStringList(buf);
-            List<BankScreen.RecurringData>     recurring = readBankRecurring(buf);
+            List<BankScreen.LeaderboardEntry> lb        = readLeaderboard(buf);
+            List<BankScreen.LoanData>         asLender  = readLoans(buf);
+            List<BankScreen.LoanData>         asBorrow  = readLoans(buf);
+            List<String>                      known     = readStringList(buf);
+            List<BankScreen.RecurringData>    recurring = readBankRecurring(buf);
             client.execute(() -> {
                 if (client.currentScreen instanceof BankScreen screen) {
                     screen.handleResult(ok, message, balance, ticksReward, txs,
@@ -118,9 +152,6 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             });
         });
 
-        // ── HDV résultat ─────────────────────────────────────────────────────
-
-        // S2C : résultat d'une action
         ClientPlayNetworking.registerGlobalReceiver(HdvNetworking.HDV_RESULT, (client, handler, buf, responseSender) -> {
             boolean ok      = buf.readBoolean();
             String  message = buf.readString();
@@ -134,6 +165,8 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             });
         });
     }
+
+    // ── Helpers lecture paquets ───────────────────────────────────────────────
 
     private static List<HdvScreen.ListingData> readListings(PacketByteBuf buf) {
         int count = buf.readInt();
@@ -150,19 +183,17 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
         return list;
     }
 
-    // ── Lecture paquets Bank ──────────────────────────────────────────────────
-
     private static BankScreen readBankPacket(PacketByteBuf buf) {
         int balance     = buf.readInt();
         int ticksReward = buf.readInt();
-        List<BankScreen.TxData>            txs       = readBankTxs(buf);
+        List<BankScreen.TxData>           txs       = readBankTxs(buf);
         int totalShards  = buf.readInt();
         int playerCount  = buf.readInt();
-        List<BankScreen.LeaderboardEntry>  lb        = readLeaderboard(buf);
-        List<BankScreen.LoanData>          asLender  = readLoans(buf);
-        List<BankScreen.LoanData>          asBorrow  = readLoans(buf);
-        List<String>                       known     = readStringList(buf);
-        List<BankScreen.RecurringData>     recurring = readBankRecurring(buf);
+        List<BankScreen.LeaderboardEntry> lb        = readLeaderboard(buf);
+        List<BankScreen.LoanData>         asLender  = readLoans(buf);
+        List<BankScreen.LoanData>         asBorrow  = readLoans(buf);
+        List<String>                      known     = readStringList(buf);
+        List<BankScreen.RecurringData>    recurring = readBankRecurring(buf);
         return new BankScreen(balance, ticksReward, txs, totalShards, playerCount,
             lb, asLender, asBorrow, known, recurring);
     }

@@ -12,13 +12,38 @@ import java.nio.file.Path;
 @Environment(EnvType.CLIENT)
 public class ClientConfig {
 
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final Gson   GSON     = new GsonBuilder().setPrettyPrinting().create();
     private static final String FILENAME = "nouvelle-terre-client.json";
     private static ClientConfig INSTANCE;
 
-    public boolean hudEnabled        = true;
+    // ── Général ───────────────────────────────────────────────────────────────
     public boolean discordRPCEnabled = true;
     public String  discordRPCServer  = "91.197.6.86";
+
+    // ── Widget Solde ──────────────────────────────────────────────────────────
+    public boolean hudEnabled = true;   // id "balance" — gardé pour rétrocompat JSON
+    public float   balanceX   = 0.99f;
+    public float   balanceY   = 0.01f;
+
+    // ── Widget Coordonnées ────────────────────────────────────────────────────
+    public boolean coordsEnabled      = false;
+    public float   coordsX            = 0.01f;
+    public float   coordsY            = 0.06f;
+    public boolean coordsShowDecimals = false;
+
+    // ── Widget Boussole ───────────────────────────────────────────────────────
+    public boolean compassEnabled     = false;
+    public float   compassX           = 0.50f;
+    public float   compassY           = 0.02f;
+    public boolean compassShowDegrees = false;
+
+    // ── Widget Heure ──────────────────────────────────────────────────────────
+    public boolean timeEnabled  = false;
+    public float   timeX        = 0.01f;
+    public float   timeY        = 0.01f;
+    public boolean timeShowIcon = true;
+
+    // ─────────────────────────────────────────────────────────────────────────
 
     public static ClientConfig get() {
         if (INSTANCE == null) load();
