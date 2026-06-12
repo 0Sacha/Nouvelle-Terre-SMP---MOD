@@ -60,16 +60,12 @@ jobs:
           bye
           EOF
 
-      - name: Redémarrer le serveur via API Minestrator
+      - name: Découvrir les serveurs via API Minestrator
         run: |
-          curl -s -X POST "https://minestrator.com/api/client/servers/30551e80/power" \
+          echo "=== GET /api/client ==="
+          curl -s "https://minestrator.com/api/client" \
             -H "Authorization: Bearer ${{ secrets.MINESTRATOR_API_KEY }}" \
-            -H "Content-Type: application/json" \
-            -H "Accept: application/json" \
-            -d '{"signal": "restart"}' \
-            -o /tmp/restart_response.json
-          cat /tmp/restart_response.json
-          echo "Redémarrage demandé"
+            -H "Accept: application/json"
 
       - name: Déclencher la mise à jour du modpack
         uses: peter-evans/repository-dispatch@v3
