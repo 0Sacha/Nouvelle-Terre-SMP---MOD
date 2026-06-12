@@ -31,10 +31,18 @@ public class NouvelleSettingsScreen extends Screen {
             cfg.hudEnabled = !cfg.hudEnabled;
             cfg.save();
             btn.setMessage(hudToggleText());
-        }).dimensions(cx - 100, cy - 12, 200, 20).build());
+        }).dimensions(cx - 100, cy - 22, 200, 20).build());
+
+        addDrawableChild(ButtonWidget.builder(rpcToggleText(), btn -> {
+            ClientConfig cfg = ClientConfig.get();
+            cfg.discordRPCEnabled = !cfg.discordRPCEnabled;
+            cfg.save();
+            btn.setMessage(rpcToggleText());
+            if (!cfg.discordRPCEnabled) DiscordRPCManager.INSTANCE.onLeave();
+        }).dimensions(cx - 100, cy + 4, 200, 20).build());
 
         addDrawableChild(ButtonWidget.builder(Text.literal("Retour"), btn -> close())
-            .dimensions(cx - 75, cy + 18, 150, 20).build());
+            .dimensions(cx - 75, cy + 34, 150, 20).build());
     }
 
     @Override
@@ -54,5 +62,10 @@ public class NouvelleSettingsScreen extends Screen {
     private static Text hudToggleText() {
         boolean en = ClientConfig.get().hudEnabled;
         return Text.literal("HUD Solde : " + (en ? "§aActivé" : "§cDésactivé"));
+    }
+
+    private static Text rpcToggleText() {
+        boolean en = ClientConfig.get().discordRPCEnabled;
+        return Text.literal("Discord Rich Presence : " + (en ? "§aActivé" : "§cDésactivé"));
     }
 }

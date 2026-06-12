@@ -3,6 +3,7 @@ package com.nouvelleterrebridge;
 import com.nouvelleterrebridge.client.BalanceHudOverlay;
 import com.nouvelleterrebridge.client.BankScreen;
 import com.nouvelleterrebridge.client.ClientConfig;
+import com.nouvelleterrebridge.client.DiscordRPCManager;
 import com.nouvelleterrebridge.client.HdvScreen;
 import com.nouvelleterrebridge.client.NotificationHud;
 import com.nouvelleterrebridge.network.BankNetworking;
@@ -10,8 +11,11 @@ import com.nouvelleterrebridge.network.HdvNetworking;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.client.network.ServerInfo;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.text.ClickEvent;
 import net.minecraft.text.HoverEvent;
@@ -29,6 +33,15 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
         ClientConfig.load();
         BalanceHudOverlay.register();
         NotificationHud.register();
+
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
+            ServerInfo info = client.getCurrentServerEntry();
+            if (info != null) DiscordRPCManager.INSTANCE.onJoin(info.address);
+        });
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->
+            DiscordRPCManager.INSTANCE.onLeave());
+        ClientTickEvents.END_CLIENT_TICK.register(client ->
+            DiscordRPCManager.INSTANCE.tick());
 
         // S2C : notification HUD (toast)
         ClientPlayNetworking.registerGlobalReceiver(HdvNetworking.NT_TOAST, (client, handler, buf, responseSender) -> {

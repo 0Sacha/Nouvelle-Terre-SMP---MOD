@@ -16,7 +16,9 @@ public class ClientConfig {
     private static final String FILENAME = "nouvelle-terre-client.json";
     private static ClientConfig INSTANCE;
 
-    public boolean hudEnabled = true;
+    public boolean hudEnabled        = true;
+    public boolean discordRPCEnabled = true;
+    public String  discordRPCServer  = "91.197.6.86";
 
     public static ClientConfig get() {
         if (INSTANCE == null) load();
