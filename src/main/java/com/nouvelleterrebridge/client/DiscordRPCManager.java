@@ -9,7 +9,7 @@ public class DiscordRPCManager {
 
     // !! Remplacer par l'Application ID de votre app Discord Developer Portal !!
     // https://discord.com/developers/applications → New Application → General Information → Application ID
-    private static final String APP_ID = "REPLACE_ME";
+    private static final String APP_ID = "1509165712562983042";
 
     public static final DiscordRPCManager INSTANCE = new DiscordRPCManager();
 
