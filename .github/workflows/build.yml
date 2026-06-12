@@ -60,18 +60,17 @@ jobs:
           bye
           EOF
 
-      - name: Redémarrer le serveur via RCON
+      - name: Notifier Discord
         run: |
-          pip install mcrcon -q
-          python3 -c "
-          from mcrcon import MCRcon
-          try:
-              with MCRcon('91.197.6.86', '${{ secrets.RCON_PASSWORD }}', port=40539) as mcr:
-                  resp = mcr.command('restart')
-                  print('Réponse RCON:', resp)
-          except Exception as e:
-              print(f'RCON warning: {e}')
-          "
+          curl -s -X POST "${{ secrets.DISCORD_WEBHOOK }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "embeds": [{
+                "title": "🔧 Nouveau mod déployé",
+                "description": "**NouvelleTerreBridge `${{ steps.version.outputs.version }}`** est prêt sur le serveur.\n\n➡️ Redémarre le serveur pour appliquer la mise à jour.",
+                "color": 16753920
+              }]
+            }'
 
       - name: Déclencher la mise à jour du modpack
         uses: peter-evans/repository-dispatch@v3
