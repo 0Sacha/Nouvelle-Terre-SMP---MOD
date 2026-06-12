@@ -53,7 +53,6 @@ jobs:
         run: |
           sudo apt-get install -y sshpass
           JAR="nouvelle-terre-bridge-${{ steps.version.outputs.version }}.jar"
-          # Supprimer l'ancien JAR du mod
           sshpass -p "${{ secrets.SFTP_PASSWORD }}" sftp -P 2022 -o StrictHostKeyChecking=no yellox605.30551e80@7017.mystrator.com << EOF
           cd /mods
           rm nouvelle-terre-bridge-*.jar
@@ -61,18 +60,16 @@ jobs:
           bye
           EOF
 
-      - name: Redémarrer le serveur via RCON
+      - name: Redémarrer le serveur via API Minestrator
         run: |
-          pip install mcrcon -q
-          python3 -c "
-          from mcrcon import MCRcon
-          try:
-              with MCRcon('91.197.6.86', '${{ secrets.RCON_PASSWORD }}', port=40539) as mcr:
-                  mcr.command('stop')
-                  print('Serveur arrete via RCON')
-          except Exception as e:
-              print(f'RCON warning: {e}')
-          "
+          curl -s -X POST "https://minestrator.com/api/client/servers/30551e80/power" \
+            -H "Authorization: Bearer ${{ secrets.MINESTRATOR_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json" \
+            -d '{"signal": "restart"}' \
+            -o /tmp/restart_response.json
+          cat /tmp/restart_response.json
+          echo "Redémarrage demandé"
 
       - name: Déclencher la mise à jour du modpack
         uses: peter-evans/repository-dispatch@v3
