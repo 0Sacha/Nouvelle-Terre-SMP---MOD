@@ -60,12 +60,18 @@ jobs:
           bye
           EOF
 
-      - name: Découvrir les serveurs via API Minestrator
+      - name: Redémarrer le serveur via RCON
         run: |
-          echo "=== GET /api/client ==="
-          curl -s "https://minestrator.com/api/client" \
-            -H "Authorization: Bearer ${{ secrets.MINESTRATOR_API_KEY }}" \
-            -H "Accept: application/json"
+          pip install mcrcon -q
+          python3 -c "
+          from mcrcon import MCRcon
+          try:
+              with MCRcon('91.197.6.86', '${{ secrets.RCON_PASSWORD }}', port=40539) as mcr:
+                  resp = mcr.command('restart')
+                  print('Réponse RCON:', resp)
+          except Exception as e:
+              print(f'RCON warning: {e}')
+          "
 
       - name: Déclencher la mise à jour du modpack
         uses: peter-evans/repository-dispatch@v3
