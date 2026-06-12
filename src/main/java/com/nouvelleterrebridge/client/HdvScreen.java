@@ -279,13 +279,12 @@ public class HdvScreen extends Screen {
             tx += tw + 4;
         }
 
-        // Balance — right-aligned chip, cliquable pour ouvrir /bank
+        // Balance — right-aligned chip
         String bal = balance + " ◆";
         int bw = textRenderer.getWidth(bal) + 18;
         int bx = winX + winW - bw - PAD;
         int by = winY + (TOP_H - 20) / 2;
-        boolean balHov = mx >= bx && mx < bx + bw && my >= winY && my <= winY + TOP_H - 1;
-        ctx.fill(bx, by, bx + bw, by + 20, balHov ? C_HOVER : C_STRIP);
+        ctx.fill(bx, by, bx + bw, by + 20, C_STRIP);
         ctx.fill(bx, by, bx + 2, by + 20, C_GOLD);
         ctx.drawText(textRenderer, bal, bx + 10, by + 6, C_GOLD, false);
     }
@@ -865,17 +864,7 @@ public class HdvScreen extends Screen {
     }
 
     private void handleTabClick(int mx, int my) {
-        // Clic sur le chip balance → ouvre /bank
-        String bal = balance + " ◆";
-        int bw = textRenderer.getWidth(bal) + 18;
-        int bx = winX + winW - bw - PAD;
-        if (mx >= bx && mx < bx + bw) {
-            ClientPlayNetworking.send(com.nouvelleterrebridge.network.BankNetworking.BANK_REQUEST,
-                new PacketByteBuf(Unpooled.buffer()));
-            return;
-        }
-
-        int tx = winX + PAD + textRenderer.getWidth("HDV") + 13 + textRenderer.getWidth("Nouvelle Terre") + 20;
+        int tx =winX + PAD + textRenderer.getWidth("HDV") + 13 + textRenderer.getWidth("Nouvelle Terre") + 20;
         for (Tab tab : new Tab[]{Tab.MARKET, Tab.SELL, Tab.MY_SHOP, Tab.SHOPS}) {
             int tw = textRenderer.getWidth(tab.label) + 18;
             if (mx >= tx && mx <= tx + tw) {
