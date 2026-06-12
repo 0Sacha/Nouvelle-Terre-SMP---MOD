@@ -26,7 +26,7 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `0.x.y-beta` (dans `gradle.properties` → `mod_version`)
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `0.2.5-beta` (éditeur HUD drag-and-drop, 4 widgets)
+- Version actuelle : `0.2.6-beta` (éditeur HUD 2 modes : panneau centré + mode placement)
 - À chaque rebuild : mettre à jour `mod_version` dans `gradle.properties`, puis `git commit` + `git push`
 
 ---
@@ -123,7 +123,12 @@ client/                    ← @Environment(CLIENT) uniquement
   BankScreen.java          → Screen banque : 5 onglets (Compte / Economie / Classement / Credits / Virements)
   BalanceHudOverlay.java   → Contient uniquement `cachedBalance` statique (int, init -1)
                              Mis à jour par NT_BALANCE / HDV_OPEN / HDV_RESULT. Plus de rendering ici.
-  HudEditorScreen.java     → Éditeur HUD drag-and-drop (touche H). Panneau compact 228px.
+  HudEditorScreen.java     → Éditeur HUD (touche H). Deux modes :
+                               Mode PANEL : panneau centré en haut (PW=372px), grille 2 colonnes de cards.
+                                 Chaque card : preview widget, toggle ACTIVÉ/DÉSACTIVÉ, bouton OPTIONS ⚙.
+                                 Bouton "Placer les widgets" → bascule en mode LAYOUT.
+                               Mode LAYOUT : panneau caché, widgets activés draggables avec bordure or.
+                                 Bouton "Terminer" centré en haut. ESC → retour mode PANEL.
                              WIDGETS (List<HudWidget>) statique — initialisé dans NouvelleTerreBridgeClient.
                              Positions relatives (0.0-1.0), snap aux bords, sauvegarde sur close.
   ClientConfig.java        → Config client-only (config/nouvelle-terre-client.json)
@@ -204,6 +209,7 @@ recurring[]   : int count → (int id, string to, int amount, int intervalTicks,
 - HUD masqué quand n'importe quel screen est ouvert (`mc.currentScreen != null`) — sauf `HudEditorScreen` qui rend les widgets lui-même
 - `HudWidget.getPixelX/Y` clamp automatiquement pour rester dans les bords de l'écran
 - Positions stockées en fractions `0.0–1.0` → indépendantes de la résolution
+- Preview widget dans card : anchorX/Y temporairement modifiés puis restaurés, scissor appliqué pour clipper
 - Snap aux bords : si le widget passe à moins de 8px d'un bord pendant le drag, il se colle
 - `HudEditorScreen.removed()` → `saveAll()` → `ClientConfig.save()` — sauvegarde à la fermeture uniquement
 - Touche H par défaut (catégorie `key.categories.nouvelle-terre-bridge`), rebindable dans Contrôles
