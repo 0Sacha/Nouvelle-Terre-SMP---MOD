@@ -7,14 +7,23 @@ import com.nouvelleterrebridge.commands.EventNarratifCommand;
 import com.nouvelleterrebridge.commands.HdvCommand;
 import com.nouvelleterrebridge.commands.LierCommand;
 import com.nouvelleterrebridge.commands.PayCommand;
+import com.nouvelleterrebridge.commands.ProductionCommand;
 import com.nouvelleterrebridge.economy.Loan;
 import com.nouvelleterrebridge.economy.LoanManager;
 import com.nouvelleterrebridge.economy.LocalEconomy;
 import com.nouvelleterrebridge.economy.KillRewards;
 import com.nouvelleterrebridge.economy.PlaytimeTracker;
+import com.nouvelleterrebridge.economy.ProductionShopManager;
+import com.nouvelleterrebridge.economy.ProductionTracker;
 import com.nouvelleterrebridge.economy.RecurringTransfer;
 import com.nouvelleterrebridge.economy.RecurringTransferManager;
+import com.nouvelleterrebridge.economy.ShopThresholds;
 import com.nouvelleterrebridge.economy.TransactionLog;
+import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
+import net.minecraft.block.Block;
+import net.minecraft.item.ItemStack;
+import net.minecraft.registry.Registries;
+import net.minecraft.server.world.ServerWorld;
 import com.nouvelleterrebridge.events.PlayerEvents;
 import com.nouvelleterrebridge.events.ServerEvents;
 import com.nouvelleterrebridge.http.EventDispatcher;
@@ -65,6 +74,19 @@ public class NouvelleTerreBridge implements ModInitializer {
         RecurringTransferManager.register();
         LoanManager.register();
 
+        ShopThresholds.load();
+        ProductionTracker.load();
+        ProductionShopManager.checkAll();
+
+        PlayerBlockBreakEvents.AFTER.register((world, player, pos, state, blockEntity) -> {
+            if (!(world instanceof ServerWorld sw)) return;
+            List<ItemStack> drops = Block.getDroppedStacks(state, sw, pos, blockEntity, player, player.getMainHandStack());
+            for (ItemStack drop : drops) {
+                String id = Registries.ITEM.getId(drop.getItem()).toString();
+                ProductionTracker.add(id, drop.getCount());
+            }
+        });
+
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             HdvCommand.register(dispatcher);
             BankCommand.register(dispatcher);
@@ -73,6 +95,7 @@ public class NouvelleTerreBridge implements ModInitializer {
             LierCommand.register(dispatcher);
             ConflitCommand.register(dispatcher);
             EventNarratifCommand.register(dispatcher);
+            ProductionCommand.register(dispatcher);
         });
 
         registerHdvNetworking();

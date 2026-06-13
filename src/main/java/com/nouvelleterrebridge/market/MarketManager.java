@@ -112,6 +112,26 @@ public class MarketManager {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Vérifie si une annonce automatique (seller exact) existe pour cet item.
+     */
+    public synchronized boolean hasAutoListing(String itemId, String seller) {
+        return annonces.stream()
+                .anyMatch(l -> l.seller.equals(seller) && l.item.equalsIgnoreCase(itemId));
+    }
+
+    /**
+     * Supprime toutes les annonces d'un vendeur exact (pour reset des annonces auto).
+     */
+    public synchronized void removeAutoListings(String seller) {
+        int before = annonces.size();
+        annonces.removeIf(l -> l.seller.equals(seller));
+        if (annonces.size() != before) {
+            save();
+            NouvelleTerreBridge.LOGGER.info("[MarketManager] {} annonce(s) automatique(s) supprimée(s).", before - annonces.size());
+        }
+    }
+
     // ── Persistance ──────────────────────────────────────────────────────────
 
     private void load() {
