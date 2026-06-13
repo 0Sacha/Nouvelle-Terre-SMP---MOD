@@ -26,7 +26,7 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `0.x.y-beta` (dans `gradle.properties` → `mod_version`)
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `0.2.7-beta` (HUD : +Santé, Nourriture, FPS, Biome, Notifications — panneau scrollable)
+- Version actuelle : `0.2.8-beta` (HUD : +Armure, XP, Dimension, Effets — F3 masque le HUD, visible en chat)
 - À chaque rebuild : mettre à jour `mod_version` dans `gradle.properties`, puis `git commit` + `git push`
 
 ---
@@ -109,6 +109,8 @@ http/
 
 mixin/
   LivingEntityMixin.java   → Intercepte les morts joueurs → event PLAYER_DEATH
+  InGameHudMixin.java      → @Inject InGameHud.render HEAD → reset NouvelleTerreBridgeClient.debugHudActive = false
+  DebugHudMixin.java       → @Inject DebugHud.render HEAD → set debugHudActive = true (détection F3)
 
 network/
   HdvNetworking.java       → Canaux : HDV_OPEN / HDV_ACTION / HDV_RESULT / NT_VERSION / NT_BALANCE
@@ -135,7 +137,8 @@ client/                    ← @Environment(CLIENT) uniquement
                              Champs : discordRPCEnabled, hudEnabled/balanceX/Y, coordsEnabled/X/Y/ShowDecimals,
                              compassEnabled/X/Y/ShowDegrees (legacy), timeEnabled/X/Y/ShowIcon,
                              santeEnabled/X/Y, nourritureEnabled/X/Y, fpsEnabled/X/Y/ShowPing,
-                             biomeEnabled/X/Y, notifEnabled/X/Y
+                             biomeEnabled/X/Y, notifEnabled/X/Y, armureEnabled/X/Y,
+                             xpEnabled/X/Y, dimensionEnabled/X/Y, effetsEnabled/X/Y
   NouvelleSettingsScreen.java → Bouton "Éditeur HUD →" + toggle Discord RPC
   ModMenuIntegration.java  → Hook ModMenu optionnel (modCompileOnly)
 
@@ -151,6 +154,11 @@ client/hud/                ← Widgets HUD individuels
   FpsWidget.java           → FPS + ping optionnel. FPS mesuré via FpsWidget.onFrame() appelé dans HudRenderCallback.
                              Paramètre : fpsShowPing.
   BiomeWidget.java         → Biome courant (getKey().getPath(), premier caractère capitalisé).
+  ArmureWidget.java        → "Arm. X / 20". Couleur : rouge ≤4, or ≤14, vert sinon.
+  XpWidget.java            → "Niv. X" + barre de progression XP (4px, vert). mc.player.experienceLevel/experienceProgress.
+  DimensionWidget.java     → Dimension courante : "Monde" (vert), "Nether" (rouge), "End" (violet).
+  EffetsWidget.java        → Liste d'effets de potion actifs (max 5), chiffres romains + durée en secondes.
+                             Hauteur variable : Math.max(14, count * 12 + 6). Vert=bénéfique, rouge=négatif.
   NotificationWidget.java  → Widget de position pour les toasts. isDragOnly()=true, render() vide.
                              Aperçu mock dans la card de l'éditeur. Position lue par NotificationHud.
 
@@ -215,7 +223,10 @@ recurring[]   : int count → (int id, string to, int amount, int intervalTicks,
 - `BalanceHudOverlay.cachedBalance` statique, initialisé à `-1` (affiche `? ◆`), mis à jour depuis réseau
 - `NouvelleTerreBridge.sendBalanceToPlayer(player)` appelé : JOIN, kill reward, playtime reward, virement récurrent
 - Rendering HUD : single `HudRenderCallback` dans `NouvelleTerreBridgeClient` itère `HudEditorScreen.WIDGETS`
-- HUD masqué quand n'importe quel screen est ouvert (`mc.currentScreen != null`) — sauf `HudEditorScreen` qui rend les widgets lui-même
+- HUD masqué quand F3 actif : `NouvelleTerreBridgeClient.debugHudActive` (mis à false par `InGameHudMixin`, true par `DebugHudMixin`)
+- HUD masqué quand screen quelconque ouvert — SAUF `ChatScreen` (commandes/tchat) ET `HudEditorScreen`
+- Chat ouvert : widgets chevauchant la barre de saisie (< 15px du bas) masqués individuelement
+- `HudEditorScreen` rend les widgets lui-même en mode LAYOUT, sinon `HudRenderCallback` les rend
 - `HudWidget.getPixelX/Y` clamp automatiquement pour rester dans les bords de l'écran
 - Positions stockées en fractions `0.0–1.0` → indépendantes de la résolution
 - Preview widget dans card : anchorX/Y temporairement modifiés puis restaurés, scissor appliqué pour clipper
