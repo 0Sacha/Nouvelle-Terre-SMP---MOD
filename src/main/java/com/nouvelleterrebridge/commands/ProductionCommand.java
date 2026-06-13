@@ -23,7 +23,7 @@ public class ProductionCommand {
                         EconomieCommand.SEP_RED + "\n" +
                         "§cCompteurs de production réinitialisés.\n" +
                         "§7Les annonces automatiques du shop ont été supprimées.\n" +
-                        EconomieCommand.SEP_RED), true);
+                        EconomieCommand.SEP_RED), false);
                     return 1;
                 }))
 
