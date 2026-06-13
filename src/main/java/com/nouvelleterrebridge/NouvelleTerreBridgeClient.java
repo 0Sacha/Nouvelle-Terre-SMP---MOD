@@ -7,15 +7,19 @@ import com.nouvelleterrebridge.client.DiscordRPCManager;
 import com.nouvelleterrebridge.client.HdvScreen;
 import com.nouvelleterrebridge.client.HudEditorScreen;
 import com.nouvelleterrebridge.client.NotificationHud;
+import com.nouvelleterrebridge.client.hud.ArmureWidget;
 import com.nouvelleterrebridge.client.hud.BalanceWidget;
 import com.nouvelleterrebridge.client.hud.BiomeWidget;
 import com.nouvelleterrebridge.client.hud.CoordsWidget;
+import com.nouvelleterrebridge.client.hud.DimensionWidget;
+import com.nouvelleterrebridge.client.hud.EffetsWidget;
 import com.nouvelleterrebridge.client.hud.FpsWidget;
 import com.nouvelleterrebridge.client.hud.HudWidget;
 import com.nouvelleterrebridge.client.hud.NotificationWidget;
 import com.nouvelleterrebridge.client.hud.NourritureWidget;
 import com.nouvelleterrebridge.client.hud.SanteWidget;
 import com.nouvelleterrebridge.client.hud.TimeWidget;
+import com.nouvelleterrebridge.client.hud.XpWidget;
 import com.nouvelleterrebridge.network.BankNetworking;
 import com.nouvelleterrebridge.network.HdvNetworking;
 import net.fabricmc.api.ClientModInitializer;
@@ -28,6 +32,7 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.ChatScreen;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.network.ServerInfo;
 import net.minecraft.network.PacketByteBuf;
@@ -43,6 +48,9 @@ import java.util.List;
 @Environment(EnvType.CLIENT)
 public class NouvelleTerreBridgeClient implements ClientModInitializer {
 
+    /** Set to true by DebugHudMixin when F3 debug screen is rendering this frame. */
+    public static volatile boolean debugHudActive = false;
+
     @Override
     public void onInitializeClient() {
         ClientConfig.load();
@@ -54,17 +62,37 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
         HudEditorScreen.WIDGETS.add(new TimeWidget());
         HudEditorScreen.WIDGETS.add(new SanteWidget());
         HudEditorScreen.WIDGETS.add(new NourritureWidget());
+        HudEditorScreen.WIDGETS.add(new ArmureWidget());
+        HudEditorScreen.WIDGETS.add(new XpWidget());
         HudEditorScreen.WIDGETS.add(new FpsWidget());
         HudEditorScreen.WIDGETS.add(new BiomeWidget());
+        HudEditorScreen.WIDGETS.add(new DimensionWidget());
+        HudEditorScreen.WIDGETS.add(new EffetsWidget());
         HudEditorScreen.WIDGETS.add(new NotificationWidget());
         HudEditorScreen.loadAll();
 
         HudRenderCallback.EVENT.register((ctx, tickDelta) -> {
             MinecraftClient mc = MinecraftClient.getInstance();
             FpsWidget.onFrame();
-            if (mc.player == null || mc.currentScreen != null) return;
+            if (mc.player == null) return;
+
+            // F3 ouvert → on cache tout (flag mis par DebugHudMixin / InGameHudMixin)
+            if (NouvelleTerreBridgeClient.debugHudActive) return;
+
+            // Éditeur HUD ouvert → il rend les widgets lui-même
+            if (mc.currentScreen instanceof HudEditorScreen) return;
+
+            boolean chatOpen = mc.currentScreen instanceof ChatScreen;
+
+            // Autre écran (HDV, Bank, etc.) → on cache tout
+            if (mc.currentScreen != null && !chatOpen) return;
+
+            int sh = mc.getWindow().getScaledHeight();
             for (HudWidget w : HudEditorScreen.WIDGETS) {
-                if (w.enabled && !w.isDragOnly()) w.render(ctx, mc);
+                if (!w.enabled || w.isDragOnly()) continue;
+                // Chat ouvert → cacher les widgets qui chevauchent la barre de saisie
+                if (chatOpen && w.getPixelY(sh, mc) + w.getHeight(mc) > sh - 15) continue;
+                w.render(ctx, mc);
             }
         });
 

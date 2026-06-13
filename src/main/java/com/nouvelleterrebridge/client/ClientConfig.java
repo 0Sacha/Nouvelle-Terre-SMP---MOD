@@ -64,6 +64,26 @@ public class ClientConfig {
     public float   biomeX       = 0.01f;
     public float   biomeY       = 0.17f;
 
+    // ── Widget Armure ─────────────────────────────────────────────────────────
+    public boolean armureEnabled = false;
+    public float   armureX       = 0.01f;
+    public float   armureY       = 0.20f;
+
+    // ── Widget XP ─────────────────────────────────────────────────────────────
+    public boolean xpEnabled = false;
+    public float   xpX       = 0.01f;
+    public float   xpY       = 0.23f;
+
+    // ── Widget Dimension ──────────────────────────────────────────────────────
+    public boolean dimensionEnabled = false;
+    public float   dimensionX       = 0.01f;
+    public float   dimensionY       = 0.26f;
+
+    // ── Widget Effets actifs ──────────────────────────────────────────────────
+    public boolean effetsEnabled = false;
+    public float   effetsX       = 0.01f;
+    public float   effetsY       = 0.29f;
+
     // ── Notifications (position) ──────────────────────────────────────────────
     public boolean notifEnabled = true;
     public float   notifX       = 0.99f;

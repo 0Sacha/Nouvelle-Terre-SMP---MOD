@@ -6,6 +6,10 @@
   "mixins": [
     "LivingEntityMixin"
   ],
+  "client": [
+    "InGameHudMixin",
+    "DebugHudMixin"
+  ],
   "injectors": {
     "defaultRequire": 1
   }
