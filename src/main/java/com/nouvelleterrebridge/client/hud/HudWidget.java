@@ -14,8 +14,10 @@ public abstract class HudWidget {
     protected static final int C_BORDER = 0xFF2A2D38;
     protected static final int C_GOLD   = 0xFFE8A838;
     protected static final int C_GREEN  = 0xFF2EAD6B;
+    protected static final int C_RED    = 0xFFBF2040;
     protected static final int C_WHITE  = 0xFFFFFFFF;
     protected static final int C_MID    = 0xFF9096A3;
+    protected static final int C_DIM    = 0xFF565C6A;
 
     public final String  id;
     public final String  label;
@@ -52,6 +54,8 @@ public abstract class HudWidget {
         anchorY = defaultY;
         enabled = defaultEnabled;
     }
+
+    public boolean isDragOnly() { return false; }
 
     public boolean hasSettings() { return false; }
     public int     settingsHeight() { return 0; }

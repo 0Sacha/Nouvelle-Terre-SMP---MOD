@@ -19,12 +19,14 @@ public class HudEditorScreen extends Screen {
     private enum Mode { PANEL, LAYOUT }
     private Mode   mode       = Mode.PANEL;
     private String optionsFor = null;
+    private int    scrollRow  = 0;
 
     // Panel géométrie
-    private static final int PW     = 372;
-    private static final int COLS   = 2;
-    private static final int GAP    = 8;
-    private static final int CARD_H = 120;
+    private static final int PW            = 372;
+    private static final int COLS          = 2;
+    private static final int GAP           = 8;
+    private static final int CARD_H        = 120;
+    private static final int VISIBLE_ROWS  = 2;
 
     // Couleurs
     private static final int C_BG      = 0xFF14161A;
@@ -45,9 +47,10 @@ public class HudEditorScreen extends Screen {
 
     // Positions interactives (recalculées à chaque render)
     private int panelX, panelY, panelH;
+    private int gridY, gridH;
     private record Card(HudWidget w, int x, int y, int cw, int optBtnY, int togBtnY) {}
     private final List<Card> cards = new ArrayList<>();
-    private int settingsY   = -1;
+    private int settingsY    = -1;
     private int layoutBtnX, layoutBtnY, layoutBtnW;
     private int finishBtnX, finishBtnY, finishBtnW;
 
@@ -80,10 +83,22 @@ public class HudEditorScreen extends Screen {
         ctx.fill(0, 0, width, height, 0x50000000);
 
         for (HudWidget w : WIDGETS) {
-            if (!w.enabled) continue;
-            w.render(ctx, mc);
+            boolean show = w.enabled || w.isDragOnly();
+            if (!show) continue;
+
             int wx = w.getPixelX(width, mc), wy = w.getPixelY(height, mc);
             int ww = w.getWidth(mc),         wh = w.getHeight(mc);
+
+            if (w.isDragOnly()) {
+                // Zone fantôme pour les widgets de position uniquement
+                ctx.fill(wx, wy, wx + ww, wy + wh, 0x30E8A838);
+                ctx.fill(wx, wy, wx + ww, wy + 1, 0x80E8A838);
+                ctx.fill(wx, wy, wx + 1, wy + wh, 0x80E8A838);
+                ctx.drawText(mc.textRenderer, w.label, wx + 5, wy + (wh - mc.textRenderer.fontHeight) / 2, 0xAAE8A838, false);
+            } else {
+                w.render(ctx, mc);
+            }
+
             boolean hov = dragging == null && mx >= wx && mx < wx + ww && my >= wy && my < wy + wh;
             if (hov || dragging == w) {
                 int bc = dragging == w ? C_GOLD : 0xAAE8A838;
@@ -91,15 +106,17 @@ public class HudEditorScreen extends Screen {
                 ctx.fill(wx - 1, wy + wh, wx + ww + 1, wy + wh + 1, bc);
                 ctx.fill(wx - 1, wy - 1, wx,           wy + wh + 1, bc);
                 ctx.fill(wx + ww, wy - 1, wx + ww + 1, wy + wh + 1, bc);
-                int lw = textRenderer.getWidth(w.label);
-                ctx.fill(wx + ww/2 - lw/2 - 4, wy - 14, wx + ww/2 + lw/2 + 4, wy - 2, 0xCC14161A);
-                ctx.drawText(textRenderer, w.label, wx + ww/2 - lw/2, wy - 12, C_GOLD, false);
+                if (!w.isDragOnly()) {
+                    int lw = mc.textRenderer.getWidth(w.label);
+                    ctx.fill(wx + ww/2 - lw/2 - 4, wy - 14, wx + ww/2 + lw/2 + 4, wy - 2, 0xCC14161A);
+                    ctx.drawText(mc.textRenderer, w.label, wx + ww/2 - lw/2, wy - 12, C_GOLD, false);
+                }
             }
         }
 
         // Bouton Terminer — centré en haut
         String lbl = "Terminer";
-        finishBtnW = textRenderer.getWidth(lbl) + 36;
+        finishBtnW = mc.textRenderer.getWidth(lbl) + 36;
         finishBtnX = (width - finishBtnW) / 2;
         finishBtnY = 12;
         boolean fHov = mx >= finishBtnX && mx < finishBtnX + finishBtnW
@@ -107,8 +124,8 @@ public class HudEditorScreen extends Screen {
         ctx.fill(finishBtnX - 1, finishBtnY - 1, finishBtnX + finishBtnW + 1, finishBtnY + 25, C_BORDER);
         ctx.fill(finishBtnX, finishBtnY, finishBtnX + finishBtnW, finishBtnY + 24,
             fHov ? C_GOLD : C_PANEL);
-        ctx.drawCenteredTextWithShadow(textRenderer, lbl, finishBtnX + finishBtnW / 2,
-            finishBtnY + 8, fHov ? C_BG : C_WHITE);
+        ctx.drawCenteredTextWithShadow(mc.textRenderer, lbl,
+            finishBtnX + finishBtnW / 2, finishBtnY + 8, fHov ? C_BG : C_WHITE);
     }
 
     // ── Mode panneau ──────────────────────────────────────────────────────────
@@ -116,59 +133,76 @@ public class HudEditorScreen extends Screen {
     private void renderPanel(DrawContext ctx, MinecraftClient mc, int mx, int my) {
         ctx.fill(0, 0, width, height, 0x30000000);
 
-        int cardW   = (PW - GAP * (COLS + 1)) / COLS;
-        int rows    = (WIDGETS.size() + COLS - 1) / COLS;
-        int gridH   = rows * CARD_H + (rows - 1) * GAP;
+        int cardW     = (PW - GAP * (COLS + 1)) / COLS;
+        int totalRows = (WIDGETS.size() + COLS - 1) / COLS;
+        int maxScroll = Math.max(0, totalRows - VISIBLE_ROWS);
+        if (scrollRow > maxScroll) scrollRow = maxScroll;
+        gridH = VISIBLE_ROWS * CARD_H + (VISIBLE_ROWS - 1) * GAP;
+
         HudWidget optW = findWidget(optionsFor);
-        int settingsH = (optW != null && optW.hasSettings()) ? optW.settingsHeight() + 20 : 0;
-        int headerH   = 36, footerH = 44;
+        int settingsH  = (optW != null && optW.hasSettings()) ? optW.settingsHeight() + 20 : 0;
+        int headerH    = 36, footerH = 44;
         panelH = headerH + GAP + gridH + (settingsH > 0 ? GAP + settingsH : 0) + GAP + footerH;
         panelX = (width  - PW) / 2;
         panelY = 10;
         cards.clear();
         settingsY = -1;
 
-        // Fond + bordure externe
+        // Fond + bordure
         ctx.fill(panelX - 1, panelY - 1, panelX + PW + 1, panelY + panelH + 1, C_BORDER);
         ctx.fill(panelX, panelY, panelX + PW, panelY + panelH, C_PANEL);
 
         // ── Header ────────────────────────────────────────────────────────────
         ctx.fill(panelX, panelY, panelX + PW, panelY + headerH, C_BG);
         ctx.fill(panelX, panelY + headerH - 1, panelX + PW, panelY + headerH, C_GOLD);
-        int hy = panelY + (headerH - textRenderer.fontHeight) / 2;
+        int hy = panelY + (headerH - mc.textRenderer.fontHeight) / 2;
         int hx = panelX + 12;
-        ctx.drawText(textRenderer, "◆", hx, hy, C_GOLD, false);
-        hx += textRenderer.getWidth("◆") + 5;
-        ctx.drawText(textRenderer, "Nouvelle Terre", hx, hy, C_WHITE, false);
-        hx += textRenderer.getWidth("Nouvelle Terre") + 8;
+        ctx.drawText(mc.textRenderer, "◆", hx, hy, C_GOLD, false);
+        hx += mc.textRenderer.getWidth("◆") + 5;
+        ctx.drawText(mc.textRenderer, "Nouvelle Terre", hx, hy, C_WHITE, false);
+        hx += mc.textRenderer.getWidth("Nouvelle Terre") + 8;
         ctx.fill(hx, panelY + 8, hx + 1, panelY + headerH - 8, C_BORDER);
         hx += 9;
-        ctx.drawText(textRenderer, "Éditeur HUD", hx, hy, C_MID, false);
-        // Bouton [×]
+        ctx.drawText(mc.textRenderer, "Éditeur HUD", hx, hy, C_MID, false);
         boolean xHov = mx >= panelX + PW - 26 && mx < panelX + PW - 6
             && my >= panelY + 8 && my < panelY + headerH - 8;
         ctx.fill(panelX + PW - 26, panelY + 8, panelX + PW - 6, panelY + headerH - 8,
             xHov ? C_RED : C_HOVER);
-        ctx.drawCenteredTextWithShadow(textRenderer, "×", panelX + PW - 16, hy, C_WHITE);
+        ctx.drawCenteredTextWithShadow(mc.textRenderer, "×", panelX + PW - 16, hy, C_WHITE);
 
-        // ── Grille de cards ───────────────────────────────────────────────────
-        int gridY = panelY + headerH + GAP;
+        // ── Grille de cards (scrollable) ──────────────────────────────────────
+        gridY = panelY + headerH + GAP;
+        ctx.enableScissor(panelX + 1, gridY, panelX + PW - 1, gridY + gridH);
         for (int i = 0; i < WIDGETS.size(); i++) {
-            HudWidget w  = WIDGETS.get(i);
-            int col = i % COLS, row = i / COLS;
+            int row    = i / COLS;
+            int visRow = row - scrollRow;
+            if (visRow < 0 || visRow >= VISIBLE_ROWS) continue;
+            HudWidget w = WIDGETS.get(i);
+            int col = i % COLS;
             int cx  = panelX + GAP + col * (cardW + GAP);
-            int cy  = gridY  + row * (CARD_H + GAP);
+            int cy  = gridY  + visRow * (CARD_H + GAP);
             renderCard(ctx, mc, w, cx, cy, cardW, mx, my);
         }
+        ctx.disableScissor();
 
-        // ── Sous-panneau paramètres ────────────────────────────────────────────
+        // Indicateurs de scroll
+        if (scrollRow > 0) {
+            ctx.drawCenteredTextWithShadow(mc.textRenderer, "▲",
+                panelX + PW - GAP - 4, gridY + 2, C_DIM);
+        }
+        if (scrollRow < maxScroll) {
+            ctx.drawCenteredTextWithShadow(mc.textRenderer, "▼",
+                panelX + PW - GAP - 4, gridY + gridH - 10, C_DIM);
+        }
+
+        // ── Paramètres ────────────────────────────────────────────────────────
         if (optW != null && optW.hasSettings()) {
             int sy = gridY + gridH + GAP;
             settingsY = sy;
             ctx.fill(panelX + GAP, sy, panelX + PW - GAP, sy + settingsH, C_SURFACE);
             ctx.fill(panelX + GAP, sy, panelX + PW - GAP, sy + 1, C_GOLD);
             ctx.fill(panelX + GAP, sy + 1, panelX + GAP + 2, sy + settingsH, C_GOLD);
-            ctx.drawText(textRenderer, "Paramètres : " + optW.label,
+            ctx.drawText(mc.textRenderer, "Paramètres : " + optW.label,
                 panelX + GAP + 8, sy + 6, C_DIM, false);
             optW.renderSettings(ctx, mc, panelX + GAP, sy + 20, PW - GAP * 2, mx, my);
         }
@@ -184,71 +218,78 @@ public class HudEditorScreen extends Screen {
         ctx.fill(layoutBtnX - 1, layoutBtnY - 1, layoutBtnX + layoutBtnW + 1, layoutBtnY + 27, C_BORDER);
         ctx.fill(layoutBtnX, layoutBtnY, layoutBtnX + layoutBtnW, layoutBtnY + 26,
             lbHov ? C_GOLD : C_SURFACE);
-        ctx.drawCenteredTextWithShadow(textRenderer, "Placer les widgets",
+        ctx.drawCenteredTextWithShadow(mc.textRenderer, "Placer les widgets",
             panelX + PW / 2, layoutBtnY + 9, lbHov ? C_BG : C_MID);
     }
 
     private void renderCard(DrawContext ctx, MinecraftClient mc, HudWidget w,
                             int cx, int cy, int cw, int mx, int my) {
         boolean hasOpt = w.hasSettings();
-        // Positions calculées depuis le bas de la card
         int togBtnY = cy + CARD_H - 5 - 16;
         int optBtnY = hasOpt ? togBtnY - 4 - 16 : -1;
         int sepY    = (hasOpt ? optBtnY : togBtnY) - 5;
-        int nameY   = sepY - 4 - textRenderer.fontHeight;
+        int nameY   = sepY - 4 - mc.textRenderer.fontHeight;
         int prvTop  = cy + 6;
         int prvBot  = nameY - 4;
 
-        // Fond card
         boolean hov = mx >= cx && mx < cx + cw && my >= cy && my < cy + CARD_H;
         ctx.fill(cx, cy, cx + cw, cy + CARD_H, hov ? C_HOVER : C_SURFACE);
-        ctx.fill(cx, cy,           cx + cw, cy + 1,      C_BORDER);
-        ctx.fill(cx, cy + CARD_H - 1, cx + cw, cy + CARD_H, C_BORDER);
-        ctx.fill(cx, cy,           cx + 1,  cy + CARD_H, C_BORDER);
-        ctx.fill(cx + cw - 1, cy, cx + cw,  cy + CARD_H, C_BORDER);
-        // Barre accent haut (vert si activé, gris sinon)
+        ctx.fill(cx, cy,             cx + cw, cy + 1,         C_BORDER);
+        ctx.fill(cx, cy + CARD_H - 1, cx + cw, cy + CARD_H,  C_BORDER);
+        ctx.fill(cx, cy,             cx + 1,  cy + CARD_H,    C_BORDER);
+        ctx.fill(cx + cw - 1, cy, cx + cw,  cy + CARD_H,     C_BORDER);
         ctx.fill(cx + 1, cy + 1, cx + cw - 1, cy + 3, w.enabled ? C_GREEN : C_BORDER);
 
-        // Preview du widget (clippé à la zone de preview)
+        // Preview (ou aperçu fantôme pour isDragOnly)
         if (prvBot > prvTop) {
-            int ww = w.getWidth(mc), wh = w.getHeight(mc);
-            int pvX = cx + (cw - Math.min(ww, cw - 16)) / 2;
-            int pvY = prvTop + Math.max(0, (prvBot - prvTop - wh) / 2);
-            ctx.enableScissor(cx + 2, prvTop, cx + cw - 2, prvBot);
-            float sX = w.anchorX, sY = w.anchorY;
-            w.anchorX = (float)pvX / mc.getWindow().getScaledWidth();
-            w.anchorY = (float)pvY / mc.getWindow().getScaledHeight();
-            w.render(ctx, mc);
-            w.anchorX = sX; w.anchorY = sY;
-            ctx.disableScissor();
+            if (w.isDragOnly()) {
+                // Aperçu d'une notification mock
+                int ph = 22, tw = cw - 16;
+                int px2 = cx + 8, py2 = prvTop + (prvBot - prvTop - ph) / 2;
+                ctx.fill(px2, py2, px2 + tw, py2 + ph, 0xCC1B1D22);
+                ctx.fill(px2, py2, px2 + 2, py2 + ph, C_GREEN);
+                ctx.drawText(mc.textRenderer, "Virement reçu", px2 + 6, py2 + 4, C_GREEN, false);
+                ctx.drawText(mc.textRenderer, "+150 ◆ de Steve", px2 + 6, py2 + 13, C_MID, false);
+            } else {
+                int ww = w.getWidth(mc), wh = w.getHeight(mc);
+                int pvX = cx + (cw - Math.min(ww, cw - 16)) / 2;
+                int pvY = prvTop + Math.max(0, (prvBot - prvTop - wh) / 2);
+                ctx.enableScissor(cx + 2, prvTop, cx + cw - 2, prvBot);
+                float sX = w.anchorX, sY = w.anchorY;
+                w.anchorX = (float)pvX / mc.getWindow().getScaledWidth();
+                w.anchorY = (float)pvY / mc.getWindow().getScaledHeight();
+                w.render(ctx, mc);
+                w.anchorX = sX; w.anchorY = sY;
+                ctx.disableScissor();
+            }
         }
 
-        // Nom du widget
-        ctx.drawCenteredTextWithShadow(textRenderer, w.label, cx + cw / 2, nameY,
-            w.enabled ? C_WHITE : C_MID);
+        // Nom
+        ctx.drawText(mc.textRenderer, w.label,
+            cx + cw / 2 - mc.textRenderer.getWidth(w.label) / 2, nameY,
+            w.enabled ? C_WHITE : C_MID, false);
 
         // Séparateur
         ctx.fill(cx + 1, sepY, cx + cw - 1, sepY + 1, C_BORDER);
 
-        // Bouton OPTIONS + ⚙
+        // Options
         if (hasOpt) {
-            boolean open  = w.id.equals(optionsFor);
-            boolean oHov  = mx >= cx + 1 && mx < cx + cw - 1
-                && my >= optBtnY && my < optBtnY + 16;
+            boolean open = w.id.equals(optionsFor);
+            boolean oHov = mx >= cx + 1 && mx < cx + cw - 1 && my >= optBtnY && my < optBtnY + 16;
             ctx.fill(cx + 1, optBtnY, cx + cw - 1, optBtnY + 16, (oHov || open) ? C_HOVER : 0);
-            int oTy = optBtnY + (16 - textRenderer.fontHeight) / 2;
-            ctx.drawText(textRenderer, "OPTIONS", cx + 8, oTy, open ? C_GOLD : C_MID, false);
-            ctx.drawText(textRenderer, "⚙", cx + cw - 16, oTy, open ? C_GOLD : C_DIM, false);
+            int oTy = optBtnY + (16 - mc.textRenderer.fontHeight) / 2;
+            ctx.drawText(mc.textRenderer, "Options", cx + 8, oTy, open ? C_GOLD : C_MID, false);
+            ctx.drawText(mc.textRenderer, "⚙", cx + cw - 16, oTy, open ? C_GOLD : C_DIM, false);
         }
 
-        // Bouton ACTIVÉ / DÉSACTIVÉ
-        boolean tHov = mx >= cx + 1 && mx < cx + cw - 1
-            && my >= togBtnY && my < togBtnY + 16;
+        // Toggle Activé / Désactivé (sans shadow = moins bold)
+        boolean tHov = mx >= cx + 1 && mx < cx + cw - 1 && my >= togBtnY && my < togBtnY + 16;
         int togBg = w.enabled ? (tHov ? 0xFF1E9A58 : C_GREEN) : (tHov ? C_HOVER : C_BORDER);
         ctx.fill(cx + 1, togBtnY, cx + cw - 1, togBtnY + 16, togBg);
-        int tTy = togBtnY + (16 - textRenderer.fontHeight) / 2;
-        ctx.drawCenteredTextWithShadow(textRenderer, w.enabled ? "ACTIVÉ" : "DÉSACTIVÉ",
-            cx + cw / 2, tTy, w.enabled ? C_BG : C_DIM);
+        String togLbl = w.enabled ? "Activé" : "Désactivé";
+        int togLblX = cx + cw / 2 - mc.textRenderer.getWidth(togLbl) / 2;
+        int togLblY = togBtnY + (16 - mc.textRenderer.fontHeight) / 2;
+        ctx.drawText(mc.textRenderer, togLbl, togLblX, togLblY, w.enabled ? C_BG : C_DIM, false);
 
         cards.add(new Card(w, cx, cy, cw, optBtnY, togBtnY));
     }
@@ -261,14 +302,13 @@ public class HudEditorScreen extends Screen {
         MinecraftClient mc = MinecraftClient.getInstance();
 
         if (mode == Mode.LAYOUT) {
-            // Bouton Terminer
             if (mx >= finishBtnX && mx < finishBtnX + finishBtnW
                     && my >= finishBtnY && my < finishBtnY + 24) {
                 mode = Mode.PANEL; dragging = null; return true;
             }
-            // Début de drag
             for (HudWidget w : WIDGETS) {
-                if (!w.enabled) continue;
+                boolean draggable = w.enabled || w.isDragOnly();
+                if (!draggable) continue;
                 int wx = w.getPixelX(width, mc), wy = w.getPixelY(height, mc);
                 if (mx >= wx && mx < wx + w.getWidth(mc) && my >= wy && my < wy + w.getHeight(mc)) {
                     dragging = w; dragOX = mx - wx; dragOY = my - wy; return true;
@@ -277,13 +317,13 @@ public class HudEditorScreen extends Screen {
             return true;
         }
 
-        // Mode panneau — bouton [×]
+        // Bouton [×]
         if (mx >= panelX + PW - 26 && mx < panelX + PW - 6
                 && my >= panelY + 8 && my < panelY + 36 - 8) {
             close(); return true;
         }
 
-        // Clic dans le sous-panneau paramètres
+        // Clic dans les paramètres
         if (settingsY >= 0 && my >= settingsY + 20) {
             HudWidget optW = findWidget(optionsFor);
             if (optW != null) {
@@ -306,7 +346,7 @@ public class HudEditorScreen extends Screen {
             return true;
         }
 
-        // Bouton "Placer les widgets"
+        // Bouton Placer les widgets
         if (mx >= layoutBtnX && mx < layoutBtnX + layoutBtnW
                 && my >= layoutBtnY && my < layoutBtnY + 26) {
             mode = Mode.LAYOUT; return true;
@@ -340,8 +380,19 @@ public class HudEditorScreen extends Screen {
     }
 
     @Override
+    public boolean mouseScrolled(double mx, double my, double amount) {
+        if (mode == Mode.PANEL) {
+            int totalRows = (WIDGETS.size() + COLS - 1) / COLS;
+            int maxScroll = Math.max(0, totalRows - VISIBLE_ROWS);
+            scrollRow = Math.max(0, Math.min(scrollRow - (int)Math.signum(amount), maxScroll));
+            return true;
+        }
+        return super.mouseScrolled(mx, my, amount);
+    }
+
+    @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (keyCode == 256 && mode == Mode.LAYOUT) { // ESC → retour au panneau
+        if (keyCode == 256 && mode == Mode.LAYOUT) { // ESC → retour panneau
             mode = Mode.PANEL; dragging = null; return true;
         }
         return super.keyPressed(keyCode, scanCode, modifiers);

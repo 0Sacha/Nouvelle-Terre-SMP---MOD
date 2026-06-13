@@ -33,25 +33,27 @@ public class NotificationHud {
         HudRenderCallback.EVENT.register((ctx, tickDelta) -> {
             long now = System.currentTimeMillis();
             queue.removeIf(t -> now - t.born() > DURATION_MS);
-            if (queue.isEmpty()) return;
+
+            ClientConfig cfg = ClientConfig.get();
+            if (!cfg.notifEnabled || queue.isEmpty()) return;
 
             MinecraftClient mc = MinecraftClient.getInstance();
             if (mc.player == null) return;
 
             int sw = mc.getWindow().getScaledWidth();
             int sh = mc.getWindow().getScaledHeight();
+            // Ancre = coin haut-gauche de la zone de notification (clamped comme un widget)
+            int ax = Math.max(0, Math.min((int)(cfg.notifX * sw), sw - TOAST_W));
+            int ay = Math.max(0, Math.min((int)(cfg.notifY * sh), sh - 40));
 
             int slot = 0;
             for (Toast t : queue) {
                 int h = t.lines().length * LINE_H + PAD * 2;
-                int x = sw - TOAST_W - 8;
-                int y = sh - 50 - slot * (h + 4);
+                int x = ax;
+                int y = ay + slot * (h + 4);
 
-                // fond + bordure gauche colorée
                 ctx.fill(x, y, x + TOAST_W, y + h, 0xCC1B1D22);
                 ctx.fill(x, y, x + 2, y + h, t.color());
-
-                // lignes : titre en couleur, détails en gris
                 for (int l = 0; l < t.lines().length; l++) {
                     int col = l == 0 ? t.color() : 0xFF9096A3;
                     ctx.drawText(mc.textRenderer, t.lines()[l],

@@ -8,9 +8,13 @@ import com.nouvelleterrebridge.client.HdvScreen;
 import com.nouvelleterrebridge.client.HudEditorScreen;
 import com.nouvelleterrebridge.client.NotificationHud;
 import com.nouvelleterrebridge.client.hud.BalanceWidget;
-import com.nouvelleterrebridge.client.hud.CompassWidget;
+import com.nouvelleterrebridge.client.hud.BiomeWidget;
 import com.nouvelleterrebridge.client.hud.CoordsWidget;
+import com.nouvelleterrebridge.client.hud.FpsWidget;
 import com.nouvelleterrebridge.client.hud.HudWidget;
+import com.nouvelleterrebridge.client.hud.NotificationWidget;
+import com.nouvelleterrebridge.client.hud.NourritureWidget;
+import com.nouvelleterrebridge.client.hud.SanteWidget;
 import com.nouvelleterrebridge.client.hud.TimeWidget;
 import com.nouvelleterrebridge.network.BankNetworking;
 import com.nouvelleterrebridge.network.HdvNetworking;
@@ -47,15 +51,20 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
         // ── HUD widgets ───────────────────────────────────────────────────────
         HudEditorScreen.WIDGETS.add(new BalanceWidget());
         HudEditorScreen.WIDGETS.add(new CoordsWidget());
-        HudEditorScreen.WIDGETS.add(new CompassWidget());
         HudEditorScreen.WIDGETS.add(new TimeWidget());
+        HudEditorScreen.WIDGETS.add(new SanteWidget());
+        HudEditorScreen.WIDGETS.add(new NourritureWidget());
+        HudEditorScreen.WIDGETS.add(new FpsWidget());
+        HudEditorScreen.WIDGETS.add(new BiomeWidget());
+        HudEditorScreen.WIDGETS.add(new NotificationWidget());
         HudEditorScreen.loadAll();
 
         HudRenderCallback.EVENT.register((ctx, tickDelta) -> {
             MinecraftClient mc = MinecraftClient.getInstance();
+            FpsWidget.onFrame();
             if (mc.player == null || mc.currentScreen != null) return;
             for (HudWidget w : HudEditorScreen.WIDGETS) {
-                if (w.enabled) w.render(ctx, mc);
+                if (w.enabled && !w.isDragOnly()) w.render(ctx, mc);
             }
         });
 

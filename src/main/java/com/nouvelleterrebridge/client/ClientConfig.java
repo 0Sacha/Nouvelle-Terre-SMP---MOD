@@ -43,6 +43,32 @@ public class ClientConfig {
     public float   timeY        = 0.01f;
     public boolean timeShowIcon = true;
 
+    // ── Widget Santé ──────────────────────────────────────────────────────────
+    public boolean santeEnabled = false;
+    public float   santeX       = 0.01f;
+    public float   santeY       = 0.08f;
+
+    // ── Widget Nourriture ─────────────────────────────────────────────────────
+    public boolean nourritureEnabled = false;
+    public float   nourritureX       = 0.01f;
+    public float   nourritureY       = 0.11f;
+
+    // ── Widget FPS ────────────────────────────────────────────────────────────
+    public boolean fpsEnabled  = false;
+    public float   fpsX        = 0.01f;
+    public float   fpsY        = 0.14f;
+    public boolean fpsShowPing = true;
+
+    // ── Widget Biome ──────────────────────────────────────────────────────────
+    public boolean biomeEnabled = false;
+    public float   biomeX       = 0.01f;
+    public float   biomeY       = 0.17f;
+
+    // ── Notifications (position) ──────────────────────────────────────────────
+    public boolean notifEnabled = true;
+    public float   notifX       = 0.99f;
+    public float   notifY       = 0.85f;
+
     // ─────────────────────────────────────────────────────────────────────────
 
     public static ClientConfig get() {

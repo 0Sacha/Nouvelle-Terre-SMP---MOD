@@ -26,7 +26,7 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `0.x.y-beta` (dans `gradle.properties` → `mod_version`)
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `0.2.6-beta` (éditeur HUD 2 modes : panneau centré + mode placement)
+- Version actuelle : `0.2.7-beta` (HUD : +Santé, Nourriture, FPS, Biome, Notifications — panneau scrollable)
 - À chaque rebuild : mettre à jour `mod_version` dans `gradle.properties`, puis `git commit` + `git push`
 
 ---
@@ -133,17 +133,26 @@ client/                    ← @Environment(CLIENT) uniquement
                              Positions relatives (0.0-1.0), snap aux bords, sauvegarde sur close.
   ClientConfig.java        → Config client-only (config/nouvelle-terre-client.json)
                              Champs : discordRPCEnabled, hudEnabled/balanceX/Y, coordsEnabled/X/Y/ShowDecimals,
-                             compassEnabled/X/Y/ShowDegrees, timeEnabled/X/Y/ShowIcon
+                             compassEnabled/X/Y/ShowDegrees (legacy), timeEnabled/X/Y/ShowIcon,
+                             santeEnabled/X/Y, nourritureEnabled/X/Y, fpsEnabled/X/Y/ShowPing,
+                             biomeEnabled/X/Y, notifEnabled/X/Y
   NouvelleSettingsScreen.java → Bouton "Éditeur HUD →" + toggle Discord RPC
   ModMenuIntegration.java  → Hook ModMenu optionnel (modCompileOnly)
 
 client/hud/                ← Widgets HUD individuels
   HudWidget.java           → Classe abstraite : id, label, anchorX/Y, enabled, getPixelX/Y (clamped),
                              resetToDefault(), renderCheckbox() helper. loadFromConfig/saveToConfig abstraits.
+                             isDragOnly() → false par défaut (true = widget de position pure, pas rendu dans le HUD).
   BalanceWidget.java       → Affiche cachedBalance + " ◆". Pas de paramètres.
   CoordsWidget.java        → "XYZ x / y / z". Paramètre : coordsShowDecimals.
-  CompassWidget.java       → Direction (S/N-E/O…). Paramètre : compassShowDegrees.
   TimeWidget.java          → Heure Minecraft HH:MM. Paramètre : timeShowIcon (☀/☽).
+  SanteWidget.java         → Santé du joueur "X / max ♥". Couleur : rouge < 25%, or < 60%, rouge vif sinon.
+  NourritureWidget.java    → Niveau de faim "Faim X / 20". Couleur : rouge ≤4, or ≤10, vert sinon.
+  FpsWidget.java           → FPS + ping optionnel. FPS mesuré via FpsWidget.onFrame() appelé dans HudRenderCallback.
+                             Paramètre : fpsShowPing.
+  BiomeWidget.java         → Biome courant (getKey().getPath(), premier caractère capitalisé).
+  NotificationWidget.java  → Widget de position pour les toasts. isDragOnly()=true, render() vide.
+                             Aperçu mock dans la card de l'éditeur. Position lue par NotificationHud.
 
 market/
   MarketManager.java       → Singleton marche.json — CRUD annonces
@@ -210,6 +219,10 @@ recurring[]   : int count → (int id, string to, int amount, int intervalTicks,
 - `HudWidget.getPixelX/Y` clamp automatiquement pour rester dans les bords de l'écran
 - Positions stockées en fractions `0.0–1.0` → indépendantes de la résolution
 - Preview widget dans card : anchorX/Y temporairement modifiés puis restaurés, scissor appliqué pour clipper
+- Widgets `isDragOnly()` (ex: NotificationWidget) : render() = no-op, aperçu mock dans card, zone fantôme en mode placement
+- Grille de cards scrollable (VISIBLE_ROWS=2, molette) — taille panneau constante quel que soit le nb de widgets
+- `FpsWidget.onFrame()` appelé dans le HudRenderCallback à chaque frame pour mesurer les FPS
+- Boutons des cards sans shadow (`drawText(..., false)`) pour aspect moins "bold"
 - Snap aux bords : si le widget passe à moins de 8px d'un bord pendant le drag, il se colle
 - `HudEditorScreen.removed()` → `saveAll()` → `ClientConfig.save()` — sauvegarde à la fermeture uniquement
 - Touche H par défaut (catégorie `key.categories.nouvelle-terre-bridge`), rebindable dans Contrôles
