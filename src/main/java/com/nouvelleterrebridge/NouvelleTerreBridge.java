@@ -78,14 +78,16 @@ public class NouvelleTerreBridge implements ModInitializer {
         ProductionTracker.load();
         ProductionShopManager.checkAll();
 
+        // Blocs cassés → drops réels (fortune/silk touch inclus)
         PlayerBlockBreakEvents.AFTER.register((world, player, pos, state, blockEntity) -> {
             if (!(world instanceof ServerWorld sw)) return;
             List<ItemStack> drops = Block.getDroppedStacks(state, sw, pos, blockEntity, player, player.getMainHandStack());
             for (ItemStack drop : drops) {
-                String id = Registries.ITEM.getId(drop.getItem()).toString();
-                ProductionTracker.add(id, drop.getCount());
+                ProductionTracker.add(Registries.ITEM.getId(drop.getItem()).toString(), drop.getCount());
             }
         });
+
+        // Mobs tués par un joueur → voir MobDropMixin (intercepte LivingEntity.dropStack)
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             HdvCommand.register(dispatcher);
