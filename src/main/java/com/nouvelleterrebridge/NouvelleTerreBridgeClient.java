@@ -20,8 +20,10 @@ import com.nouvelleterrebridge.client.hud.NourritureWidget;
 import com.nouvelleterrebridge.client.hud.SanteWidget;
 import com.nouvelleterrebridge.client.hud.TimeWidget;
 import com.nouvelleterrebridge.client.hud.XpWidget;
+import com.nouvelleterrebridge.client.QuetesScreen;
 import com.nouvelleterrebridge.network.BankNetworking;
 import com.nouvelleterrebridge.network.HdvNetworking;
+import com.nouvelleterrebridge.network.QuestNetworking;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -43,7 +45,11 @@ import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Environment(EnvType.CLIENT)
 public class NouvelleTerreBridgeClient implements ClientModInitializer {
@@ -201,6 +207,28 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
                 }
             });
         });
+
+        ClientPlayNetworking.registerGlobalReceiver(QuestNetworking.QUEST_OPEN, (client, handler, buf, responseSender) -> {
+            List<QuetesScreen.QuestData> quests     = readQuests(buf);
+            Map<Integer, Integer>        inProgress = readQuestProgress(buf);
+            Set<Integer>                 completed  = readQuestCompleted(buf);
+            client.execute(() -> client.setScreen(new QuetesScreen(quests, inProgress, completed)));
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(QuestNetworking.QUEST_RESULT, (client, handler, buf, responseSender) -> {
+            boolean ok                           = buf.readBoolean();
+            String  message                      = buf.readString();
+            List<QuetesScreen.QuestData> quests   = readQuests(buf);
+            Map<Integer, Integer>        inProgress = readQuestProgress(buf);
+            Set<Integer>                 completed  = readQuestCompleted(buf);
+            client.execute(() -> {
+                if (client.currentScreen instanceof QuetesScreen screen) {
+                    screen.update(quests, inProgress, completed);
+                }
+                int color = ok ? 0xFF2EAD6B : 0xFFBF2040;
+                NotificationHud.push(color, message);
+            });
+        });
     }
 
     // ── Helpers lecture paquets ───────────────────────────────────────────────
@@ -267,5 +295,28 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
                 buf.readInt(), buf.readString(), buf.readInt(), buf.readLong(),
                 buf.readInt(), buf.readInt(), buf.readInt(), buf.readBoolean()));
         return list;
+    }
+
+    private static List<QuetesScreen.QuestData> readQuests(PacketByteBuf buf) {
+        int count = buf.readInt();
+        List<QuetesScreen.QuestData> list = new ArrayList<>(count);
+        for (int i = 0; i < count; i++)
+            list.add(new QuetesScreen.QuestData(
+                buf.readInt(), buf.readString(), buf.readString(), buf.readInt(), buf.readInt(), buf.readString()));
+        return list;
+    }
+
+    private static Map<Integer, Integer> readQuestProgress(PacketByteBuf buf) {
+        int count = buf.readInt();
+        Map<Integer, Integer> map = new HashMap<>();
+        for (int i = 0; i < count; i++) map.put(buf.readInt(), buf.readInt());
+        return map;
+    }
+
+    private static Set<Integer> readQuestCompleted(PacketByteBuf buf) {
+        int count = buf.readInt();
+        Set<Integer> set = new HashSet<>();
+        for (int i = 0; i < count; i++) set.add(buf.readInt());
+        return set;
     }
 }

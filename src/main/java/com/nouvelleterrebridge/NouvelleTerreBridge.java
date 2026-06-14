@@ -8,6 +8,10 @@ import com.nouvelleterrebridge.commands.HdvCommand;
 import com.nouvelleterrebridge.commands.LierCommand;
 import com.nouvelleterrebridge.commands.PayCommand;
 import com.nouvelleterrebridge.commands.ProductionCommand;
+import com.nouvelleterrebridge.commands.QuetesCommand;
+import com.nouvelleterrebridge.economy.QuestManager;
+import com.nouvelleterrebridge.network.QuestNetworking;
+import net.fabricmc.fabric.api.entity.event.v1.ServerEntityCombatEvents;
 import com.nouvelleterrebridge.economy.Loan;
 import com.nouvelleterrebridge.economy.LoanManager;
 import com.nouvelleterrebridge.economy.LocalEconomy;
@@ -77,17 +81,26 @@ public class NouvelleTerreBridge implements ModInitializer {
         ShopThresholds.load();
         ProductionTracker.load();
         ProductionShopManager.checkAll();
+        QuestManager.load();
 
         // Blocs cassés → drops réels (fortune/silk touch inclus)
         PlayerBlockBreakEvents.AFTER.register((world, player, pos, state, blockEntity) -> {
             if (!(world instanceof ServerWorld sw)) return;
+            String pName = player.getName().getString();
             List<ItemStack> drops = Block.getDroppedStacks(state, sw, pos, blockEntity, player, player.getMainHandStack());
             for (ItemStack drop : drops) {
-                ProductionTracker.add(Registries.ITEM.getId(drop.getItem()).toString(), drop.getCount());
+                String itemId = Registries.ITEM.getId(drop.getItem()).toString();
+                ProductionTracker.add(itemId, drop.getCount());
+                QuestManager.onItemHarvested(pName, itemId, drop.getCount());
             }
         });
 
-        // Mobs tués par un joueur → voir MobDropMixin (intercepte LivingEntity.dropStack)
+        // Mobs tués par un joueur → quêtes KILL
+        ServerEntityCombatEvents.AFTER_KILLED_OTHER_ENTITY.register((world, entity, killedEntity) -> {
+            if (!(entity instanceof ServerPlayerEntity player)) return;
+            String typeId = Registries.ENTITY_TYPE.getId(killedEntity.getType()).toString();
+            QuestManager.onMobKilled(player.getName().getString(), typeId);
+        });
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             HdvCommand.register(dispatcher);
@@ -98,10 +111,12 @@ public class NouvelleTerreBridge implements ModInitializer {
             ConflitCommand.register(dispatcher);
             EventNarratifCommand.register(dispatcher);
             ProductionCommand.register(dispatcher);
+            QuetesCommand.register(dispatcher);
         });
 
         registerHdvNetworking();
         registerBankNetworking();
+        registerQuestNetworking();
 
         // Envoie le solde au joueur dès qu'il est en jeu
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
@@ -432,6 +447,36 @@ public class NouvelleTerreBridge implements ModInitializer {
         MarketManager.getInstance().getAll().forEach(l ->
             casing.putIfAbsent(l.seller.toLowerCase(), l.seller));
         return casing;
+    }
+
+    // ── Quest networking ─────────────────────────────────────────────────────
+
+    private void registerQuestNetworking() {
+        ServerPlayNetworking.registerGlobalReceiver(QuestNetworking.QUEST_ACTION, (server, player, handler, buf, responseSender) -> {
+            int action  = buf.readInt();
+            int questId = buf.readInt();
+            String playerName = player.getName().getString();
+            server.execute(() -> {
+                String err;
+                if (action == QuestNetworking.ACTION_ACCEPT) {
+                    err = QuestManager.accept(playerName, questId);
+                } else if (action == QuestNetworking.ACTION_CLAIM) {
+                    err = QuestManager.claim(playerName, questId, server);
+                } else {
+                    err = "Action inconnue.";
+                }
+                boolean ok = err == null;
+                sendQuestResult(player, ok, ok ? "§a✅ Quête mise à jour !" : "§c" + err, server);
+            });
+        });
+    }
+
+    public static void sendQuestResult(ServerPlayerEntity player, boolean ok, String message, MinecraftServer server) {
+        PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeBoolean(ok);
+        buf.writeString(message);
+        QuetesCommand.writeQuestData(buf, player.getName().getString());
+        ServerPlayNetworking.send(player, QuestNetworking.QUEST_RESULT, buf);
     }
 
 }
