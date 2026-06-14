@@ -4,6 +4,7 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
+import com.nouvelleterrebridge.economy.FirstJoinTracker;
 import com.nouvelleterrebridge.economy.LocalEconomy;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
@@ -70,7 +71,10 @@ public class EconomieCommand {
                             .suggests(TOUS_JOUEURS)
                             .executes(ctx -> executerAdminCheck(
                                 ctx.getSource(),
-                                StringArgumentType.getString(ctx, "joueur"))))))
+                                StringArgumentType.getString(ctx, "joueur")))))
+                    .then(CommandManager.literal("reset-economy")
+                        .then(CommandManager.literal("confirmer")
+                            .executes(ctx -> executerResetEconomy(ctx.getSource())))))
         );
     }
 
@@ -149,6 +153,18 @@ public class EconomieCommand {
             source.sendFeedback(() -> Text.literal("  §7Solde  §8» §f§l" + fmt(solde) + " " + SHARD), false);
         }
         source.sendFeedback(() -> Text.literal(SEP_DARK), false);
+        return 1;
+    }
+
+    // ── /economie admin reset-economy confirmer ───────────────────────────────
+    private static int executerResetEconomy(ServerCommandSource source) {
+        LocalEconomy.getInstance().resetAll();
+        FirstJoinTracker.getInstance().resetAll();
+        source.sendFeedback(() -> Text.literal(SEP_RED), false);
+        source.sendFeedback(() -> Text.literal("  " + ADMIN_TAG + "§c§l⚠ Économie réinitialisée"), true);
+        source.sendFeedback(() -> Text.literal("  §7Tous les soldes remis à §f§l0 ◆"), false);
+        source.sendFeedback(() -> Text.literal("  §7Les joueurs recevront §a§l500 ◆ §7à leur prochaine connexion."), false);
+        source.sendFeedback(() -> Text.literal(SEP_RED), false);
         return 1;
     }
 

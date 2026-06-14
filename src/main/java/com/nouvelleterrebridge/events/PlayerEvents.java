@@ -1,6 +1,8 @@
 package com.nouvelleterrebridge.events;
 
 import com.nouvelleterrebridge.NouvelleTerreBridge;
+import com.nouvelleterrebridge.economy.FirstJoinTracker;
+import com.nouvelleterrebridge.economy.LocalEconomy;
 import com.nouvelleterrebridge.economy.PlaytimeTracker;
 import com.nouvelleterrebridge.http.EventDispatcher;
 import com.nouvelleterrebridge.network.HdvNetworking;
@@ -10,7 +12,6 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.stat.Stats;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -30,10 +31,7 @@ public class PlayerEvents {
             String pseudo = joueur.getName().getString();
             String uuid = joueur.getUuidAsString();
 
-            // Détecte si c'est la première connexion via la stat "leave_game"
-            // Un nouveau joueur n'aura jamais quitté le jeu
-            int nbDeparts = joueur.getStatHandler().getStat(Stats.CUSTOM.getOrCreateStat(Stats.LEAVE_GAME));
-            boolean premiereFois = nbDeparts == 0;
+            boolean premiereFois = !FirstJoinTracker.getInstance().hasReceived(pseudo);
 
             Map<String, Object> data = new HashMap<>();
             data.put("player", pseudo);
@@ -41,6 +39,10 @@ public class PlayerEvents {
 
             if (premiereFois) {
                 NouvelleTerreBridge.LOGGER.info("[PlayerEvents] Première connexion de {}", pseudo);
+                LocalEconomy.getInstance().addShards(pseudo, 500);
+                FirstJoinTracker.getInstance().markReceived(pseudo);
+                joueur.sendMessage(net.minecraft.text.Text.literal(
+                    "§6[Nouvelle Terre] §f✨ Bienvenue ! Tu reçois §e§l500 ◆ §fde départ. Bonne aventure !"));
                 EventDispatcher.envoyer("PLAYER_FIRST_JOIN", data);
             } else {
                 EventDispatcher.envoyer("PLAYER_JOIN", data);

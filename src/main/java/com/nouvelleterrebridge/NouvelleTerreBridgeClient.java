@@ -18,9 +18,11 @@ import com.nouvelleterrebridge.client.hud.NotificationWidget;
 import com.nouvelleterrebridge.client.hud.TimeWidget;
 import com.nouvelleterrebridge.client.hud.QuestWidget;
 import com.nouvelleterrebridge.client.QuetesScreen;
+import com.nouvelleterrebridge.client.WikiScreen;
 import com.nouvelleterrebridge.network.BankNetworking;
 import com.nouvelleterrebridge.network.HdvNetworking;
 import com.nouvelleterrebridge.network.QuestNetworking;
+import com.nouvelleterrebridge.network.WikiNetworking;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -214,6 +216,9 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
                     client.setScreen(new QuetesScreen(level, xp, xpNext, av, ac, pe, gp));
             });
         });
+
+        ClientPlayNetworking.registerGlobalReceiver(WikiNetworking.WIKI_OPEN, (client, handler, buf, responseSender) ->
+            client.execute(() -> client.setScreen(new WikiScreen())));
 
         ClientPlayNetworking.registerGlobalReceiver(QuestNetworking.QUEST_RESULT, (client, handler, buf, responseSender) -> {
             boolean ok      = buf.readBoolean();

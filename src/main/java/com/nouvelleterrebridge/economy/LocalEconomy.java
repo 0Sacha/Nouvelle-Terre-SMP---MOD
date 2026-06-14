@@ -112,6 +112,12 @@ public class LocalEconomy {
         return new HashMap<>(soldes);
     }
 
+    /** Remet tous les soldes à zéro (commande admin reset-economy). */
+    public synchronized void resetAll() {
+        soldes.clear();
+        save();
+    }
+
     // ── Persistance ──────────────────────────────────────────────────────────
 
     private void load() {

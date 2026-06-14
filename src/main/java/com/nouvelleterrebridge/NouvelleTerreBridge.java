@@ -9,6 +9,8 @@ import com.nouvelleterrebridge.commands.LierCommand;
 import com.nouvelleterrebridge.commands.PayCommand;
 import com.nouvelleterrebridge.commands.ProductionCommand;
 import com.nouvelleterrebridge.commands.QuetesCommand;
+import com.nouvelleterrebridge.commands.WikiCommand;
+import com.nouvelleterrebridge.economy.FirstJoinTracker;
 import com.nouvelleterrebridge.economy.PlayerLevelManager;
 import com.nouvelleterrebridge.economy.QuestManager;
 import com.nouvelleterrebridge.network.QuestNetworking;
@@ -84,6 +86,7 @@ public class NouvelleTerreBridge implements ModInitializer {
         ProductionShopManager.checkAll();
         PlayerLevelManager.load();
         QuestManager.load();
+        FirstJoinTracker.getInstance().load();
 
         // Blocs cassés → drops réels (fortune/silk touch inclus)
         PlayerBlockBreakEvents.AFTER.register((world, player, pos, state, blockEntity) -> {
@@ -114,6 +117,7 @@ public class NouvelleTerreBridge implements ModInitializer {
             EventNarratifCommand.register(dispatcher);
             ProductionCommand.register(dispatcher);
             QuetesCommand.register(dispatcher);
+            WikiCommand.register(dispatcher);
         });
 
         registerHdvNetworking();

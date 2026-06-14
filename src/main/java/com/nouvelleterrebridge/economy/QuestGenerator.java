@@ -52,13 +52,13 @@ public class QuestGenerator {
 
         // ── HARVEST — FACILE (lvl 0+) ───────────────────────────────────────
         h("minecraft:oak_log",   "Bûcheron Amateur",      32,  8f, "FACILE",  "SHARDS",  8, 1f, null, 0, 15, 0, 0, 1);
-        h("minecraft:stone",     "Carrier",               64, 16f, "FACILE",  "SHARDS",  8, 1f, null, 0, 15, 0, 0, 1);
+        h("minecraft:cobblestone","Carrier",               64, 16f, "FACILE",  "SHARDS",  8, 1f, null, 0, 15, 0, 0, 1);
         h("minecraft:coal",      "Mineur de Charbon",     32,  8f, "FACILE",  "SHARDS", 10, 2f, null, 0, 20, 0, 0, 1);
         h("minecraft:gravel",    "Chercheur de Silex",    48, 12f, "FACILE",  "SHARDS",  8, 1f, null, 0, 15, 0, 0, 1);
         h("minecraft:wheat",     "Agriculteur",           64, 16f, "FACILE",  "SHARDS",  8, 1f, null, 0, 15, 0, 0, 1);
         // ── HARVEST — MOYEN (lvl 5+) ─────────────────────────────────────────
-        h("minecraft:iron_ingot","Mineur de Fer",         16,  4f, "MOYEN",   "SHARDS", 20, 4f, null, 0, 40, 0, 5, 1);
-        h("minecraft:gold_ingot","Chercheur d'Or",         8,  2f, "MOYEN",   "SHARDS", 25, 4f, null, 0, 40, 0, 5, 1);
+        h("minecraft:raw_iron",  "Mineur de Fer",         16,  4f, "MOYEN",   "SHARDS", 20, 4f, null, 0, 40, 0, 5, 1);
+        h("minecraft:raw_gold",  "Chercheur d'Or",         8,  2f, "MOYEN",   "SHARDS", 25, 4f, null, 0, 40, 0, 5, 1);
         h("minecraft:lapis_lazuli","Chercheur de Lapis",  16,  4f, "MOYEN",   "SHARDS", 20, 3f, null, 0, 40, 0, 5, 1);
         h("minecraft:redstone",  "Ingénieur Mineur",      32,  8f, "MOYEN",   "SHARDS", 20, 3f, null, 0, 40, 0, 5, 1);
         h("minecraft:sugar_cane","Sucrier",               64, 16f, "MOYEN",   "SHARDS", 18, 3f, null, 0, 35, 0, 5, 1);
@@ -66,7 +66,7 @@ public class QuestGenerator {
         h("minecraft:diamond",   "Diamanteur",             5,  1f, "DIFFICILE","ITEM",   0, 0f, "minecraft:diamond", 3, 80,   0, 15, 1);
         h("minecraft:emerald",   "Chercheur d'Émeraude",  3,  1f, "DIFFICILE","ITEM",   0, 0f, "minecraft:emerald", 5, 80,   0, 15, 1);
         h("minecraft:obsidian",  "Récolteur d'Obsidienne",32,  4f, "DIFFICILE","SHARDS",40, 5f, null, 0, 70,  0, 15, 1);
-        h("minecraft:nether_quartz","Chercheur du Nether",32,  8f, "DIFFICILE","SHARDS",35, 5f, null, 0, 70,  0, 15, 1);
+        h("minecraft:quartz",    "Chercheur du Nether",   32,  8f, "DIFFICILE","SHARDS",35, 5f, null, 0, 70,  0, 15, 1);
         // ── HARVEST — LÉGENDAIRE (lvl 30+) ──────────────────────────────────
         h("minecraft:ancient_debris","Chercheur de Débris", 2, 0f,"LÉGENDAIRE","ITEM",  0, 0f, "minecraft:netherite_scrap", 2, 200, 20, 30, 1);
         h("minecraft:amethyst_shard","Cristallographe",    32, 4f,"LÉGENDAIRE","ITEM",  0, 0f, "minecraft:amethyst_block", 2, 150, 0,  25, 1);
