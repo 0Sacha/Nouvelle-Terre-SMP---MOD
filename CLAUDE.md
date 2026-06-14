@@ -26,7 +26,7 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `0.x.y-beta` (dans `gradle.properties` → `mod_version`)
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `0.2.8-beta` (HUD : +Armure, XP, Dimension, Effets — F3 masque le HUD, visible en chat)
+- Version actuelle : `0.2.11-beta` (système de quêtes complet : GUI, KILL/HARVEST, templates JSON)
 - À chaque rebuild : mettre à jour `mod_version` dans `gradle.properties`, puis `git commit` + `git push`
 
 ---
@@ -65,6 +65,9 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 | `/discord` | Lier compte Minecraft ↔ Discord |
 | `/conflit <cible> <raison>` | Déclarer un conflit RP |
 | `/evenement <message>` | Narration (op only) |
+| `/quetes` | Ouvre le GUI Quêtes |
+| `/quetes refresh` | Recharge quetes-templates.json (op 2) |
+| `/quetes reset` | Réinitialise toute la progression (op 2) |
 
 > Toutes les opérations marché (vendre, acheter, retirer) se font **uniquement via `/hdv`**.
 > Virements, crédits et historique se gèrent via `/bank`.
@@ -85,6 +88,7 @@ commands/
   LierCommand.java         → /discord — liaison compte Minecraft ↔ Discord
   ConflitCommand.java      → /conflit — déclaration conflit RP
   EventNarratifCommand.java → /evenement — narration (op only)
+  QuetesCommand.java       → /quetes (ouvre GUI via QUEST_OPEN), /quetes refresh, /quetes reset
 
 economy/
   LocalEconomy.java        → Singleton shards.json
@@ -98,6 +102,9 @@ economy/
   Loan.java                → POJO crédit (id, lender, borrower, principal, dueTimestamp, penaltyBase,
                              penaltyIncrease, daysOverdue, totalPenalty, repaid, lastPenaltyMs)
   LoanManager.java         → Singleton nouvelle-terre-credits.json, check pénalités toutes les 1200 ticks
+  Quest.java               → POJO quête (id, type, target, quantity, reward, label)
+  QuestManager.java        → Singleton quetes-templates.json + quetes-progress.json
+                             API : load/reload/reset, accept/claim, onMobKilled/onItemHarvested, getQuests/getPlayerProgress/getPlayerCompleted
 
 events/
   PlayerEvents.java        → JOIN (premier/retour) / LEAVE — dispatch bot + sendBalanceToPlayer à la connexion
@@ -118,11 +125,15 @@ network/
   BankNetworking.java      → Canaux : BANK_OPEN / BANK_ACTION / BANK_RESULT / BANK_REQUEST
                              Actions : LOAN_CREATE(0) / LOAN_REPAY(1) / LOAN_FORGIVE(2) /
                                        TRANSFER(3) / RECURRING_CREATE(4) / RECURRING_CANCEL(5)
+  QuestNetworking.java     → Canaux : QUEST_OPEN (S→C, ouvre GUI) / QUEST_ACTION (C→S) / QUEST_RESULT (S→C)
+                             Actions : ACTION_ACCEPT(0) / ACTION_CLAIM(1)
 
 client/                    ← @Environment(CLIENT) uniquement
   HdvScreen.java           → Screen marché : 4 onglets (Marché / Vendre / Mon Shop / Boutiques)
                              Chip solde haut-droit → BANK_REQUEST → ouvre BankScreen
   BankScreen.java          → Screen banque : 5 onglets (Compte / Economie / Classement / Credits / Virements)
+  QuetesScreen.java        → Screen quêtes : 2 onglets (Disponibles / Mes Quêtes), PW=420 PH=300,
+                             cards avec barre de progression, boutons Accepter/Réclamer
   BalanceHudOverlay.java   → Contient uniquement `cachedBalance` statique (int, init -1)
                              Mis à jour par NT_BALANCE / HDV_OPEN / HDV_RESULT. Plus de rendering ici.
   HudEditorScreen.java     → Éditeur HUD (touche H). Deux modes :
@@ -192,6 +203,16 @@ loansAs*[]    : int count → (int id, string other, int principal, long dueMs,
                              int daysOverdue, int totalPenalty, int nextPenalty, bool repaid) × count
 known[]       : int count → string × count
 recurring[]   : int count → (int id, string to, int amount, int intervalTicks, int ticksUntilNext) × count
+```
+
+### Quêtes
+```
+QUEST_OPEN  : quests[] | accepted[] | completed[]
+QUEST_ACTION: int action | int questId
+QUEST_RESULT: bool ok | string msg | quests[] | accepted[] | completed[]
+quests[]   : int count → (int id, string type, string target, int qty, int reward, string label) × count
+accepted[] : int count → (int questId, int progress) × count
+completed[]: int count → int questId × count
 ```
 
 ---
