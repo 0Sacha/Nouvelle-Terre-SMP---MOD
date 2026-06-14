@@ -20,6 +20,7 @@ import com.nouvelleterrebridge.client.hud.NourritureWidget;
 import com.nouvelleterrebridge.client.hud.SanteWidget;
 import com.nouvelleterrebridge.client.hud.TimeWidget;
 import com.nouvelleterrebridge.client.hud.XpWidget;
+import com.nouvelleterrebridge.client.hud.QuestWidget;
 import com.nouvelleterrebridge.client.QuetesScreen;
 import com.nouvelleterrebridge.network.BankNetworking;
 import com.nouvelleterrebridge.network.HdvNetworking;
@@ -75,6 +76,7 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
         HudEditorScreen.WIDGETS.add(new DimensionWidget());
         HudEditorScreen.WIDGETS.add(new EffetsWidget());
         HudEditorScreen.WIDGETS.add(new NotificationWidget());
+        HudEditorScreen.WIDGETS.add(new QuestWidget());
         HudEditorScreen.loadAll();
 
         HudRenderCallback.EVENT.register((ctx, tickDelta) -> {
@@ -209,23 +211,33 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
         });
 
         ClientPlayNetworking.registerGlobalReceiver(QuestNetworking.QUEST_OPEN, (client, handler, buf, responseSender) -> {
-            List<QuetesScreen.QuestData> quests     = readQuests(buf);
-            Map<Integer, Integer>        inProgress = readQuestProgress(buf);
-            Set<Integer>                 completed  = readQuestCompleted(buf);
-            client.execute(() -> client.setScreen(new QuetesScreen(quests, inProgress, completed)));
+            int level = buf.readInt(), xp = buf.readInt(), xpNext = buf.readInt();
+            List<QuetesScreen.QuestData>       av  = readQuestList(buf);
+            List<QuetesScreen.ActiveQuestData> ac  = readActiveQuests(buf);
+            List<QuetesScreen.PendingRewardData> pe = readPendingRewards(buf);
+            Map<Integer, Integer>              gp  = readIntIntMap(buf);
+            updateQuestWidget(ac);
+            client.execute(() -> {
+                if (client.currentScreen instanceof QuetesScreen s)
+                    s.update(level, xp, xpNext, av, ac, pe, gp);
+                else
+                    client.setScreen(new QuetesScreen(level, xp, xpNext, av, ac, pe, gp));
+            });
         });
 
         ClientPlayNetworking.registerGlobalReceiver(QuestNetworking.QUEST_RESULT, (client, handler, buf, responseSender) -> {
-            boolean ok                           = buf.readBoolean();
-            String  message                      = buf.readString();
-            List<QuetesScreen.QuestData> quests   = readQuests(buf);
-            Map<Integer, Integer>        inProgress = readQuestProgress(buf);
-            Set<Integer>                 completed  = readQuestCompleted(buf);
+            boolean ok      = buf.readBoolean();
+            String  message = buf.readString();
+            int level = buf.readInt(), xp = buf.readInt(), xpNext = buf.readInt();
+            List<QuetesScreen.QuestData>        av = readQuestList(buf);
+            List<QuetesScreen.ActiveQuestData>  ac = readActiveQuests(buf);
+            List<QuetesScreen.PendingRewardData> pe = readPendingRewards(buf);
+            Map<Integer, Integer>               gp = readIntIntMap(buf);
+            updateQuestWidget(ac);
+            int color = ok ? 0xFF2EAD6B : 0xFFBF2040;
             client.execute(() -> {
-                if (client.currentScreen instanceof QuetesScreen screen) {
-                    screen.update(quests, inProgress, completed);
-                }
-                int color = ok ? 0xFF2EAD6B : 0xFFBF2040;
+                if (client.currentScreen instanceof QuetesScreen s)
+                    s.update(level, xp, xpNext, av, ac, pe, gp);
                 NotificationHud.push(color, message);
             });
         });
@@ -297,26 +309,68 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
         return list;
     }
 
-    private static List<QuetesScreen.QuestData> readQuests(PacketByteBuf buf) {
+    private static List<QuetesScreen.QuestData> readQuestList(PacketByteBuf buf) {
         int count = buf.readInt();
         List<QuetesScreen.QuestData> list = new ArrayList<>(count);
-        for (int i = 0; i < count; i++)
-            list.add(new QuetesScreen.QuestData(
-                buf.readInt(), buf.readString(), buf.readString(), buf.readInt(), buf.readInt(), buf.readString()));
+        for (int i = 0; i < count; i++) list.add(readOneQuest(buf));
         return list;
     }
 
-    private static Map<Integer, Integer> readQuestProgress(PacketByteBuf buf) {
+    private static QuetesScreen.QuestData readOneQuest(PacketByteBuf buf) {
+        int id = buf.readInt(); String type = buf.readString(); String target = buf.readString();
+        int qty = buf.readInt(); int lvl = buf.readInt(); int maxP = buf.readInt();
+        String rt = buf.readString(); int rSh = buf.readInt(); String rItem = buf.readString();
+        int rQty = buf.readInt(); int rXp = buf.readInt(); int cost = buf.readInt();
+        String label = buf.readString(); long exp = buf.readLong();
+        int tc = buf.readInt(); List<String> tags = new ArrayList<>(tc);
+        for (int i = 0; i < tc; i++) tags.add(buf.readString());
+        return new QuetesScreen.QuestData(id, type, target, qty, lvl, maxP, rt, rSh, rItem, rQty, rXp, cost, label, exp, tags);
+    }
+
+    private static List<QuetesScreen.ActiveQuestData> readActiveQuests(PacketByteBuf buf) {
+        int count = buf.readInt();
+        List<QuetesScreen.ActiveQuestData> list = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            int questId       = buf.readInt();
+            QuetesScreen.QuestData snap = readOneQuest(buf);
+            int progress      = buf.readInt();
+            boolean turnedIn  = buf.readBoolean();
+            int pc            = buf.readInt();
+            List<String> parts = new ArrayList<>(pc);
+            for (int j = 0; j < pc; j++) parts.add(buf.readString());
+            list.add(new QuetesScreen.ActiveQuestData(questId, snap, progress, turnedIn, parts));
+        }
+        return list;
+    }
+
+    private static List<QuetesScreen.PendingRewardData> readPendingRewards(PacketByteBuf buf) {
+        int count = buf.readInt();
+        List<QuetesScreen.PendingRewardData> list = new ArrayList<>(count);
+        for (int i = 0; i < count; i++)
+            list.add(new QuetesScreen.PendingRewardData(
+                buf.readString(), buf.readString(), buf.readInt(), buf.readLong()));
+        return list;
+    }
+
+    private static Map<Integer, Integer> readIntIntMap(PacketByteBuf buf) {
         int count = buf.readInt();
         Map<Integer, Integer> map = new HashMap<>();
         for (int i = 0; i < count; i++) map.put(buf.readInt(), buf.readInt());
         return map;
     }
 
-    private static Set<Integer> readQuestCompleted(PacketByteBuf buf) {
-        int count = buf.readInt();
-        Set<Integer> set = new HashSet<>();
-        for (int i = 0; i < count; i++) set.add(buf.readInt());
-        return set;
+    private static void updateQuestWidget(List<QuetesScreen.ActiveQuestData> active) {
+        if (active.isEmpty()) {
+            QuestWidget.activeLabel    = null;
+            QuestWidget.activeProgress = null;
+            QuestWidget.activeGroup    = false;
+        } else {
+            QuetesScreen.ActiveQuestData aq = active.get(0);
+            if (aq.snapshot() != null) {
+                QuestWidget.activeLabel    = aq.snapshot().label();
+                QuestWidget.activeProgress = aq.progress() + "/" + aq.snapshot().quantity();
+                QuestWidget.activeGroup    = aq.snapshot().maxPlayers() > 1;
+            }
+        }
     }
 }

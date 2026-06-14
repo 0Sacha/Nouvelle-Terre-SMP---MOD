@@ -89,6 +89,11 @@ public class ClientConfig {
     public float   notifX       = 0.99f;
     public float   notifY       = 0.85f;
 
+    // ── Widget Quête active ───────────────────────────────────────────────────
+    public boolean questEnabled = false;
+    public float   questX       = 0.35f;
+    public float   questY       = 0.02f;
+
     // ─────────────────────────────────────────────────────────────────────────
 
     public static ClientConfig get() {

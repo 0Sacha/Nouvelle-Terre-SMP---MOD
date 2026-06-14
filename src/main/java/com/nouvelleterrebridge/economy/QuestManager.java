@@ -5,7 +5,11 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.item.ItemStack;
+import net.minecraft.registry.Registries;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.util.Identifier;
 
 import java.io.*;
 import java.lang.reflect.Type;
@@ -16,82 +20,82 @@ import java.util.*;
 public class QuestManager {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final Path TEMPLATES = FabricLoader.getInstance().getGameDir().resolve("quetes-templates.json");
-    private static final Path PROGRESS  = FabricLoader.getInstance().getGameDir().resolve("quetes-progress.json");
+    private static final Path FILE = FabricLoader.getInstance().getGameDir().resolve("quetes.json");
 
-    private static List<Quest> quests = new ArrayList<>();
+    private static final int SOLO_POOL_SIZE  = 5;
+    private static final int GROUP_POOL_SIZE = 3;
+    private static final long REFRESH_MS     = 24L * 3600 * 1000; // 24 h
+
+    // ── Structures de données ─────────────────────────────────────────────────
+
+    public static class ActiveQuest {
+        public int         questId;
+        public Quest       snapshot;          // copie de la quête au moment de l'acceptation
+        public int         progress;
+        public boolean     turnedIn;          // DELIVERY: items consommés, en attente de claim
+        public List<String> groupParticipants = new ArrayList<>();
+        public long        acceptedAt;
+    }
+
+    public static class PendingReward {
+        public String questLabel;
+        public String rewardItem;
+        public int    rewardItemQty;
+        public long   completedAt;
+    }
 
     private static class PlayerData {
-        List<Integer>        accepted  = new ArrayList<>();
-        Map<String, Integer> progress  = new HashMap<>(); // String key pour Gson
-        List<Integer>        completed = new ArrayList<>();
+        long                lastRefresh   = 0;
+        List<Quest>         available     = new ArrayList<>();
+        List<ActiveQuest>   active        = new ArrayList<>();
+        List<PendingReward> pendingRewards = new ArrayList<>();
     }
-    private static Map<String, PlayerData> players = new HashMap<>();
 
-    // ── Chargement ────────────────────────────────────────────────────────────
+    private static Map<String, PlayerData>      players      = new HashMap<>();
+    private static List<Quest>                  globalGroup  = new ArrayList<>();
+
+    // Acceptations en attente pour les quêtes groupe (in-memory)
+    private static final Map<Integer, List<String>> GROUP_PENDING = new HashMap<>();
+
+    // ── Persistance ───────────────────────────────────────────────────────────
 
     public static synchronized void load() {
-        loadTemplates();
-        loadProgress();
+        loadData();
     }
 
-    private static void loadTemplates() {
-        File f = TEMPLATES.toFile();
-        if (!f.exists()) { createExamples(); return; }
-        try (Reader r = new InputStreamReader(new FileInputStream(f), StandardCharsets.UTF_8)) {
-            Type t = new TypeToken<List<Quest>>(){}.getType();
-            List<Quest> loaded = GSON.fromJson(r, t);
-            if (loaded != null) quests = loaded;
-            NouvelleTerreBridge.LOGGER.info("[QuestManager] {} quête(s) chargée(s).", quests.size());
-        } catch (Exception e) {
-            NouvelleTerreBridge.LOGGER.error("[QuestManager] Erreur lecture templates : {}", e.getMessage());
-        }
-    }
-
-    private static void createExamples() {
-        quests = new ArrayList<>();
-        add(1, "KILL",    "minecraft:zombie",   20, 15, "Exterminateur de zombies");
-        add(2, "KILL",    "minecraft:skeleton", 15, 12, "Chasseur de squelettes");
-        add(3, "KILL",    "minecraft:creeper",  10, 20, "Démolisseur de creepers");
-        add(4, "HARVEST", "minecraft:oak_log",  64,  8, "Bûcheron amateur");
-        add(5, "HARVEST", "minecraft:coal",     32, 10, "Mineur de charbon");
-        add(6, "HARVEST", "minecraft:wheat",    64,  6, "Agriculteur");
-        saveTemplates();
-        NouvelleTerreBridge.LOGGER.info("[QuestManager] quetes-templates.json créé.");
-    }
-
-    private static void add(int id, String type, String target, int qty, int reward, String label) {
-        Quest q = new Quest();
-        q.id = id; q.type = type; q.target = target;
-        q.quantity = qty; q.reward = reward; q.label = label;
-        quests.add(q);
-    }
-
-    private static void saveTemplates() {
-        try (Writer w = new OutputStreamWriter(new FileOutputStream(TEMPLATES.toFile()), StandardCharsets.UTF_8)) {
-            GSON.toJson(quests, w);
-        } catch (Exception e) {
-            NouvelleTerreBridge.LOGGER.error("[QuestManager] Erreur sauvegarde templates : {}", e.getMessage());
-        }
-    }
-
-    private static void loadProgress() {
-        File f = PROGRESS.toFile();
+    @SuppressWarnings("unchecked")
+    private static void loadData() {
+        File f = FILE.toFile();
         if (!f.exists()) return;
         try (Reader r = new InputStreamReader(new FileInputStream(f), StandardCharsets.UTF_8)) {
-            Type t = new TypeToken<Map<String, PlayerData>>(){}.getType();
-            Map<String, PlayerData> loaded = GSON.fromJson(r, t);
-            if (loaded != null) players = loaded;
+            Map<String, Object> root = GSON.fromJson(r, Map.class);
+            if (root == null) return;
+            Object pd = root.get("players");
+            if (pd != null) {
+                Type t = new TypeToken<Map<String, PlayerData>>(){}.getType();
+                String json = GSON.toJson(pd);
+                Map<String, PlayerData> loaded = GSON.fromJson(json, t);
+                if (loaded != null) players = loaded;
+            }
+            Object gg = root.get("globalGroup");
+            if (gg != null) {
+                Type t = new TypeToken<List<Quest>>(){}.getType();
+                List<Quest> loaded = GSON.fromJson(GSON.toJson(gg), t);
+                if (loaded != null) globalGroup = loaded;
+            }
         } catch (Exception e) {
-            NouvelleTerreBridge.LOGGER.error("[QuestManager] Erreur lecture progression : {}", e.getMessage());
+            NouvelleTerreBridge.LOGGER.error("[QuestManager] Erreur lecture : {}", e.getMessage());
         }
     }
 
-    private static void saveProgress() {
-        try (Writer w = new OutputStreamWriter(new FileOutputStream(PROGRESS.toFile()), StandardCharsets.UTF_8)) {
-            GSON.toJson(players, w);
+    private static void save() {
+        try (Writer w = new OutputStreamWriter(new FileOutputStream(FILE.toFile()), StandardCharsets.UTF_8)) {
+            Map<String, Object> root = new LinkedHashMap<>();
+            root.put("players", players);
+            root.put("globalGroup", globalGroup);
+            GSON.toJson(root, w);
         } catch (Exception e) {
-            NouvelleTerreBridge.LOGGER.error("[QuestManager] Erreur sauvegarde progression : {}", e.getMessage());
+            NouvelleTerreBridge.LOGGER.error("[QuestManager] Erreur sauvegarde : {}", e.getMessage());
         }
     }
 
@@ -99,99 +103,298 @@ public class QuestManager {
         return players.computeIfAbsent(player.toLowerCase(), k -> new PlayerData());
     }
 
+    // ── Pool management ───────────────────────────────────────────────────────
+
+    /** Appel à la connexion ou lors du level-up. Régénère si le pool est expiré. */
+    public static synchronized void refreshPlayerPool(String player, MinecraftServer server) {
+        PlayerData d   = data(player);
+        long       now = System.currentTimeMillis();
+        if (now - d.lastRefresh < REFRESH_MS) return;
+
+        int level      = PlayerLevelManager.getLevel(player);
+        d.available    = QuestGenerator.generateSolo(level, SOLO_POOL_SIZE);
+        d.lastRefresh  = now;
+
+        // Régénérer le pool groupe si besoin
+        if (now - globalGroupLastRefresh >= REFRESH_MS) {
+            globalGroup          = QuestGenerator.generateGroup(level, GROUP_POOL_SIZE);
+            globalGroupLastRefresh = now;
+            GROUP_PENDING.clear();
+        }
+
+        save();
+
+        server.execute(() -> {
+            ServerPlayerEntity sp = server.getPlayerManager().getPlayer(player);
+            if (sp != null) NouvelleTerreBridge.sendQuestOpen(sp);
+        });
+    }
+
+    private static long globalGroupLastRefresh = 0;
+
+    /** Forcé par /quetes refresh (admin). */
+    public static synchronized void forceRefresh(String player, MinecraftServer server) {
+        PlayerData d  = data(player);
+        d.lastRefresh = 0;
+        globalGroupLastRefresh = 0;
+        refreshPlayerPool(player, server);
+    }
+
     // ── API publique ──────────────────────────────────────────────────────────
 
-    public static synchronized List<Quest> getQuests() {
-        return Collections.unmodifiableList(quests);
+    public static synchronized List<Quest> getAvailable(String player) {
+        List<Quest> list = new ArrayList<>(data(player).available);
+        long now = System.currentTimeMillis();
+        list.removeIf(q -> q.expiresAt > 0 && q.expiresAt < now);
+        // Ajouter les quêtes groupe globales éligibles
+        int level = PlayerLevelManager.getLevel(player);
+        for (Quest gq : globalGroup) {
+            if (gq.expiresAt > 0 && gq.expiresAt < now) continue;
+            if (gq.levelRequired > level) continue;
+            list.add(gq);
+        }
+        return list;
     }
 
-    public static synchronized Map<Integer, Integer> getPlayerProgress(String player) {
-        Map<Integer, Integer> map = new HashMap<>();
-        for (Map.Entry<String, Integer> e : data(player).progress.entrySet())
-            map.put(Integer.parseInt(e.getKey()), e.getValue());
-        return map;
+    public static synchronized List<ActiveQuest> getActive(String player) {
+        return new ArrayList<>(data(player).active);
     }
 
-    public static synchronized Set<Integer> getPlayerCompleted(String player) {
-        return new HashSet<>(data(player).completed);
+    public static synchronized List<PendingReward> getPending(String player) {
+        return new ArrayList<>(data(player).pendingRewards);
     }
 
-    /** @return null = succès, sinon message d'erreur */
-    public static synchronized String accept(String player, int questId) {
-        Quest q = find(questId);
-        if (q == null) return "Quête introuvable.";
+    public static synchronized Map<Integer, Integer> getGroupPendingCounts() {
+        Map<Integer, Integer> counts = new HashMap<>();
+        GROUP_PENDING.forEach((id, list) -> counts.put(id, list.size()));
+        return counts;
+    }
+
+    /** Accepte ou rejoint une quête. @return null=OK, sinon message d'erreur. */
+    public static synchronized String accept(String player, int questId, MinecraftServer server) {
+        Quest q = findAvailable(player, questId);
+        if (q == null) return "Quête introuvable ou expirée.";
+
         PlayerData d = data(player);
-        if (d.completed.contains(questId)) return "Quête déjà terminée.";
-        if (d.accepted.contains(questId))  return "Quête déjà acceptée.";
-        d.accepted.add(questId);
-        d.progress.put(String.valueOf(questId), 0);
-        saveProgress();
+        if (d.active.stream().anyMatch(a -> a.questId == questId))
+            return "Quête déjà acceptée.";
+        if (d.pendingRewards.stream().anyMatch(p -> p.questLabel.equals(q.label)))
+            return "Une récompense identique est déjà en attente.";
+
+        // Coût en shards
+        if (q.costShards > 0) {
+            if (LocalEconomy.getInstance().getBalance(player) < q.costShards)
+                return "Shards insuffisants (" + q.costShards + " ◆ requis).";
+            LocalEconomy.getInstance().removeShards(player, q.costShards);
+        }
+
+        if (q.maxPlayers > 1) {
+            // Quête groupe
+            List<String> pending = GROUP_PENDING.computeIfAbsent(questId, k -> new ArrayList<>());
+            if (pending.contains(player.toLowerCase()))
+                return "Vous avez déjà rejoint cette quête.";
+            pending.add(player.toLowerCase());
+
+            if (pending.size() >= q.maxPlayers) {
+                // Activer pour tous les participants
+                List<String> participants = new ArrayList<>(pending);
+                GROUP_PENDING.remove(questId);
+                for (String p : participants) {
+                    activateQuest(p, q, participants);
+                    server.execute(() -> {
+                        ServerPlayerEntity sp = server.getPlayerManager().getPlayer(p);
+                        if (sp != null) {
+                            NouvelleTerreBridge.sendQuestOpen(sp);
+                            sp.sendMessage(net.minecraft.text.Text.literal(
+                                "§a[Quêtes] La quête groupe \"" + q.label + "\" est maintenant active !"), false);
+                        }
+                    });
+                }
+            }
+            save();
+            return null;
+        }
+
+        activateQuest(player, q, List.of(player));
+        save();
         return null;
     }
 
-    /** @return null = succès, sinon message d'erreur */
-    public static synchronized String claim(String player, int questId, MinecraftServer server) {
-        Quest q = find(questId);
-        if (q == null) return "Quête introuvable.";
+    private static void activateQuest(String player, Quest q, List<String> participants) {
+        ActiveQuest aq       = new ActiveQuest();
+        aq.questId           = q.id;
+        aq.snapshot          = q;
+        aq.progress          = 0;
+        aq.turnedIn          = false;
+        aq.groupParticipants = new ArrayList<>(participants);
+        aq.acceptedAt        = System.currentTimeMillis();
+        data(player).active.add(aq);
+    }
+
+    /** Annule une quête active. @return null=OK, sinon erreur. */
+    public static synchronized String cancel(String player, int questId) {
         PlayerData d = data(player);
-        if (!d.accepted.contains(questId))  return "Quête non acceptée.";
-        if (d.completed.contains(questId))  return "Récompense déjà réclamée.";
-        int prog = d.progress.getOrDefault(String.valueOf(questId), 0);
-        if (prog < q.quantity) return "Objectif non atteint (" + prog + "/" + q.quantity + ").";
-        LocalEconomy.getInstance().addShards(player, q.reward);
-        TransactionLog.log(player, TransactionLog.TYPE_REWARD, "Quête : " + q.label, q.reward);
-        d.completed.add(questId);
-        d.accepted.remove(Integer.valueOf(questId));
-        d.progress.remove(String.valueOf(questId));
-        saveProgress();
-        server.execute(() -> {
-            var sp = server.getPlayerManager().getPlayer(player);
-            if (sp != null) NouvelleTerreBridge.sendBalanceToPlayer(sp);
-        });
+        ActiveQuest aq = d.active.stream().filter(a -> a.questId == questId).findFirst().orElse(null);
+        if (aq == null) return "Quête non trouvée dans vos quêtes actives.";
+        d.active.remove(aq);
+        save();
         return null;
     }
+
+    /** Annule une récompense en attente. @return null=OK, sinon erreur. */
+    public static synchronized String cancelPending(String player, int index) {
+        PlayerData d = data(player);
+        if (index < 0 || index >= d.pendingRewards.size()) return "Index invalide.";
+        d.pendingRewards.remove(index);
+        save();
+        return null;
+    }
+
+    /**
+     * Valide et réclame une quête (KILL/HARVEST) ou remet les items (DELIVERY).
+     * @return null=OK, sinon message d'erreur.
+     */
+    public static synchronized String claim(String player, int questId, ServerPlayerEntity serverPlayer, MinecraftServer server) {
+        PlayerData  d  = data(player);
+        ActiveQuest aq = d.active.stream().filter(a -> a.questId == questId).findFirst().orElse(null);
+        if (aq == null || aq.snapshot == null) return "Quête non trouvée.";
+
+        Quest q = aq.snapshot;
+
+        if ("DELIVERY".equals(q.type)) {
+            // Vérifier et consommer les items dans l'inventaire
+            if (aq.turnedIn) return "Objets déjà remis. Allez dans 'À Réclamer'.";
+            String itemErr = consumeItems(serverPlayer, q.target, q.quantity);
+            if (itemErr != null) return itemErr;
+            aq.turnedIn = true;
+
+            if ("SHARDS".equals(q.rewardType)) {
+                giveReward(player, q, server);
+                d.active.remove(aq);
+            } else {
+                d.pendingRewards.add(buildPending(q));
+                d.active.remove(aq);
+            }
+            save();
+            return null;
+        }
+
+        // KILL / HARVEST
+        if (aq.progress < q.quantity) return "Objectif non atteint (" + aq.progress + "/" + q.quantity + ").";
+
+        if ("SHARDS".equals(q.rewardType)) {
+            giveReward(player, q, server);
+            d.active.remove(aq);
+        } else {
+            d.pendingRewards.add(buildPending(q));
+            d.active.remove(aq);
+        }
+        PlayerLevelManager.addXp(player, q.rewardXp, server);
+        save();
+        return null;
+    }
+
+    /** Récupère une récompense item depuis l'onglet "À Réclamer". */
+    public static synchronized String collectReward(String player, int index, ServerPlayerEntity serverPlayer) {
+        PlayerData d = data(player);
+        if (index < 0 || index >= d.pendingRewards.size()) return "Récompense introuvable.";
+        PendingReward pr = d.pendingRewards.get(index);
+
+        ItemStack reward = new ItemStack(Registries.ITEM.get(new Identifier(pr.rewardItem)), pr.rewardItemQty);
+        serverPlayer.getInventory().insertStack(reward);
+        if (!reward.isEmpty()) {
+            serverPlayer.dropItem(reward, false);
+        }
+        d.pendingRewards.remove(index);
+        save();
+        return null;
+    }
+
+    // ── Progression passive ───────────────────────────────────────────────────
 
     public static synchronized void onMobKilled(String player, String entityTypeId) {
-        PlayerData d = data(player);
-        boolean changed = false;
-        for (Quest q : quests) {
-            if (!"KILL".equals(q.type))      continue;
-            if (!q.target.equals(entityTypeId)) continue;
-            if (!d.accepted.contains(q.id))  continue;
-            if (d.completed.contains(q.id))  continue;
-            int cur = d.progress.getOrDefault(String.valueOf(q.id), 0);
-            d.progress.put(String.valueOf(q.id), Math.min(cur + 1, q.quantity));
-            changed = true;
-        }
-        if (changed) saveProgress();
+        advanceActive(player, "KILL", entityTypeId, 1);
     }
 
     public static synchronized void onItemHarvested(String player, String itemId, int count) {
-        PlayerData d = data(player);
-        boolean changed = false;
-        for (Quest q : quests) {
-            if (!"HARVEST".equals(q.type))   continue;
-            if (!q.target.equals(itemId))    continue;
-            if (!d.accepted.contains(q.id))  continue;
-            if (d.completed.contains(q.id))  continue;
-            int cur = d.progress.getOrDefault(String.valueOf(q.id), 0);
-            d.progress.put(String.valueOf(q.id), Math.min(cur + count, q.quantity));
-            changed = true;
-        }
-        if (changed) saveProgress();
+        advanceActive(player, "HARVEST", itemId, count);
     }
 
-    public static synchronized void reload() {
-        loadTemplates();
+    private static void advanceActive(String player, String type, String target, int amount) {
+        PlayerData d = data(player);
+        boolean changed = false;
+        for (ActiveQuest aq : d.active) {
+            if (aq.snapshot == null) continue;
+            Quest q = aq.snapshot;
+            if (!type.equals(q.type))       continue;
+            if (!q.target.equals(target))   continue;
+            if (aq.progress >= q.quantity)  continue;
+
+            if (q.maxPlayers > 1) {
+                // Quête groupe : avancer TOUS les participants
+                for (String p : aq.groupParticipants) {
+                    PlayerData pd = data(p);
+                    pd.active.stream()
+                        .filter(a -> a.questId == aq.questId)
+                        .findFirst()
+                        .ifPresent(a -> a.progress = Math.min(a.progress + amount, q.quantity));
+                }
+            } else {
+                aq.progress = Math.min(aq.progress + amount, q.quantity);
+            }
+            changed = true;
+        }
+        if (changed) save();
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private static Quest findAvailable(String player, int questId) {
+        for (Quest q : data(player).available) if (q.id == questId) return q;
+        for (Quest q : globalGroup)            if (q.id == questId) return q;
+        return null;
+    }
+
+    private static void giveReward(String player, Quest q, MinecraftServer server) {
+        LocalEconomy.getInstance().addShards(player, q.rewardShards);
+        TransactionLog.log(player, TransactionLog.TYPE_REWARD, "Quête : " + q.label, q.rewardShards);
+        server.execute(() -> {
+            ServerPlayerEntity sp = server.getPlayerManager().getPlayer(player);
+            if (sp != null) NouvelleTerreBridge.sendBalanceToPlayer(sp);
+        });
+    }
+
+    private static PendingReward buildPending(Quest q) {
+        PendingReward pr  = new PendingReward();
+        pr.questLabel     = q.label;
+        pr.rewardItem     = q.rewardItem;
+        pr.rewardItemQty  = q.rewardItemQty;
+        pr.completedAt    = System.currentTimeMillis();
+        return pr;
+    }
+
+    /** Consomme `qty` items de type `itemId` depuis l'inventaire du joueur. */
+    private static String consumeItems(ServerPlayerEntity player, String itemId, int qty) {
+        int remaining = qty;
+        var inv = player.getInventory();
+        for (int i = 0; i < inv.main.size() && remaining > 0; i++) {
+            ItemStack s = inv.main.get(i);
+            if (s.isEmpty()) continue;
+            if (!Registries.ITEM.getId(s.getItem()).toString().equals(itemId)) continue;
+            int take = Math.min(remaining, s.getCount());
+            s.decrement(take);
+            remaining -= take;
+        }
+        if (remaining > 0) return "Objets insuffisants dans l'inventaire (" + (qty - remaining) + "/" + qty + ").";
+        return null;
     }
 
     public static synchronized void reset() {
         players.clear();
-        saveProgress();
+        globalGroup.clear();
+        GROUP_PENDING.clear();
+        globalGroupLastRefresh = 0;
+        save();
         NouvelleTerreBridge.LOGGER.info("[QuestManager] Progression réinitialisée.");
-    }
-
-    private static Quest find(int id) {
-        return quests.stream().filter(q -> q.id == id).findFirst().orElse(null);
     }
 }

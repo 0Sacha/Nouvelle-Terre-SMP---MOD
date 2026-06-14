@@ -9,6 +9,7 @@ import com.nouvelleterrebridge.commands.LierCommand;
 import com.nouvelleterrebridge.commands.PayCommand;
 import com.nouvelleterrebridge.commands.ProductionCommand;
 import com.nouvelleterrebridge.commands.QuetesCommand;
+import com.nouvelleterrebridge.economy.PlayerLevelManager;
 import com.nouvelleterrebridge.economy.QuestManager;
 import com.nouvelleterrebridge.network.QuestNetworking;
 import net.fabricmc.fabric.api.entity.event.v1.ServerEntityCombatEvents;
@@ -81,6 +82,7 @@ public class NouvelleTerreBridge implements ModInitializer {
         ShopThresholds.load();
         ProductionTracker.load();
         ProductionShopManager.checkAll();
+        PlayerLevelManager.load();
         QuestManager.load();
 
         // Blocs cassés → drops réels (fortune/silk touch inclus)
@@ -118,9 +120,12 @@ public class NouvelleTerreBridge implements ModInitializer {
         registerBankNetworking();
         registerQuestNetworking();
 
-        // Envoie le solde au joueur dès qu'il est en jeu
+        // Envoie le solde au joueur dès qu'il est en jeu + refresh pool quêtes
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
-            server.execute(() -> sendBalanceToPlayer(handler.getPlayer())));
+            server.execute(() -> {
+                sendBalanceToPlayer(handler.getPlayer());
+                QuestManager.refreshPlayerPool(handler.getPlayer().getName().getString(), server);
+            }));
 
         LOGGER.info("[NouvelleTerreBridge] Mod initialisé avec succès.");
     }
@@ -451,22 +456,28 @@ public class NouvelleTerreBridge implements ModInitializer {
 
     // ── Quest networking ─────────────────────────────────────────────────────
 
+    public static void sendQuestOpen(ServerPlayerEntity player) {
+        PacketByteBuf buf = PacketByteBufs.create();
+        writeFullQuestData(buf, player.getName().getString());
+        ServerPlayNetworking.send(player, QuestNetworking.QUEST_OPEN, buf);
+    }
+
     private void registerQuestNetworking() {
         ServerPlayNetworking.registerGlobalReceiver(QuestNetworking.QUEST_ACTION, (server, player, handler, buf, responseSender) -> {
-            int action  = buf.readInt();
-            int questId = buf.readInt();
-            String playerName = player.getName().getString();
+            int action = buf.readInt();
+            int param  = buf.readInt();   // questId or index depending on action
+            String pName = player.getName().getString();
             server.execute(() -> {
-                String err;
-                if (action == QuestNetworking.ACTION_ACCEPT) {
-                    err = QuestManager.accept(playerName, questId);
-                } else if (action == QuestNetworking.ACTION_CLAIM) {
-                    err = QuestManager.claim(playerName, questId, server);
-                } else {
-                    err = "Action inconnue.";
-                }
+                String err = switch (action) {
+                    case QuestNetworking.ACTION_ACCEPT         -> QuestManager.accept(pName, param, server);
+                    case QuestNetworking.ACTION_CLAIM          -> QuestManager.claim(pName, param, player, server);
+                    case QuestNetworking.ACTION_CANCEL         -> QuestManager.cancel(pName, param);
+                    case QuestNetworking.ACTION_COLLECT        -> QuestManager.collectReward(pName, param, player);
+                    case QuestNetworking.ACTION_CANCEL_PENDING -> QuestManager.cancelPending(pName, param);
+                    default                                    -> "Action inconnue.";
+                };
                 boolean ok = err == null;
-                sendQuestResult(player, ok, ok ? "§a✅ Quête mise à jour !" : "§c" + err, server);
+                sendQuestResult(player, ok, ok ? "§a✅ Mis à jour !" : "§c" + err, server);
             });
         });
     }
@@ -475,8 +486,71 @@ public class NouvelleTerreBridge implements ModInitializer {
         PacketByteBuf buf = PacketByteBufs.create();
         buf.writeBoolean(ok);
         buf.writeString(message);
-        QuetesCommand.writeQuestData(buf, player.getName().getString());
+        writeFullQuestData(buf, player.getName().getString());
         ServerPlayNetworking.send(player, QuestNetworking.QUEST_RESULT, buf);
+    }
+
+    private static void writeFullQuestData(PacketByteBuf buf, String playerName) {
+        int level = PlayerLevelManager.getLevel(playerName);
+        int xp    = PlayerLevelManager.getXp(playerName);
+        buf.writeInt(level);
+        buf.writeInt(xp);
+        buf.writeInt(PlayerLevelManager.xpToNextLevel(level));
+
+        // Quêtes disponibles
+        List<com.nouvelleterrebridge.economy.Quest> available = QuestManager.getAvailable(playerName);
+        buf.writeInt(available.size());
+        for (var q : available) writeQuest(buf, q);
+
+        // Quêtes actives
+        List<QuestManager.ActiveQuest> active = QuestManager.getActive(playerName);
+        buf.writeInt(active.size());
+        for (QuestManager.ActiveQuest aq : active) {
+            buf.writeInt(aq.questId);
+            writeQuest(buf, aq.snapshot != null ? aq.snapshot : new com.nouvelleterrebridge.economy.Quest());
+            buf.writeInt(aq.progress);
+            buf.writeBoolean(aq.turnedIn);
+            buf.writeInt(aq.groupParticipants.size());
+            for (String p : aq.groupParticipants) buf.writeString(p);
+        }
+
+        // Récompenses en attente (items à récupérer)
+        List<QuestManager.PendingReward> pending = QuestManager.getPending(playerName);
+        buf.writeInt(pending.size());
+        for (QuestManager.PendingReward pr : pending) {
+            buf.writeString(pr.questLabel);
+            buf.writeString(pr.rewardItem != null ? pr.rewardItem : "");
+            buf.writeInt(pr.rewardItemQty);
+            buf.writeLong(pr.completedAt);
+        }
+
+        // Acceptations en attente pour les quêtes groupe
+        Map<Integer, Integer> gpc = QuestManager.getGroupPendingCounts();
+        buf.writeInt(gpc.size());
+        for (var e : gpc.entrySet()) {
+            buf.writeInt(e.getKey());
+            buf.writeInt(e.getValue());
+        }
+    }
+
+    private static void writeQuest(PacketByteBuf buf, com.nouvelleterrebridge.economy.Quest q) {
+        buf.writeInt(q.id);
+        buf.writeString(q.type       != null ? q.type       : "");
+        buf.writeString(q.target     != null ? q.target     : "");
+        buf.writeInt(q.quantity);
+        buf.writeInt(q.levelRequired);
+        buf.writeInt(q.maxPlayers);
+        buf.writeString(q.rewardType != null ? q.rewardType : "SHARDS");
+        buf.writeInt(q.rewardShards);
+        buf.writeString(q.rewardItem != null ? q.rewardItem : "");
+        buf.writeInt(q.rewardItemQty);
+        buf.writeInt(q.rewardXp);
+        buf.writeInt(q.costShards);
+        buf.writeString(q.label      != null ? q.label      : "");
+        buf.writeLong(q.expiresAt);
+        List<String> tags = q.tags != null ? q.tags : List.of();
+        buf.writeInt(tags.size());
+        for (String t : tags) buf.writeString(t);
     }
 
 }
