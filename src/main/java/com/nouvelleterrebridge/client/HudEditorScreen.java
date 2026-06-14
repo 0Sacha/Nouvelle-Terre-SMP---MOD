@@ -282,14 +282,23 @@ public class HudEditorScreen extends Screen {
             ctx.drawText(mc.textRenderer, "⚙", cx + cw - 16, oTy, open ? C_GOLD : C_DIM, false);
         }
 
-        // Toggle Activé / Désactivé (sans shadow = moins bold)
+        // Toggle : affiche l'action (ce qui se passe si on clique)
         boolean tHov = mx >= cx + 1 && mx < cx + cw - 1 && my >= togBtnY && my < togBtnY + 16;
-        int togBg = w.enabled ? (tHov ? 0xFF1E9A58 : C_GREEN) : (tHov ? C_HOVER : C_BORDER);
+        String togLbl;
+        int togBg, togFg;
+        if (w.enabled) {
+            togLbl = "Désactiver";
+            togBg  = tHov ? 0xFF8C1830 : 0xFF3D0A16;
+            togFg  = tHov ? C_WHITE : C_RED;
+        } else {
+            togLbl = "Activer";
+            togBg  = tHov ? 0xFF1E9A58 : C_GREEN;
+            togFg  = C_BG;
+        }
         ctx.fill(cx + 1, togBtnY, cx + cw - 1, togBtnY + 16, togBg);
-        String togLbl = w.enabled ? "Activé" : "Désactivé";
         int togLblX = cx + cw / 2 - mc.textRenderer.getWidth(togLbl) / 2;
         int togLblY = togBtnY + (16 - mc.textRenderer.fontHeight) / 2;
-        ctx.drawText(mc.textRenderer, togLbl, togLblX, togLblY, w.enabled ? C_BG : C_DIM, false);
+        ctx.drawText(mc.textRenderer, togLbl, togLblX, togLblY, togFg, false);
 
         cards.add(new Card(w, cx, cy, cw, optBtnY, togBtnY));
     }

@@ -53,10 +53,10 @@ public class QuetesScreen extends Screen {
     private static final int PH       = 360;
     private static final int TOP_H    = 44;
     private static final int PAD      = 12;
-    private static final int COLS     = 2;
+    private static final int COLS     = 3;
     private static final int GAP      = 8;
-    private static final int CARD_W   = (PW - PAD * 3) / COLS;   // ~218
-    private static final int CARD_H   = CARD_W;                   // carré
+    private static final int CARD_W   = 140;   // (460 - 24 - 16) / 3
+    private static final int CARD_H   = 120;   // 2 lignes visibles
     private static final int SCROLL_W = 4;
     private static final int BTN_H    = 18;
 
@@ -68,17 +68,17 @@ public class QuetesScreen extends Screen {
     private int playerXp    = 0;
     private int xpToNext    = 100;
 
-    private List<QuestData>       available     = new ArrayList<>();
-    private List<ActiveQuestData> active        = new ArrayList<>();
+    private List<QuestData>        available    = new ArrayList<>();
+    private List<ActiveQuestData>  active       = new ArrayList<>();
     private List<PendingRewardData> pending     = new ArrayList<>();
-    private Map<Integer, Integer> groupPending  = new HashMap<>();
+    private Map<Integer, Integer>  groupPending = new HashMap<>();
 
     private enum Tab { DISPONIBLES, EN_COURS, A_RECLAMER }
-    private Tab tab         = Tab.DISPONIBLES;
-    private int scrollRow   = 0;
+    private Tab tab       = Tab.DISPONIBLES;
+    private int scrollRow = 0;
 
-    // ── Positions calculées dans render (relues dans mouseClicked) ────────────
-    private final List<int[]> cardBounds = new ArrayList<>(); // [x, y, w, h, id_or_idx]
+    // Positions des boutons calculées au render, relues dans mouseClicked
+    private final List<int[]> cardBounds = new ArrayList<>(); // [x, y, w, h, param, action]
 
     // ── Constructeur ──────────────────────────────────────────────────────────
 
@@ -98,7 +98,6 @@ public class QuetesScreen extends Screen {
 
     @Override
     public void render(DrawContext ctx, int mx, int my, float delta) {
-        // Fenêtre
         ctx.fill(px, py, px + PW, py + PH, C_BG);
         ctx.fill(px, py, px + PW, py + 1, C_BORDER);
         ctx.fill(px, py + PH - 1, px + PW, py + PH, C_BORDER);
@@ -109,7 +108,6 @@ public class QuetesScreen extends Screen {
         ctx.fill(px, py, px + PW, py + TOP_H, C_PANEL);
         ctx.fill(px, py + TOP_H, px + PW, py + TOP_H + 1, C_BORDER);
         ctx.drawText(textRenderer, "⚔  Quêtes", px + PAD, py + 8, C_GOLD, false);
-        // Niveau joueur
         String lvlStr = "Niv. " + playerLevel + "  §8" + playerXp + "/" + xpToNext + " XP";
         ctx.drawText(textRenderer, lvlStr, px + PAD, py + 22, C_MID, false);
 
@@ -119,10 +117,8 @@ public class QuetesScreen extends Screen {
         int filled = xpToNext > 0 ? (int)((float) playerXp / xpToNext * barW) : 0;
         ctx.fill(barX, barY, barX + filled, barY + 3, C_GOLD);
 
-        // Tabs
         renderTabs(ctx, mx, my);
 
-        // Contenu
         cardBounds.clear();
         int contentY = py + TOP_H + 1;
         switch (tab) {
@@ -140,9 +136,9 @@ public class QuetesScreen extends Screen {
         int      tabW   = (PW - PAD * 2) / 3;
         int      tabY   = py + TOP_H - 18;
         for (int i = 0; i < 3; i++) {
-            int  tabX  = px + PAD + i * (tabW + 1);
-            boolean act  = tab == tabs[i];
-            boolean hov  = !act && mx >= tabX && mx < tabX + tabW && my >= tabY && my < tabY + 16;
+            int  tabX = px + PAD + i * (tabW + 1);
+            boolean act = tab == tabs[i];
+            boolean hov = !act && mx >= tabX && mx < tabX + tabW && my >= tabY && my < tabY + 16;
             ctx.fill(tabX, tabY, tabX + tabW, tabY + 16, act ? C_SURFACE : (hov ? C_HOVER : C_PANEL));
             if (act) ctx.fill(tabX, tabY + 14, tabX + tabW, tabY + 16, C_GOLD);
             int tw = textRenderer.getWidth(labels[i]);
@@ -155,7 +151,7 @@ public class QuetesScreen extends Screen {
 
     private void renderAvailable(DrawContext ctx, int mx, int my, int startY) {
         List<QuestData> list = getAvailableFiltered();
-        int rows = (list.size() + COLS - 1) / COLS;
+        int rows      = (list.size() + COLS - 1) / COLS;
         int maxScroll = Math.max(0, rows - visibleRows());
         scrollRow = Math.min(scrollRow, maxScroll);
 
@@ -168,7 +164,6 @@ public class QuetesScreen extends Screen {
                 int cy = startY + PAD + row * (CARD_H + GAP);
                 boolean hover = mx >= cx && mx < cx + CARD_W && my >= cy && my < cy + CARD_H;
                 renderAvailableCard(ctx, q, cx, cy, hover, mx, my);
-                cardBounds.add(new int[]{cx, cy, CARD_W, CARD_H, q.id(), 0}); // action 0 = accept
             }
         }
         renderScrollbar(ctx, startY, rows, visibleRows(), scrollRow, maxScroll);
@@ -176,49 +171,39 @@ public class QuetesScreen extends Screen {
 
     private void renderAvailableCard(DrawContext ctx, QuestData q, int x, int y, boolean hover, int mx, int my) {
         ctx.fill(x, y, x + CARD_W, y + CARD_H, hover ? C_HOVER : C_SURFACE);
-        // Bordure colorée gauche selon difficulté
-        int accent = diffColor(q);
-        ctx.fill(x, y, x + 3, y + CARD_H, accent);
+        ctx.fill(x, y, x + 3, y + CARD_H, diffColor(q));
         ctx.fill(x, y + CARD_H - 1, x + CARD_W, y + CARD_H, C_BORDER);
 
-        // Tags
-        int tagY = y + 6;
-        tagY = renderTags(ctx, q.tags(), x + 6, tagY);
+        // Icône de l'objectif (coin supérieur droit)
+        renderItemIcon(ctx, q.target(), x + CARD_W - 24, y + 6);
 
-        // Icône item (target)
-        renderItemIcon(ctx, q.target(), x + CARD_W - 26, y + 6);
+        // Tags compacts (une ligne)
+        int cy = renderTagsCompact(ctx, q.tags(), x + 6, y + 6);
 
-        // Label
-        ctx.drawText(textRenderer, q.label(), x + 6, tagY + 2, C_WHITE, false);
-
-        // Objectif
-        String obj = fmtTarget(q);
-        ctx.drawText(textRenderer, obj, x + 6, tagY + 14, C_MID, false);
-
-        // Récompense
-        renderReward(ctx, q, x + 6, tagY + 26);
-
-        // Coût
-        if (q.costShards() > 0) {
-            ctx.drawText(textRenderer, "§c⬡ " + q.costShards() + " ◆", x + 6, tagY + 38, C_RED, false);
-        }
+        // Contenu
+        ctx.drawText(textRenderer, q.label(), x + 6, cy, C_WHITE, false);
+        ctx.drawText(textRenderer, fmtTarget(q), x + 6, cy + 10, C_MID, false);
+        renderReward(ctx, q, x + 6, cy + 22);
+        if (q.costShards() > 0)
+            ctx.drawText(textRenderer, "§c" + q.costShards() + " ◆", x + 6, cy + 34, C_RED, false);
 
         // Groupe en attente
         if (q.maxPlayers() > 1) {
             int accepted = groupPending.getOrDefault(q.id(), 0);
-            String gStr = "§b👥 " + accepted + "/" + q.maxPlayers() + " joueurs";
-            ctx.drawText(textRenderer, gStr, x + 6, y + CARD_H - 32, C_BLUE, false);
+            ctx.drawText(textRenderer, "§b👥 " + accepted + "/" + q.maxPlayers(), x + 6,
+                    y + CARD_H - BTN_H - 22, C_BLUE, false);
         }
 
-        // Bouton Accepter/Rejoindre
+        // Bouton Accepter / Rejoindre (seul déclencheur d'acceptation)
         String btnLabel = q.maxPlayers() > 1 ? "Rejoindre" : "Accepter";
         int bw = textRenderer.getWidth(btnLabel) + 12;
-        int bx = x + CARD_W - bw - 6;
-        int by = y + CARD_H - BTN_H - 6;
+        int bx = x + CARD_W - bw - 4;
+        int by = y + CARD_H - BTN_H - 4;
         boolean bhov = mx >= bx && mx < bx + bw && my >= by && my < by + BTN_H;
         ctx.fill(bx, by, bx + bw, by + BTN_H, bhov ? C_GOLD : 0xFF5A3F10);
         ctx.fill(bx, by, bx + bw, by + 1, C_GOLD);
         ctx.drawText(textRenderer, btnLabel, bx + (bw - textRenderer.getWidth(btnLabel)) / 2, by + 5, C_WHITE, false);
+        cardBounds.add(new int[]{bx, by, bw, BTN_H, q.id(), QuestNetworking.ACTION_ACCEPT});
     }
 
     // ── Onglet En cours ───────────────────────────────────────────────────────
@@ -228,7 +213,7 @@ public class QuetesScreen extends Screen {
             drawCentered(ctx, "Aucune quête en cours.", startY + 60);
             return;
         }
-        int rows = (active.size() + COLS - 1) / COLS;
+        int rows      = (active.size() + COLS - 1) / COLS;
         int maxScroll = Math.max(0, rows - visibleRows());
         scrollRow = Math.min(scrollRow, maxScroll);
 
@@ -240,14 +225,13 @@ public class QuetesScreen extends Screen {
                 int cx = px + PAD + col * (CARD_W + GAP);
                 int cy = startY + PAD + row * (CARD_H + GAP);
                 boolean hover = mx >= cx && mx < cx + CARD_W && my >= cy && my < cy + CARD_H;
-                renderActiveCard(ctx, aq, cx, cy, hover, mx, my, idx);
+                renderActiveCard(ctx, aq, cx, cy, hover, mx, my);
             }
         }
         renderScrollbar(ctx, startY, rows, visibleRows(), scrollRow, maxScroll);
     }
 
-    private void renderActiveCard(DrawContext ctx, ActiveQuestData aq, int x, int y,
-                                   boolean hover, int mx, int my, int idx) {
+    private void renderActiveCard(DrawContext ctx, ActiveQuestData aq, int x, int y, boolean hover, int mx, int my) {
         QuestData q = aq.snapshot();
         if (q == null) return;
 
@@ -255,72 +239,56 @@ public class QuetesScreen extends Screen {
         ctx.fill(x, y, x + 3, y + CARD_H, diffColor(q));
         ctx.fill(x, y + CARD_H - 1, x + CARD_W, y + CARD_H, C_BORDER);
 
-        int tagY = y + 6;
-        tagY = renderTags(ctx, q.tags(), x + 6, tagY);
+        renderItemIcon(ctx, q.target(), x + CARD_W - 24, y + 6);
+        int cy = renderTagsCompact(ctx, q.tags(), x + 6, y + 6);
+        ctx.drawText(textRenderer, q.label(), x + 6, cy, C_WHITE, false);
+        ctx.drawText(textRenderer, fmtTarget(q), x + 6, cy + 10, C_MID, false);
 
-        // Icône
-        renderItemIcon(ctx, q.target(), x + CARD_W - 26, y + 6);
-
-        ctx.drawText(textRenderer, q.label(), x + 6, tagY + 2, C_WHITE, false);
-        ctx.drawText(textRenderer, fmtTarget(q), x + 6, tagY + 14, C_MID, false);
-
-        int midY = y + CARD_H / 2 - 4;
+        // Boutons ancrés en bas
+        int cancelBtnY = y + CARD_H - BTN_H - 4;
+        int claimBtnY  = cancelBtnY - BTN_H - 4;
+        int contentY   = cy + 22;
 
         if ("DELIVERY".equals(q.type())) {
-            // Slot visuel pour les objets à remettre
             boolean hasItems = hasItemsInInventory(q.target(), q.quantity());
-            String slotLabel = (hasItems ? "§a✅" : "§c✗") + " " + q.quantity() + "× " + fmtItem(q.target());
-            ctx.drawText(textRenderer, slotLabel, x + 6, midY, hasItems ? C_GREEN : C_RED, false);
-            renderItemIcon(ctx, q.target(), x + 6, midY + 12);
-
-            // Bouton Remettre
+            String slot = (hasItems ? "§a✓ " : "§c✗ ") + q.quantity() + "× " + fmtItem(q.target());
+            ctx.drawText(textRenderer, slot, x + 6, contentY, hasItems ? C_GREEN : C_RED, false);
             if (hasItems && !aq.turnedIn()) {
                 int bw = textRenderer.getWidth("Remettre") + 12;
-                int bx = x + CARD_W - bw - 6;
-                int by = y + CARD_H - BTN_H * 2 - 10;
-                boolean bhov = mx >= bx && mx < bx + bw && my >= by && my < by + BTN_H;
-                ctx.fill(bx, by, bx + bw, by + BTN_H, bhov ? C_GREEN : 0xFF1A6645);
-                ctx.fill(bx, by, bx + bw, by + 1, C_GREEN);
-                ctx.drawText(textRenderer, "Remettre", bx + 6, by + 5, C_WHITE, false);
-                cardBounds.add(new int[]{bx, by, bw, BTN_H, aq.questId(), QuestNetworking.ACTION_CLAIM});
+                int bx = x + CARD_W - bw - 4;
+                boolean bhov = mx >= bx && mx < bx + bw && my >= claimBtnY && my < claimBtnY + BTN_H;
+                ctx.fill(bx, claimBtnY, bx + bw, claimBtnY + BTN_H, bhov ? C_GREEN : 0xFF1A6645);
+                ctx.fill(bx, claimBtnY, bx + bw, claimBtnY + 1, C_GREEN);
+                ctx.drawText(textRenderer, "Remettre", bx + 6, claimBtnY + 5, C_WHITE, false);
+                cardBounds.add(new int[]{bx, claimBtnY, bw, BTN_H, aq.questId(), QuestNetworking.ACTION_CLAIM});
             } else if (aq.turnedIn()) {
-                ctx.drawText(textRenderer, "§eObjets remis — allez dans À Réclamer", x + 6, midY + 30, C_MID, false);
+                ctx.drawText(textRenderer, "→ À Réclamer", x + 6, contentY + 10, C_GOLD, false);
             }
         } else {
-            // Barre de progression KILL/HARVEST
-            int prog = aq.progress();
-            int total = q.quantity();
+            int prog = aq.progress(), total = q.quantity();
             float pct = total > 0 ? Math.min(1f, (float) prog / total) : 0f;
             int barW = CARD_W - 12;
-            ctx.fill(x + 6, midY, x + 6 + barW, midY + 5, C_BORDER);
-            ctx.fill(x + 6, midY, x + 6 + (int)(barW * pct), midY + 5, pct >= 1f ? C_GREEN : C_GOLD);
-            String progStr = prog + "/" + total;
-            ctx.drawText(textRenderer, progStr, x + 6, midY + 8, C_MID, false);
-
+            ctx.fill(x + 6, contentY, x + 6 + barW, contentY + 4, C_BORDER);
+            ctx.fill(x + 6, contentY, x + 6 + (int)(barW * pct), contentY + 4, pct >= 1f ? C_GREEN : C_GOLD);
+            ctx.drawText(textRenderer, prog + "/" + total, x + 6, contentY + 6, C_MID, false);
             if (pct >= 1f) {
                 int bw = textRenderer.getWidth("Réclamer") + 12;
-                int bx = x + CARD_W - bw - 6;
-                int by = y + CARD_H - BTN_H * 2 - 10;
-                boolean bhov = mx >= bx && mx < bx + bw && my >= by && my < by + BTN_H;
-                ctx.fill(bx, by, bx + bw, by + BTN_H, bhov ? C_GREEN : 0xFF1A6645);
-                ctx.fill(bx, by, bx + bw, by + 1, C_GREEN);
-                ctx.drawText(textRenderer, "Réclamer", bx + 6, by + 5, C_WHITE, false);
-                cardBounds.add(new int[]{bx, by, bw, BTN_H, aq.questId(), QuestNetworking.ACTION_CLAIM});
+                int bx = x + CARD_W - bw - 4;
+                boolean bhov = mx >= bx && mx < bx + bw && my >= claimBtnY && my < claimBtnY + BTN_H;
+                ctx.fill(bx, claimBtnY, bx + bw, claimBtnY + BTN_H, bhov ? C_GREEN : 0xFF1A6645);
+                ctx.fill(bx, claimBtnY, bx + bw, claimBtnY + 1, C_GREEN);
+                ctx.drawText(textRenderer, "Réclamer", bx + 6, claimBtnY + 5, C_WHITE, false);
+                cardBounds.add(new int[]{bx, claimBtnY, bw, BTN_H, aq.questId(), QuestNetworking.ACTION_CLAIM});
             }
         }
 
-        // Récompense (mini)
-        renderReward(ctx, q, x + 6, y + CARD_H - 36);
-
         // Bouton Annuler
         int cw = textRenderer.getWidth("Annuler") + 10;
-        int cx2 = x + 6;
-        int cy2 = y + CARD_H - BTN_H - 6;
-        boolean chov = mx >= cx2 && mx < cx2 + cw && my >= cy2 && my < cy2 + BTN_H;
-        ctx.fill(cx2, cy2, cx2 + cw, cy2 + BTN_H, chov ? C_RED : 0xFF3D0A16);
-        ctx.fill(cx2, cy2, cx2 + cw, cy2 + 1, C_RED);
-        ctx.drawText(textRenderer, "Annuler", cx2 + 5, cy2 + 5, C_WHITE, false);
-        cardBounds.add(new int[]{cx2, cy2, cw, BTN_H, aq.questId(), QuestNetworking.ACTION_CANCEL});
+        boolean chov = mx >= x + 6 && mx < x + 6 + cw && my >= cancelBtnY && my < cancelBtnY + BTN_H;
+        ctx.fill(x + 6, cancelBtnY, x + 6 + cw, cancelBtnY + BTN_H, chov ? C_RED : 0xFF3D0A16);
+        ctx.fill(x + 6, cancelBtnY, x + 6 + cw, cancelBtnY + 1, C_RED);
+        ctx.drawText(textRenderer, "Annuler", x + 11, cancelBtnY + 5, C_WHITE, false);
+        cardBounds.add(new int[]{x + 6, cancelBtnY, cw, BTN_H, aq.questId(), QuestNetworking.ACTION_CANCEL});
     }
 
     // ── Onglet À Réclamer ─────────────────────────────────────────────────────
@@ -330,7 +298,7 @@ public class QuetesScreen extends Screen {
             drawCentered(ctx, "Aucune récompense en attente.", startY + 60);
             return;
         }
-        int rows = (pending.size() + COLS - 1) / COLS;
+        int rows      = (pending.size() + COLS - 1) / COLS;
         int maxScroll = Math.max(0, rows - visibleRows());
         scrollRow = Math.min(scrollRow, maxScroll);
 
@@ -354,34 +322,32 @@ public class QuetesScreen extends Screen {
         ctx.fill(x, y, x + 3, y + CARD_H, C_GOLD);
         ctx.fill(x, y + CARD_H - 1, x + CARD_W, y + CARD_H, C_BORDER);
 
-        ctx.drawText(textRenderer, "§e✨ Récompense", x + 6, y + 8, C_GOLD, false);
-        ctx.drawText(textRenderer, pr.label(), x + 6, y + 22, C_WHITE, false);
+        ctx.drawText(textRenderer, "✨ Récompense", x + 6, y + 8, C_GOLD, false);
+        ctx.drawText(textRenderer, pr.label(), x + 6, y + 20, C_WHITE, false);
 
-        // Icône de l'item récompense
-        renderItemIcon(ctx, pr.itemId(), x + CARD_W / 2 - 8, y + CARD_H / 2 - 8);
+        renderItemIcon(ctx, pr.itemId(), x + CARD_W / 2 - 8, y + 38);
         String itemStr = pr.qty() + "× " + fmtItem(pr.itemId());
         int iw = textRenderer.getWidth(itemStr);
-        ctx.drawText(textRenderer, "§a" + itemStr, x + (CARD_W - iw) / 2, y + CARD_H / 2 + 10, C_GREEN, false);
+        ctx.drawText(textRenderer, itemStr, x + (CARD_W - iw) / 2, y + 58, C_GREEN, false);
 
-        // Bouton Récupérer
+        // Boutons
+        int cancelBtnY  = y + CARD_H - BTN_H - 4;
+        int collectBtnY = cancelBtnY - BTN_H - 4;
+
         int bw = textRenderer.getWidth("Récupérer") + 12;
         int bx = x + (CARD_W - bw) / 2;
-        int by = y + CARD_H - BTN_H * 2 - 10;
-        boolean bhov = mx >= bx && mx < bx + bw && my >= by && my < by + BTN_H;
-        ctx.fill(bx, by, bx + bw, by + BTN_H, bhov ? C_GREEN : 0xFF1A6645);
-        ctx.fill(bx, by, bx + bw, by + 1, C_GREEN);
-        ctx.drawText(textRenderer, "Récupérer", bx + 6, by + 5, C_WHITE, false);
-        cardBounds.add(new int[]{bx, by, bw, BTN_H, idx, QuestNetworking.ACTION_COLLECT});
+        boolean bhov = mx >= bx && mx < bx + bw && my >= collectBtnY && my < collectBtnY + BTN_H;
+        ctx.fill(bx, collectBtnY, bx + bw, collectBtnY + BTN_H, bhov ? C_GREEN : 0xFF1A6645);
+        ctx.fill(bx, collectBtnY, bx + bw, collectBtnY + 1, C_GREEN);
+        ctx.drawText(textRenderer, "Récupérer", bx + 6, collectBtnY + 5, C_WHITE, false);
+        cardBounds.add(new int[]{bx, collectBtnY, bw, BTN_H, idx, QuestNetworking.ACTION_COLLECT});
 
-        // Bouton Annuler
         int cw = textRenderer.getWidth("Annuler") + 10;
-        int cx2 = x + 6;
-        int cy2 = y + CARD_H - BTN_H - 6;
-        boolean chov = mx >= cx2 && mx < cx2 + cw && my >= cy2 && my < cy2 + BTN_H;
-        ctx.fill(cx2, cy2, cx2 + cw, cy2 + BTN_H, chov ? C_RED : 0xFF3D0A16);
-        ctx.fill(cx2, cy2, cx2 + cw, cy2 + 1, C_RED);
-        ctx.drawText(textRenderer, "Annuler", cx2 + 5, cy2 + 5, C_WHITE, false);
-        cardBounds.add(new int[]{cx2, cy2, cw, BTN_H, idx, QuestNetworking.ACTION_CANCEL_PENDING});
+        boolean chov = mx >= x + 6 && mx < x + 6 + cw && my >= cancelBtnY && my < cancelBtnY + BTN_H;
+        ctx.fill(x + 6, cancelBtnY, x + 6 + cw, cancelBtnY + BTN_H, chov ? C_RED : 0xFF3D0A16);
+        ctx.fill(x + 6, cancelBtnY, x + 6 + cw, cancelBtnY + 1, C_RED);
+        ctx.drawText(textRenderer, "Annuler", x + 11, cancelBtnY + 5, C_WHITE, false);
+        cardBounds.add(new int[]{x + 6, cancelBtnY, cw, BTN_H, idx, QuestNetworking.ACTION_CANCEL_PENDING});
     }
 
     // ── Interactions ──────────────────────────────────────────────────────────
@@ -392,42 +358,21 @@ public class QuetesScreen extends Screen {
         int imx = (int) mx, imy = (int) my;
 
         // Tabs
-        String[] labels = {"Disponibles", "En cours (" + active.size() + ")", "À Réclamer (" + pending.size() + ")"};
-        Tab[]    tabs   = {Tab.DISPONIBLES, Tab.EN_COURS, Tab.A_RECLAMER};
+        Tab[] tabs = {Tab.DISPONIBLES, Tab.EN_COURS, Tab.A_RECLAMER};
         int tabW = (PW - PAD * 2) / 3;
         int tabY = py + TOP_H - 18;
         for (int i = 0; i < 3; i++) {
             int tabX = px + PAD + i * (tabW + 1);
             if (imx >= tabX && imx < tabX + tabW && imy >= tabY && imy < tabY + 16) {
-                tab = tabs[i];
-                scrollRow = 0;
-                return true;
+                tab = tabs[i]; scrollRow = 0; return true;
             }
         }
 
-        // Boutons des cards (cardBounds rempli au render)
+        // Boutons des cards
         for (int[] b : cardBounds) {
             int bx = b[0], by = b[1], bw = b[2], bh = b[3], param = b[4], action = b[5];
             if (imx >= bx && imx < bx + bw && imy >= by && imy < by + bh) {
-                sendAction(action, param);
-                return true;
-            }
-        }
-
-        // Clic sur card en onglet Disponibles (zone entière = accepter)
-        if (tab == Tab.DISPONIBLES) {
-            List<QuestData> list = getAvailableFiltered();
-            for (int row = 0; row < visibleRows(); row++) {
-                for (int col = 0; col < COLS; col++) {
-                    int idx = (scrollRow + row) * COLS + col;
-                    if (idx >= list.size()) continue;
-                    int cx = px + PAD + col * (CARD_W + GAP);
-                    int cy = py + TOP_H + 1 + PAD + row * (CARD_H + GAP);
-                    if (imx >= cx && imx < cx + CARD_W && imy >= cy && imy < cy + CARD_H) {
-                        sendAction(QuestNetworking.ACTION_ACCEPT, list.get(idx).id());
-                        return true;
-                    }
-                }
+                sendAction(action, param); return true;
             }
         }
 
@@ -436,8 +381,7 @@ public class QuetesScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mx, double my, double amount) {
-        int rows = currentRows();
-        int maxScroll = Math.max(0, rows - visibleRows());
+        int maxScroll = Math.max(0, currentRows() - visibleRows());
         if (maxScroll > 0)
             scrollRow = Math.max(0, Math.min(scrollRow - (int) Math.signum(amount), maxScroll));
         return true;
@@ -445,20 +389,20 @@ public class QuetesScreen extends Screen {
 
     // ── Helpers render ────────────────────────────────────────────────────────
 
-    private int renderTags(DrawContext ctx, List<String> tags, int x, int y) {
+    /** Rend les tags sur une seule ligne, sans boîte. Retourne y + 10. */
+    private int renderTagsCompact(DrawContext ctx, List<String> tags, int x, int y) {
         int tx = x;
-        for (String tag : tags) {
-            int col = tagColor(tag);
-            String lbl = tag;
-            int tw = textRenderer.getWidth(lbl) + 6;
-            ctx.fill(tx, y, tx + tw, y + 10, col & 0x44FFFFFF);
-            ctx.fill(tx, y, tx + tw, y + 1, col);
-            ctx.fill(tx, y + 9, tx + tw, y + 10, col);
-            ctx.drawText(textRenderer, lbl, tx + 3, y + 1, col, false);
-            tx += tw + 3;
-            if (tx > x + CARD_W - 12) { tx = x; y += 12; }
+        for (int i = 0; i < tags.size(); i++) {
+            if (i > 0) {
+                ctx.drawText(textRenderer, "·", tx, y, C_DIM, false);
+                tx += textRenderer.getWidth("·") + 2;
+            }
+            String tag = tags.get(i);
+            ctx.drawText(textRenderer, tag, tx, y, tagColor(tag), false);
+            tx += textRenderer.getWidth(tag) + 2;
+            if (tx > x + CARD_W - 14) break;
         }
-        return y + 12;
+        return y + 10;
     }
 
     private int tagColor(String tag) {
@@ -551,8 +495,7 @@ public class QuetesScreen extends Screen {
     }
 
     private String fmtTarget(QuestData q) {
-        String item = fmtItem(q.target());
-        return q.quantity() + "× " + item;
+        return q.quantity() + "× " + fmtItem(q.target());
     }
 
     private String fmtItem(String id) {

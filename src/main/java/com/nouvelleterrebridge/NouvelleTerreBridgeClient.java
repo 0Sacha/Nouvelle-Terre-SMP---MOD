@@ -7,7 +7,6 @@ import com.nouvelleterrebridge.client.DiscordRPCManager;
 import com.nouvelleterrebridge.client.HdvScreen;
 import com.nouvelleterrebridge.client.HudEditorScreen;
 import com.nouvelleterrebridge.client.NotificationHud;
-import com.nouvelleterrebridge.client.hud.ArmureWidget;
 import com.nouvelleterrebridge.client.hud.BalanceWidget;
 import com.nouvelleterrebridge.client.hud.BiomeWidget;
 import com.nouvelleterrebridge.client.hud.CoordsWidget;
@@ -16,10 +15,7 @@ import com.nouvelleterrebridge.client.hud.EffetsWidget;
 import com.nouvelleterrebridge.client.hud.FpsWidget;
 import com.nouvelleterrebridge.client.hud.HudWidget;
 import com.nouvelleterrebridge.client.hud.NotificationWidget;
-import com.nouvelleterrebridge.client.hud.NourritureWidget;
-import com.nouvelleterrebridge.client.hud.SanteWidget;
 import com.nouvelleterrebridge.client.hud.TimeWidget;
-import com.nouvelleterrebridge.client.hud.XpWidget;
 import com.nouvelleterrebridge.client.hud.QuestWidget;
 import com.nouvelleterrebridge.client.QuetesScreen;
 import com.nouvelleterrebridge.network.BankNetworking;
@@ -47,10 +43,8 @@ import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 @Environment(EnvType.CLIENT)
 public class NouvelleTerreBridgeClient implements ClientModInitializer {
@@ -67,10 +61,6 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
         HudEditorScreen.WIDGETS.add(new BalanceWidget());
         HudEditorScreen.WIDGETS.add(new CoordsWidget());
         HudEditorScreen.WIDGETS.add(new TimeWidget());
-        HudEditorScreen.WIDGETS.add(new SanteWidget());
-        HudEditorScreen.WIDGETS.add(new NourritureWidget());
-        HudEditorScreen.WIDGETS.add(new ArmureWidget());
-        HudEditorScreen.WIDGETS.add(new XpWidget());
         HudEditorScreen.WIDGETS.add(new FpsWidget());
         HudEditorScreen.WIDGETS.add(new BiomeWidget());
         HudEditorScreen.WIDGETS.add(new DimensionWidget());
@@ -212,12 +202,12 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
 
         ClientPlayNetworking.registerGlobalReceiver(QuestNetworking.QUEST_OPEN, (client, handler, buf, responseSender) -> {
             int level = buf.readInt(), xp = buf.readInt(), xpNext = buf.readInt();
-            List<QuetesScreen.QuestData>       av  = readQuestList(buf);
-            List<QuetesScreen.ActiveQuestData> ac  = readActiveQuests(buf);
+            List<QuetesScreen.QuestData>         av = readQuestList(buf);
+            List<QuetesScreen.ActiveQuestData>   ac = readActiveQuests(buf);
             List<QuetesScreen.PendingRewardData> pe = readPendingRewards(buf);
-            Map<Integer, Integer>              gp  = readIntIntMap(buf);
-            updateQuestWidget(ac);
+            Map<Integer, Integer>                gp = readIntIntMap(buf);
             client.execute(() -> {
+                updateQuestWidget(ac);
                 if (client.currentScreen instanceof QuetesScreen s)
                     s.update(level, xp, xpNext, av, ac, pe, gp);
                 else
@@ -229,13 +219,13 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             boolean ok      = buf.readBoolean();
             String  message = buf.readString();
             int level = buf.readInt(), xp = buf.readInt(), xpNext = buf.readInt();
-            List<QuetesScreen.QuestData>        av = readQuestList(buf);
-            List<QuetesScreen.ActiveQuestData>  ac = readActiveQuests(buf);
+            List<QuetesScreen.QuestData>         av = readQuestList(buf);
+            List<QuetesScreen.ActiveQuestData>   ac = readActiveQuests(buf);
             List<QuetesScreen.PendingRewardData> pe = readPendingRewards(buf);
-            Map<Integer, Integer>               gp = readIntIntMap(buf);
-            updateQuestWidget(ac);
+            Map<Integer, Integer>                gp = readIntIntMap(buf);
             int color = ok ? 0xFF2EAD6B : 0xFFBF2040;
             client.execute(() -> {
+                updateQuestWidget(ac);
                 if (client.currentScreen instanceof QuetesScreen s)
                     s.update(level, xp, xpNext, av, ac, pe, gp);
                 NotificationHud.push(color, message);
@@ -360,16 +350,14 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
     }
 
     private static void updateQuestWidget(List<QuetesScreen.ActiveQuestData> active) {
-        if (active.isEmpty()) {
-            QuestWidget.activeLabel    = null;
-            QuestWidget.activeProgress = null;
-            QuestWidget.activeGroup    = false;
-        } else {
-            QuetesScreen.ActiveQuestData aq = active.get(0);
+        QuestWidget.activeLabels.clear();
+        QuestWidget.activeProgresses.clear();
+        QuestWidget.activeGroups.clear();
+        for (QuetesScreen.ActiveQuestData aq : active) {
             if (aq.snapshot() != null) {
-                QuestWidget.activeLabel    = aq.snapshot().label();
-                QuestWidget.activeProgress = aq.progress() + "/" + aq.snapshot().quantity();
-                QuestWidget.activeGroup    = aq.snapshot().maxPlayers() > 1;
+                QuestWidget.activeLabels.add(aq.snapshot().label());
+                QuestWidget.activeProgresses.add(aq.progress() + "/" + aq.snapshot().quantity());
+                QuestWidget.activeGroups.add(aq.snapshot().maxPlayers() > 1);
             }
         }
     }
