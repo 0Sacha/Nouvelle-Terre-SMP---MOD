@@ -26,7 +26,7 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `0.x.y-beta` (dans `gradle.properties` → `mod_version`)
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `0.2.11-beta` (système de quêtes complet : GUI, KILL/HARVEST, templates JSON)
+- Version actuelle : `0.2.15-beta` (wiki fixes, classements quêtes, reset économie online, HUD hover fix)
 - À chaque rebuild : mettre à jour `mod_version` dans `gradle.properties`, puis `git commit` + `git push`
 
 ---
