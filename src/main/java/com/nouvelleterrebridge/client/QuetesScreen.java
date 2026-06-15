@@ -52,8 +52,8 @@ public class QuetesScreen extends Screen {
     // ── Layout ────────────────────────────────────────────────────────────────
 
     private static final int MAX_PW = 540;
-    private static final int MAX_PH = 380;
-    private static final int TOP_H  = 44;
+    private static final int MAX_PH = 400;
+    private static final int TOP_H  = 64;
     private static final int PAD    = 12;
     private static final int COLS   = 3;
     private static final int GAP    = 8;
@@ -114,17 +114,20 @@ public class QuetesScreen extends Screen {
         ctx.fill(px, py, px + 1, py + ph, C_BORDER);
         ctx.fill(px + pw - 1, py, px + pw, py + ph, C_BORDER);
 
-        // Header
+        // Header — TOP_H=64 : titre+niveau+XP above tabY=py+46
         ctx.fill(px, py, px + pw, py + TOP_H, C_PANEL);
         ctx.fill(px, py + TOP_H, px + pw, py + TOP_H + 1, C_BORDER);
-        ctx.drawText(textRenderer, "⚔  Quêtes", px + PAD, py + 8, C_GOLD, false);
-        ctx.drawText(textRenderer, "Niv. " + playerLevel + "  §8" + playerXp + "/" + xpToNext + " XP",
-                px + PAD, py + 22, C_MID, false);
+        ctx.drawText(textRenderer, "⚔  Quêtes", px + PAD, py + 10, C_GOLD, false);
 
-        int barX = px + PAD, barY = py + 36, barW2 = pw / 4;
-        ctx.fill(barX, barY, barX + barW2, barY + 3, C_BORDER);
+        String lvlText = "Niv. " + playerLevel;
+        String xpText  = " · §8" + playerXp + "/" + xpToNext + " XP";
+        ctx.drawText(textRenderer, lvlText, px + PAD, py + 24, C_MID, false);
+        ctx.drawText(textRenderer, xpText,  px + PAD + textRenderer.getWidth(lvlText), py + 24, C_DIM, false);
+
+        int barX = px + PAD, barY = py + 36, barW2 = pw * 3 / 8;
+        ctx.fill(barX, barY, barX + barW2, barY + 4, C_BORDER);
         int filled = xpToNext > 0 ? (int)((float) playerXp / xpToNext * barW2) : 0;
-        ctx.fill(barX, barY, barX + filled, barY + 3, C_GOLD);
+        if (filled > 0) ctx.fill(barX, barY, barX + filled, barY + 4, C_GOLD);
 
         renderTabs(ctx, mx, my);
 

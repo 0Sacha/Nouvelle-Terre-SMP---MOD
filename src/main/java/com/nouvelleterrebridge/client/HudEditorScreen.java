@@ -22,7 +22,7 @@ public class HudEditorScreen extends Screen {
     private int    scrollRow  = 0;
 
     // Panel géométrie
-    private static final int PW            = 372;
+    private static final int PW_MAX        = 372;
     private static final int COLS          = 2;
     private static final int GAP           = 8;
     private static final int CARD_H        = 120;
@@ -46,7 +46,7 @@ public class HudEditorScreen extends Screen {
     private int       dragOX, dragOY;
 
     // Positions interactives (recalculées à chaque render)
-    private int panelX, panelY, panelH;
+    private int panelX, panelY, panelH, panelW;
     private int gridY, gridH;
     private record Card(HudWidget w, int x, int y, int cw, int optBtnY, int togBtnY) {}
     private final List<Card> cards = new ArrayList<>();
@@ -132,6 +132,9 @@ public class HudEditorScreen extends Screen {
 
     private void renderPanel(DrawContext ctx, MinecraftClient mc, int mx, int my) {
         ctx.fill(0, 0, width, height, 0x30000000);
+
+        panelW = Math.min(PW_MAX, width - 16);
+        int PW = panelW;
 
         int cardW     = (PW - GAP * (COLS + 1)) / COLS;
         int totalRows = (WIDGETS.size() + COLS - 1) / COLS;
@@ -328,7 +331,7 @@ public class HudEditorScreen extends Screen {
         }
 
         // Bouton [×]
-        if (mx >= panelX + PW - 26 && mx < panelX + PW - 6
+        if (mx >= panelX + panelW - 26 && mx < panelX + panelW - 6
                 && my >= panelY + 8 && my < panelY + 36 - 8) {
             close(); return true;
         }
@@ -337,7 +340,7 @@ public class HudEditorScreen extends Screen {
         if (settingsY >= 0 && my >= settingsY + 20) {
             HudWidget optW = findWidget(optionsFor);
             if (optW != null) {
-                optW.handleSettingsClick(mx, my, panelX + GAP, settingsY + 20, PW - GAP * 2);
+                optW.handleSettingsClick(mx, my, panelX + GAP, settingsY + 20, panelW - GAP * 2);
                 return true;
             }
         }
