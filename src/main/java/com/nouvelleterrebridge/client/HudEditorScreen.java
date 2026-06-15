@@ -215,11 +215,12 @@ public class HudEditorScreen extends Screen {
         layoutBtnY = footerY + (footerH - 26) / 2;
         boolean lbHov = mx >= layoutBtnX && mx < layoutBtnX + layoutBtnW
             && my >= layoutBtnY && my < layoutBtnY + 26;
-        ctx.fill(layoutBtnX - 1, layoutBtnY - 1, layoutBtnX + layoutBtnW + 1, layoutBtnY + 27, C_BORDER);
         ctx.fill(layoutBtnX, layoutBtnY, layoutBtnX + layoutBtnW, layoutBtnY + 26,
-            lbHov ? C_GOLD : C_SURFACE);
-        ctx.drawCenteredTextWithShadow(mc.textRenderer, "Placer les widgets",
-            panelX + PW / 2, layoutBtnY + 9, lbHov ? C_BG : C_MID);
+            lbHov ? C_HOVER : C_SURFACE);
+        if (lbHov) ctx.fill(layoutBtnX, layoutBtnY, layoutBtnX + layoutBtnW, layoutBtnY + 1, C_GOLD);
+        int ltw = mc.textRenderer.getWidth("Placer les widgets");
+        ctx.drawText(mc.textRenderer, "Placer les widgets",
+            panelX + PW / 2 - ltw / 2, layoutBtnY + 9, lbHov ? C_GOLD : C_MID, false);
     }
 
     private void renderCard(DrawContext ctx, MinecraftClient mc, HudWidget w,

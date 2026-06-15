@@ -14,6 +14,7 @@ import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class PlayerLevelManager {
@@ -85,5 +86,15 @@ public class PlayerLevelManager {
     public static synchronized void reset() {
         players.clear();
         save();
+    }
+
+    /** Top N joueurs par niveau (name lowercase → level). */
+    public static synchronized List<Map.Entry<String, Integer>> getLeaderboardByLevel(int limit) {
+        return players.entrySet().stream()
+            .filter(e -> e.getValue().level > 0)
+            .sorted((a, b) -> b.getValue().level - a.getValue().level)
+            .limit(limit)
+            .map(e -> Map.entry(e.getKey(), e.getValue().level))
+            .collect(java.util.stream.Collectors.toList());
     }
 }

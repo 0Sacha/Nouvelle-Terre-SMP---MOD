@@ -4,6 +4,7 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
+import com.nouvelleterrebridge.NouvelleTerreBridge;
 import com.nouvelleterrebridge.economy.FirstJoinTracker;
 import com.nouvelleterrebridge.economy.LocalEconomy;
 import net.minecraft.server.command.CommandManager;
@@ -158,12 +159,24 @@ public class EconomieCommand {
 
     // ── /economie admin reset-economy confirmer ───────────────────────────────
     private static int executerResetEconomy(ServerCommandSource source) {
-        LocalEconomy.getInstance().resetAll();
+        LocalEconomy eco = LocalEconomy.getInstance();
+        eco.resetAll();
         FirstJoinTracker.getInstance().resetAll();
+
+        // Donner 500 ◆ immédiatement à tous les joueurs en ligne
+        for (ServerPlayerEntity p : source.getServer().getPlayerManager().getPlayerList()) {
+            String name = p.getName().getString();
+            eco.addShards(name, 500);
+            FirstJoinTracker.getInstance().markReceived(name);
+            p.sendMessage(Text.literal(
+                "§6[Admin] §fL'économie a été réinitialisée. Tu reçois §e§l500 ◆§f de départ !"));
+            NouvelleTerreBridge.sendBalanceToPlayer(p);
+        }
+
         source.sendFeedback(() -> Text.literal(SEP_RED), false);
         source.sendFeedback(() -> Text.literal("  " + ADMIN_TAG + "§c§l⚠ Économie réinitialisée"), true);
-        source.sendFeedback(() -> Text.literal("  §7Tous les soldes remis à §f§l0 ◆"), false);
-        source.sendFeedback(() -> Text.literal("  §7Les joueurs recevront §a§l500 ◆ §7à leur prochaine connexion."), false);
+        source.sendFeedback(() -> Text.literal("  §7Soldes remis à §f§l0 ◆§7, 500 ◆ distribués aux joueurs en ligne."), false);
+        source.sendFeedback(() -> Text.literal("  §7Les joueurs hors ligne recevront §a§l500 ◆ §7à leur prochaine connexion."), false);
         source.sendFeedback(() -> Text.literal(SEP_RED), false);
         return 1;
     }

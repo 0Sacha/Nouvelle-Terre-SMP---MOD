@@ -32,6 +32,8 @@ public class QuetesScreen extends Screen {
 
     public record PendingRewardData(String label, String itemId, int qty, long completedAt) {}
 
+    public record LeaderboardEntry(String name, int value) {}
+
     // ── Couleurs ──────────────────────────────────────────────────────────────
 
     private static final int C_BG      = 0xFF14161A;
@@ -47,19 +49,16 @@ public class QuetesScreen extends Screen {
     private static final int C_MID     = 0xFF9096A3;
     private static final int C_DIM     = 0xFF565C6A;
 
-    // ── Layout (statique) ─────────────────────────────────────────────────────
+    // ── Layout ────────────────────────────────────────────────────────────────
 
-    private static final int MAX_PW  = 520;
-    private static final int MAX_PH  = 380;
-    private static final int TOP_H   = 44;
-    private static final int PAD     = 12;
-    private static final int COLS    = 3;
-    private static final int GAP     = 8;
-    private static final int CARD_H  = 120;
-    private static final int SCROLL_W = 4;
-    private static final int BTN_H   = 18;
-
-    // ── Layout (instance, calculé dans init) ─────────────────────────────────
+    private static final int MAX_PW = 540;
+    private static final int MAX_PH = 380;
+    private static final int TOP_H  = 44;
+    private static final int PAD    = 12;
+    private static final int COLS   = 3;
+    private static final int GAP    = 8;
+    private static final int CARD_H = 120;
+    private static final int BTN_H  = 18;
 
     private int pw, ph, px, py, cardW;
 
@@ -69,16 +68,18 @@ public class QuetesScreen extends Screen {
     private int playerXp    = 0;
     private int xpToNext    = 100;
 
-    private List<QuestData>        available    = new ArrayList<>();
-    private List<ActiveQuestData>  active       = new ArrayList<>();
-    private List<PendingRewardData> pending     = new ArrayList<>();
-    private Map<Integer, Integer>  groupPending = new HashMap<>();
+    private List<QuestData>         available    = new ArrayList<>();
+    private List<ActiveQuestData>   active       = new ArrayList<>();
+    private List<PendingRewardData> pending      = new ArrayList<>();
+    private Map<Integer, Integer>   groupPending = new HashMap<>();
+    private List<LeaderboardEntry>  lbCompleted  = new ArrayList<>();
+    private List<LeaderboardEntry>  lbLevel      = new ArrayList<>();
 
-    private enum Tab { DISPONIBLES, EN_COURS, A_RECLAMER }
+    private enum Tab { DISPONIBLES, EN_COURS, A_RECLAMER, CLASSEMENTS }
     private Tab tab       = Tab.DISPONIBLES;
     private int scrollRow = 0;
 
-    private final List<int[]> cardBounds = new ArrayList<>(); // [x,y,w,h,param,action]
+    private final List<int[]> cardBounds = new ArrayList<>();
 
     // ── Constructeur ──────────────────────────────────────────────────────────
 
@@ -86,9 +87,10 @@ public class QuetesScreen extends Screen {
 
     public QuetesScreen(int level, int xp, int xpNext,
                         List<QuestData> available, List<ActiveQuestData> active,
-                        List<PendingRewardData> pending, Map<Integer, Integer> groupPending) {
+                        List<PendingRewardData> pending, Map<Integer, Integer> groupPending,
+                        List<LeaderboardEntry> lbCompleted, List<LeaderboardEntry> lbLevel) {
         super(Text.literal("Quêtes"));
-        update(level, xp, xpNext, available, active, pending, groupPending);
+        update(level, xp, xpNext, available, active, pending, groupPending, lbCompleted, lbLevel);
     }
 
     @Override
@@ -129,27 +131,37 @@ public class QuetesScreen extends Screen {
         cardBounds.clear();
         int contentY = py + TOP_H + 1;
         switch (tab) {
-            case DISPONIBLES -> renderAvailable(ctx, mx, my, contentY);
-            case EN_COURS    -> renderActive(ctx, mx, my, contentY);
-            case A_RECLAMER  -> renderPending(ctx, mx, my, contentY);
+            case DISPONIBLES  -> renderAvailable(ctx, mx, my, contentY);
+            case EN_COURS     -> renderActive(ctx, mx, my, contentY);
+            case A_RECLAMER   -> renderPending(ctx, mx, my, contentY);
+            case CLASSEMENTS  -> renderClassements(ctx, mx, my, contentY);
         }
 
         super.render(ctx, mx, my, delta);
     }
 
     private void renderTabs(DrawContext ctx, int mx, int my) {
-        String[] labels = {"Disponibles", "En cours (" + active.size() + ")", "À Réclamer (" + pending.size() + ")"};
-        Tab[]    tabs   = {Tab.DISPONIBLES, Tab.EN_COURS, Tab.A_RECLAMER};
-        int      tabW   = (pw - PAD * 2) / 3;
-        int      tabY   = py + TOP_H - 18;
-        for (int i = 0; i < 3; i++) {
+        Tab[]    tabs   = {Tab.DISPONIBLES, Tab.EN_COURS, Tab.A_RECLAMER, Tab.CLASSEMENTS};
+        String[] labels = {
+            "Disponibles",
+            "En cours (" + active.size() + ")",
+            "À Réclamer (" + pending.size() + ")",
+            "Classements"
+        };
+        int tabW = (pw - PAD * 2) / 4;
+        int tabY = py + TOP_H - 18;
+        for (int i = 0; i < 4; i++) {
             int  tabX = px + PAD + i * (tabW + 1);
             boolean act = tab == tabs[i];
             boolean hov = !act && mx >= tabX && mx < tabX + tabW && my >= tabY && my < tabY + 16;
             ctx.fill(tabX, tabY, tabX + tabW, tabY + 16, act ? C_SURFACE : (hov ? C_HOVER : C_PANEL));
             if (act) ctx.fill(tabX, tabY + 14, tabX + tabW, tabY + 16, C_GOLD);
             int tw = textRenderer.getWidth(labels[i]);
-            ctx.drawText(textRenderer, labels[i], tabX + (tabW - tw) / 2, tabY + 4,
+            // Tronquer le texte si nécessaire
+            String lbl = labels[i];
+            while (textRenderer.getWidth(lbl) > tabW - 4 && lbl.length() > 3)
+                lbl = lbl.substring(0, lbl.length() - 1);
+            ctx.drawText(textRenderer, lbl, tabX + (tabW - textRenderer.getWidth(lbl)) / 2, tabY + 4,
                     act ? C_GOLD : C_MID, false);
         }
     }
@@ -181,39 +193,32 @@ public class QuetesScreen extends Screen {
         ctx.fill(x, y, x + 3, y + CARD_H, diffColor(q));
         ctx.fill(x, y + CARD_H - 1, x + cardW, y + CARD_H, C_BORDER);
 
-        // Icône de l'objectif (coin supérieur droit, taille 1×)
         renderItemIcon(ctx, q.target(), x + cardW - 22, y + 7);
 
-        // Tags compacts: TYPE + SOLO/GROUPE seulement (difficulté = couleur bord, récompense = ligne suivante)
         List<String> filteredTags = q.tags().stream()
-            .filter(t -> "SOLO".equals(t) || "GROUPE".equals(t) || "KILL".equals(t) || "HARVEST".equals(t) || "DELIVERY".equals(t))
+            .filter(t -> "SOLO".equals(t) || "GROUPE".equals(t)
+                      || "KILL".equals(t) || "HARVEST".equals(t) || "DELIVERY".equals(t))
             .toList();
         int cy = renderTagsCompact(ctx, filteredTags, x + 6, y + 8);
 
-        // Label + quantité sur une ligne
         ctx.drawText(textRenderer, q.label(), x + 6, cy, C_WHITE, false);
         int labelW = textRenderer.getWidth(q.label());
         ctx.drawText(textRenderer, " ×" + q.quantity(), x + 6 + labelW, cy, C_MID, false);
         cy += 11;
 
-        // Récompense
         renderReward(ctx, q, x + 6, cy);
-        cy += 11;
 
-        // Coût
         if (q.costShards() > 0) {
-            ctx.drawText(textRenderer, "§c−" + q.costShards() + " ◆", x + 6, cy, C_RED, false);
             cy += 11;
+            ctx.drawText(textRenderer, "§c−" + q.costShards() + " ◆", x + 6, cy, C_RED, false);
         }
 
-        // Groupe en attente
         if (q.maxPlayers() > 1) {
             int accepted = groupPending.getOrDefault(q.id(), 0);
-            ctx.drawText(textRenderer, "§b👥 " + accepted + "/" + q.maxPlayers() + " joueurs",
+            ctx.drawText(textRenderer, "§b👥 " + accepted + "/" + q.maxPlayers(),
                     x + 6, y + CARD_H - BTN_H - 22, C_BLUE, false);
         }
 
-        // Bouton — seul déclencheur d'acceptation
         String btnLabel = q.maxPlayers() > 1 ? "Rejoindre" : "Accepter";
         int bw = textRenderer.getWidth(btnLabel) + 12;
         int bx = x + cardW - bw - 4;
@@ -228,11 +233,8 @@ public class QuetesScreen extends Screen {
     // ── Onglet En cours ───────────────────────────────────────────────────────
 
     private void renderActive(DrawContext ctx, int mx, int my, int startY) {
-        if (active.isEmpty()) {
-            drawCentered(ctx, "Aucune quête en cours.", startY + 60);
-            return;
-        }
-        int rows      = (active.size() + COLS - 1) / COLS;
+        if (active.isEmpty()) { drawCentered(ctx, "Aucune quête en cours.", startY + 60); return; }
+        int rows = (active.size() + COLS - 1) / COLS;
         int maxScroll = Math.max(0, rows - visibleRows());
         scrollRow = Math.min(scrollRow, maxScroll);
 
@@ -260,7 +262,8 @@ public class QuetesScreen extends Screen {
 
         renderItemIcon(ctx, q.target(), x + cardW - 22, y + 7);
         List<String> filteredTags = q.tags().stream()
-            .filter(t -> "SOLO".equals(t) || "GROUPE".equals(t) || "KILL".equals(t) || "HARVEST".equals(t) || "DELIVERY".equals(t))
+            .filter(t -> "SOLO".equals(t) || "GROUPE".equals(t)
+                      || "KILL".equals(t) || "HARVEST".equals(t) || "DELIVERY".equals(t))
             .toList();
         int cy = renderTagsCompact(ctx, filteredTags, x + 6, y + 8);
         ctx.drawText(textRenderer, q.label(), x + 6, cy, C_WHITE, false);
@@ -273,8 +276,8 @@ public class QuetesScreen extends Screen {
 
         if ("DELIVERY".equals(q.type())) {
             boolean hasItems = hasItemsInInventory(q.target(), q.quantity());
-            String slot = (hasItems ? "§a✓ " : "§c✗ ") + fmtItem(q.target());
-            ctx.drawText(textRenderer, slot, x + 6, cy, hasItems ? C_GREEN : C_RED, false);
+            ctx.drawText(textRenderer, (hasItems ? "§a✓ " : "§c✗ ") + fmtItem(q.target()), x + 6, cy,
+                    hasItems ? C_GREEN : C_RED, false);
             if (hasItems && !aq.turnedIn()) {
                 int bw = textRenderer.getWidth("Remettre") + 12;
                 int bx = x + cardW - bw - 4;
@@ -315,11 +318,8 @@ public class QuetesScreen extends Screen {
     // ── Onglet À Réclamer ─────────────────────────────────────────────────────
 
     private void renderPending(DrawContext ctx, int mx, int my, int startY) {
-        if (pending.isEmpty()) {
-            drawCentered(ctx, "Aucune récompense en attente.", startY + 60);
-            return;
-        }
-        int rows      = (pending.size() + COLS - 1) / COLS;
+        if (pending.isEmpty()) { drawCentered(ctx, "Aucune récompense en attente.", startY + 60); return; }
+        int rows = (pending.size() + COLS - 1) / COLS;
         int maxScroll = Math.max(0, rows - visibleRows());
         scrollRow = Math.min(scrollRow, maxScroll);
 
@@ -345,7 +345,6 @@ public class QuetesScreen extends Screen {
 
         ctx.drawText(textRenderer, "✨ Récompense", x + 6, y + 8, C_GOLD, false);
         ctx.drawText(textRenderer, pr.label(), x + 6, y + 20, C_WHITE, false);
-
         renderItemIcon(ctx, pr.itemId(), x + cardW / 2 - 8, y + 38);
         String itemStr = pr.qty() + "× " + fmtItem(pr.itemId());
         int iw = textRenderer.getWidth(itemStr);
@@ -370,6 +369,56 @@ public class QuetesScreen extends Screen {
         cardBounds.add(new int[]{x + 6, cancelBtnY, cw2, BTN_H, idx, QuestNetworking.ACTION_CANCEL_PENDING});
     }
 
+    // ── Onglet Classements ────────────────────────────────────────────────────
+
+    private void renderClassements(DrawContext ctx, int mx, int my, int startY) {
+        int colW  = (pw - PAD * 2 - GAP) / 2;
+        int col2X = px + PAD + colW + GAP;
+        int y0    = startY + PAD;
+
+        renderLeaderboard(ctx, lbCompleted, px + PAD, y0, colW, "⚔ Quêtes complétées", C_GOLD);
+        renderLeaderboard(ctx, lbLevel,     col2X,    y0, colW, "✨ Niveau",             C_BLUE);
+    }
+
+    private void renderLeaderboard(DrawContext ctx, List<LeaderboardEntry> lb,
+                                   int x, int y, int w, String title, int accentColor) {
+        ctx.fill(x, y, x + w, y + 1, accentColor);
+        ctx.drawText(textRenderer, title, x, y + 4, accentColor, false);
+        y += 18;
+
+        if (lb.isEmpty()) {
+            ctx.drawText(textRenderer, "Aucune donnée", x + 4, y + 4, C_DIM, false);
+            return;
+        }
+        for (int i = 0; i < lb.size(); i++) {
+            LeaderboardEntry e = lb.get(i);
+            boolean isTop3 = i < 3;
+            int rowBg = (i % 2 == 0) ? C_SURFACE : 0;
+            ctx.fill(x, y, x + w, y + 16, rowBg);
+
+            // Médaille / rang
+            String medal = switch (i) {
+                case 0 -> "§6#1";
+                case 1 -> "§7#2";
+                case 2 -> "§c#3";
+                default -> "§8#" + (i + 1);
+            };
+            ctx.drawText(textRenderer, medal, x + 4, y + 4, C_WHITE, false);
+
+            // Nom (avec casse originale si possible)
+            String name = e.name();
+            int nameColor = isTop3 ? C_WHITE : C_MID;
+            ctx.drawText(textRenderer, name, x + 24, y + 4, nameColor, false);
+
+            // Valeur alignée à droite
+            String val = String.valueOf(e.value());
+            int valW = textRenderer.getWidth(val);
+            ctx.drawText(textRenderer, val, x + w - valW - 4, y + 4, accentColor, false);
+
+            y += 16;
+        }
+    }
+
     // ── Interactions ──────────────────────────────────────────────────────────
 
     @Override
@@ -377,10 +426,10 @@ public class QuetesScreen extends Screen {
         if (button != 0) return super.mouseClicked(mx, my, button);
         int imx = (int) mx, imy = (int) my;
 
-        Tab[] tabs = {Tab.DISPONIBLES, Tab.EN_COURS, Tab.A_RECLAMER};
-        int tabW2 = (pw - PAD * 2) / 3;
+        Tab[] tabs = {Tab.DISPONIBLES, Tab.EN_COURS, Tab.A_RECLAMER, Tab.CLASSEMENTS};
+        int tabW2 = (pw - PAD * 2) / 4;
         int tabY  = py + TOP_H - 18;
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < 4; i++) {
             int tabX = px + PAD + i * (tabW2 + 1);
             if (imx >= tabX && imx < tabX + tabW2 && imy >= tabY && imy < tabY + 16) {
                 tab = tabs[i]; scrollRow = 0; return true;
@@ -410,10 +459,7 @@ public class QuetesScreen extends Screen {
     private int renderTagsCompact(DrawContext ctx, List<String> tags, int x, int y) {
         int tx = x;
         for (int i = 0; i < tags.size(); i++) {
-            if (i > 0) {
-                ctx.drawText(textRenderer, " · ", tx, y, C_DIM, false);
-                tx += textRenderer.getWidth(" · ");
-            }
+            if (i > 0) { ctx.drawText(textRenderer, " · ", tx, y, C_DIM, false); tx += textRenderer.getWidth(" · "); }
             String tag = tags.get(i);
             ctx.drawText(textRenderer, tag, tx, y, tagColor(tag), false);
             tx += textRenderer.getWidth(tag);
@@ -424,12 +470,12 @@ public class QuetesScreen extends Screen {
 
     private int tagColor(String tag) {
         return switch (tag) {
-            case "SOLO"       -> C_MID;
-            case "GROUPE"     -> C_BLUE;
-            case "KILL"       -> 0xFFBF4040;
-            case "HARVEST"    -> 0xFF5EA85E;
-            case "DELIVERY"   -> 0xFF5BA8D4;
-            default           -> C_DIM;
+            case "SOLO"     -> C_MID;
+            case "GROUPE"   -> C_BLUE;
+            case "KILL"     -> 0xFFBF4040;
+            case "HARVEST"  -> 0xFF5EA85E;
+            case "DELIVERY" -> 0xFF5BA8D4;
+            default         -> C_DIM;
         };
     }
 
@@ -448,11 +494,10 @@ public class QuetesScreen extends Screen {
     }
 
     private void renderReward(DrawContext ctx, QuestData q, int x, int y) {
-        if ("SHARDS".equals(q.rewardType())) {
+        if ("SHARDS".equals(q.rewardType()))
             ctx.drawText(textRenderer, "§e+" + q.rewardShards() + " ◆  §7+" + q.rewardXp() + " XP", x, y, C_GOLD, false);
-        } else {
+        else
             ctx.drawText(textRenderer, "§a+" + q.rewardItemQty() + "× " + fmtItem(q.rewardItem()) + "  §7+" + q.rewardXp() + " XP", x, y, C_GREEN, false);
-        }
     }
 
     private void renderItemIcon(DrawContext ctx, String itemId, int x, int y) {
@@ -468,11 +513,11 @@ public class QuetesScreen extends Screen {
         int trackX = px + pw - 6;
         int trackY = startY + PAD;
         int trackH = vis * (CARD_H + GAP) - GAP;
-        ctx.fill(trackX, trackY, trackX + SCROLL_W, trackY + trackH, C_BORDER);
+        ctx.fill(trackX, trackY, trackX + 4, trackY + trackH, C_BORDER);
         float ratio  = (float) vis / rows;
         int   thumbH = Math.max(16, (int)(trackH * ratio));
         int   thumbY = maxScroll > 0 ? trackY + (int)((trackH - thumbH) * ((float) scroll / maxScroll)) : trackY;
-        ctx.fill(trackX, thumbY, trackX + SCROLL_W, thumbY + thumbH, C_GOLD);
+        ctx.fill(trackX, thumbY, trackX + 4, thumbY + thumbH, C_GOLD);
     }
 
     private void drawCentered(DrawContext ctx, String text, int y) {
@@ -497,10 +542,12 @@ public class QuetesScreen extends Screen {
     }
 
     private int currentRows() {
+        if (tab == Tab.CLASSEMENTS) return 0;
         int count = switch (tab) {
             case DISPONIBLES -> getAvailableFiltered().size();
             case EN_COURS    -> active.size();
             case A_RECLAMER  -> pending.size();
+            default          -> 0;
         };
         return (count + COLS - 1) / COLS;
     }
@@ -532,7 +579,8 @@ public class QuetesScreen extends Screen {
 
     public void update(int level, int xp, int xpNext,
                        List<QuestData> available, List<ActiveQuestData> active,
-                       List<PendingRewardData> pending, Map<Integer, Integer> groupPending) {
+                       List<PendingRewardData> pending, Map<Integer, Integer> groupPending,
+                       List<LeaderboardEntry> lbCompleted, List<LeaderboardEntry> lbLevel) {
         this.playerLevel  = level;
         this.playerXp     = xp;
         this.xpToNext     = xpNext;
@@ -540,5 +588,7 @@ public class QuetesScreen extends Screen {
         this.active       = active;
         this.pending      = pending;
         this.groupPending = groupPending;
+        this.lbCompleted  = lbCompleted;
+        this.lbLevel      = lbLevel;
     }
 }

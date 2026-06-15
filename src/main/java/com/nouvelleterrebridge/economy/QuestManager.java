@@ -45,9 +45,10 @@ public class QuestManager {
     }
 
     private static class PlayerData {
-        long                lastRefresh   = 0;
-        List<Quest>         available     = new ArrayList<>();
-        List<ActiveQuest>   active        = new ArrayList<>();
+        long                lastRefresh    = 0;
+        int                 totalCompleted = 0;
+        List<Quest>         available      = new ArrayList<>();
+        List<ActiveQuest>   active         = new ArrayList<>();
         List<PendingReward> pendingRewards = new ArrayList<>();
     }
 
@@ -275,6 +276,8 @@ public class QuestManager {
                 d.pendingRewards.add(buildPending(q));
                 d.active.remove(aq);
             }
+            d.totalCompleted++;
+            PlayerLevelManager.addXp(player, q.rewardXp, server);
             save();
             return null;
         }
@@ -289,6 +292,7 @@ public class QuestManager {
             d.pendingRewards.add(buildPending(q));
             d.active.remove(aq);
         }
+        d.totalCompleted++;
         PlayerLevelManager.addXp(player, q.rewardXp, server);
         save();
         return null;
@@ -396,5 +400,15 @@ public class QuestManager {
         globalGroupLastRefresh = 0;
         save();
         NouvelleTerreBridge.LOGGER.info("[QuestManager] Progression réinitialisée.");
+    }
+
+    /** Top N joueurs par quêtes complétées (name lowercase → count). */
+    public static synchronized List<Map.Entry<String, Integer>> getLeaderboardByCompleted(int limit) {
+        return players.entrySet().stream()
+            .filter(e -> e.getValue().totalCompleted > 0)
+            .sorted((a, b) -> b.getValue().totalCompleted - a.getValue().totalCompleted)
+            .limit(limit)
+            .map(e -> Map.entry(e.getKey(), e.getValue().totalCompleted))
+            .collect(java.util.stream.Collectors.toList());
     }
 }

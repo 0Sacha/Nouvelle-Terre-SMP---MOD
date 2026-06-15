@@ -535,6 +535,15 @@ public class NouvelleTerreBridge implements ModInitializer {
             buf.writeInt(e.getKey());
             buf.writeInt(e.getValue());
         }
+
+        // Classements
+        var topCompleted = QuestManager.getLeaderboardByCompleted(10);
+        buf.writeInt(topCompleted.size());
+        for (var e : topCompleted) { buf.writeString(e.getKey()); buf.writeInt(e.getValue()); }
+
+        var topLevel = PlayerLevelManager.getLeaderboardByLevel(10);
+        buf.writeInt(topLevel.size());
+        for (var e : topLevel) { buf.writeString(e.getKey()); buf.writeInt(e.getValue()); }
     }
 
     private static void writeQuest(PacketByteBuf buf, com.nouvelleterrebridge.economy.Quest q) {

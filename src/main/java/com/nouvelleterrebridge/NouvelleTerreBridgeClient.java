@@ -54,6 +54,9 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
     /** Set to true by DebugHudMixin when F3 debug screen is rendering this frame. */
     public static volatile boolean debugHudActive = false;
 
+    /** Keybinding éditeur HUD — exposé pour affichage dans WikiScreen. */
+    public static KeyBinding hudKey;
+
     @Override
     public void onInitializeClient() {
         ClientConfig.load();
@@ -97,7 +100,7 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
         });
 
         // ── Touche éditeur HUD ────────────────────────────────────────────────
-        KeyBinding hudKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+        hudKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
             "key.nouvelle-terre-bridge.hud_editor",
             GLFW.GLFW_KEY_H,
             "key.categories.nouvelle-terre-bridge"
@@ -204,16 +207,18 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
 
         ClientPlayNetworking.registerGlobalReceiver(QuestNetworking.QUEST_OPEN, (client, handler, buf, responseSender) -> {
             int level = buf.readInt(), xp = buf.readInt(), xpNext = buf.readInt();
-            List<QuetesScreen.QuestData>         av = readQuestList(buf);
-            List<QuetesScreen.ActiveQuestData>   ac = readActiveQuests(buf);
-            List<QuetesScreen.PendingRewardData> pe = readPendingRewards(buf);
-            Map<Integer, Integer>                gp = readIntIntMap(buf);
+            List<QuetesScreen.QuestData>         av  = readQuestList(buf);
+            List<QuetesScreen.ActiveQuestData>   ac  = readActiveQuests(buf);
+            List<QuetesScreen.PendingRewardData> pe  = readPendingRewards(buf);
+            Map<Integer, Integer>                gp  = readIntIntMap(buf);
+            List<QuetesScreen.LeaderboardEntry>  lbC = readLb(buf);
+            List<QuetesScreen.LeaderboardEntry>  lbL = readLb(buf);
             client.execute(() -> {
                 updateQuestWidget(ac);
                 if (client.currentScreen instanceof QuetesScreen s)
-                    s.update(level, xp, xpNext, av, ac, pe, gp);
+                    s.update(level, xp, xpNext, av, ac, pe, gp, lbC, lbL);
                 else
-                    client.setScreen(new QuetesScreen(level, xp, xpNext, av, ac, pe, gp));
+                    client.setScreen(new QuetesScreen(level, xp, xpNext, av, ac, pe, gp, lbC, lbL));
             });
         });
 
@@ -224,15 +229,17 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             boolean ok      = buf.readBoolean();
             String  message = buf.readString();
             int level = buf.readInt(), xp = buf.readInt(), xpNext = buf.readInt();
-            List<QuetesScreen.QuestData>         av = readQuestList(buf);
-            List<QuetesScreen.ActiveQuestData>   ac = readActiveQuests(buf);
-            List<QuetesScreen.PendingRewardData> pe = readPendingRewards(buf);
-            Map<Integer, Integer>                gp = readIntIntMap(buf);
+            List<QuetesScreen.QuestData>         av  = readQuestList(buf);
+            List<QuetesScreen.ActiveQuestData>   ac  = readActiveQuests(buf);
+            List<QuetesScreen.PendingRewardData> pe  = readPendingRewards(buf);
+            Map<Integer, Integer>                gp  = readIntIntMap(buf);
+            List<QuetesScreen.LeaderboardEntry>  lbC = readLb(buf);
+            List<QuetesScreen.LeaderboardEntry>  lbL = readLb(buf);
             int color = ok ? 0xFF2EAD6B : 0xFFBF2040;
             client.execute(() -> {
                 updateQuestWidget(ac);
                 if (client.currentScreen instanceof QuetesScreen s)
-                    s.update(level, xp, xpNext, av, ac, pe, gp);
+                    s.update(level, xp, xpNext, av, ac, pe, gp, lbC, lbL);
                 NotificationHud.push(color, message);
             });
         });
@@ -352,6 +359,13 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
         Map<Integer, Integer> map = new HashMap<>();
         for (int i = 0; i < count; i++) map.put(buf.readInt(), buf.readInt());
         return map;
+    }
+
+    private static List<QuetesScreen.LeaderboardEntry> readLb(PacketByteBuf buf) {
+        int count = buf.readInt();
+        List<QuetesScreen.LeaderboardEntry> list = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) list.add(new QuetesScreen.LeaderboardEntry(buf.readString(), buf.readInt()));
+        return list;
     }
 
     private static void updateQuestWidget(List<QuetesScreen.ActiveQuestData> active) {
