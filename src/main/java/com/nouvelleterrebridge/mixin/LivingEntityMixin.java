@@ -30,9 +30,10 @@ public class LivingEntityMixin {
         String causeTexte = source.getDeathMessage(entite).getString();
 
         Map<String, Object> data = new HashMap<>();
-        data.put("player", pseudo);
+        data.put("player",  pseudo);
+        data.put("uuid",    joueur.getUuidAsString());
         data.put("message", causeTexte);
-        data.put("cause", source.getName());
+        data.put("cause",   source.getName());
 
         EventDispatcher.envoyer("PLAYER_DEATH", data);
     }

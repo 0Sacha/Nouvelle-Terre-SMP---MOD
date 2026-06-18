@@ -6,6 +6,9 @@ import com.nouvelleterrebridge.NouvelleTerreBridge;
 import com.nouvelleterrebridge.market.MarketListing;
 import com.nouvelleterrebridge.market.MarketManager;
 
+import com.google.gson.JsonParser;
+import net.minecraft.server.MinecraftServer;
+
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -18,6 +21,7 @@ import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 /**
  * Envoie les événements du mod vers le bot Discord via HTTP.
@@ -148,6 +152,39 @@ public class EventDispatcher {
     /** Expose le client HTTP partagé pour les autres modules. */
     public static HttpClient getHttpClient() {
         return httpClient;
+    }
+
+    /**
+     * Interroge le bot pour récupérer le nom RP d'un joueur (prenom + nom de personnage).
+     * Endpoint attendu : GET {botBase}/joueur/{uuid}  →  { "nom_rp": "Jean Dupont" }
+     * Si le joueur n'a pas encore de personnage confirmé, le bot répond 404 ou sans champ nom_rp.
+     * Le callback est toujours exécuté sur le thread principal du serveur Minecraft.
+     */
+    public static void fetchNomRP(String uuid, MinecraftServer server, Consumer<String> onSuccess) {
+        String url = getBotBase() + "/joueur/" + uuid;
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .timeout(Duration.ofSeconds(5))
+                .header("X-Secret", config.getSharedSecret())
+                .GET()
+                .build();
+        httpClient.sendAsync(req, HttpResponse.BodyHandlers.ofString())
+                .thenAccept(resp -> {
+                    if (resp.statusCode() != 200) return;
+                    try {
+                        var obj = JsonParser.parseString(resp.body()).getAsJsonObject();
+                        if (!obj.has("nom_rp") || obj.get("nom_rp").isJsonNull()) return;
+                        String nomRP = obj.get("nom_rp").getAsString().trim();
+                        if (nomRP.isEmpty()) return;
+                        server.execute(() -> onSuccess.accept(nomRP));
+                    } catch (Exception e) {
+                        NouvelleTerreBridge.LOGGER.warn("[EventDispatcher] Erreur parsing nom_rp pour {} : {}", uuid, e.getMessage());
+                    }
+                })
+                .exceptionally(e -> {
+                    NouvelleTerreBridge.LOGGER.debug("[EventDispatcher] Nom RP indisponible pour {} : {}", uuid, e.getMessage());
+                    return null;
+                });
     }
 
     /** Retourne la base de l'URL du bot (sans /event). */
