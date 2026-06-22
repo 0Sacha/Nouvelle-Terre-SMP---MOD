@@ -125,6 +125,26 @@ public class FrenchItemNames {
         add("tocsin",        "minecraft:bell");
         add("lanterne",      "minecraft:lantern");
 
+        // ── Cotton Mod ────────────────────────────────────────────────────────
+        add("coton",              "cottonmod:cotton");
+        add("graines coton",      "cottonmod:cotton_seeds");
+        add("fil",                "cottonmod:thread");
+        add("tissu",              "cottonmod:cloth");
+        add("seringue",           "cottonmod:syringe");
+        add("graines aloe",       "cottonmod:aloe_seeds");
+        add("graines camomille",  "cottonmod:chamomile_seeds");
+        add("graines souci",      "cottonmod:calendula_seeds");
+        add("feuille aloe",       "cottonmod:aloe_leaf");
+        add("fleur camomille",    "cottonmod:chamomile_flower");
+        add("fleur souci",        "cottonmod:calendula_flower");
+        add("antiseptique",       "cottonmod:antiseptic");
+        add("gel aloe",           "cottonmod:aloe_gel");
+        add("baume",              "cottonmod:salve");
+        add("remede herbal",      "cottonmod:herbal_medicine");
+        add("bandage",            "cottonmod:bandage");
+        add("kit medical",        "cottonmod:medkit");
+        add("parachute",          "cottonmod:parachute");
+
         // Construire le dictionnaire inverse
         FR_TO_MC.forEach((fr, mc) -> MC_TO_FR.putIfAbsent(mc, fr));
     }

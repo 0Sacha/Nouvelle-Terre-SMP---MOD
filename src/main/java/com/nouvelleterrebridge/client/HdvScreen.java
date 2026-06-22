@@ -92,6 +92,7 @@ public class HdvScreen extends Screen {
         {"nourriture", "Nourriture"},
         {"bois",       "Bois & Blocs"},
         {"outils",     "Outils & Armes"},
+        {"medic",      "Médical"},
         {"divers",     "Divers"},
     };
 
@@ -102,6 +103,7 @@ public class HdvScreen extends Screen {
         CAT_ICONS.put("nourriture", "minecraft:bread");
         CAT_ICONS.put("bois",       "minecraft:oak_log");
         CAT_ICONS.put("outils",     "minecraft:diamond_sword");
+        CAT_ICONS.put("medic",      "cottonmod:bandage");
         CAT_ICONS.put("divers",     "minecraft:ender_eye");
     }
 
@@ -111,6 +113,7 @@ public class HdvScreen extends Screen {
         CAT_KW.put("nourriture", new String[]{"bread","beef","pork","chicken","cod","salmon","apple","carrot","potato","melon","pumpkin","mushroom","wheat","egg","honey","cake","cookie","berry","rabbit","mutton","sugar","milk"});
         CAT_KW.put("bois",       new String[]{"log","wood","plank","stick","fence","door","trapdoor","slab","stair","button","pressure","barrel","bookshelf","sapling","leaves","bamboo","concrete","wool","glass","terracotta","sand","dirt","grass","clay","brick","nether_brick","end_stone","purpur","basalt","blackstone","sandstone","mossy","cobbled","mud","mangrove","cherry","azalea"});
         CAT_KW.put("outils",     new String[]{"pickaxe","axe","shovel","hoe","sword","bow","crossbow","shield","helmet","chestplate","leggings","boots","trident","elytra","armor","shears","flint_and_steel","fishing_rod","spyglass"});
+        CAT_KW.put("medic",      new String[]{"cotton","thread","cloth","aloe","chamomile","calendula","bandage","medkit","salve","herbal_medicine","antiseptic","syringe","aloe_gel","parachute"});
         CAT_KW.put("divers",     new String[]{"book","enchanted_book","paper","name_tag","lead","saddle","firework","ender_eye","ender_pearl","nether_star","nautilus","compass","clock","map","blaze_rod","bottle","potion","experience_bottle","shulker_box","dragon_egg","wither","totem","heart","phantom","turtle","scute","ink","dye","feather","string","gunpowder","slime","magma_cream","ghast","bone","rotten_flesh","leather","blaze_powder"});
     }
 
