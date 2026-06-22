@@ -53,11 +53,12 @@ public class PlayerEvents {
             }
 
             // Envoi de l'événement — le bot fait UPDATE joueurs SET en_ligne=true,
-            // derniere_connexion=NOW() [, premiere_connexion=NOW() si encore nulle]
+            // derniere_connexion=NOW(), shards=? [, premiere_connexion=NOW() si encore nulle]
             Map<String, Object> data = new HashMap<>();
             data.put("player",       pseudo);
             data.put("uuid",         uuid);
             data.put("premiere_mc",  premiereFois);
+            data.put("balance",      LocalEconomy.getInstance().getBalance(pseudo));
             EventDispatcher.envoyer("PLAYER_JOIN", data);
 
             // Envoi de la version mod au client
