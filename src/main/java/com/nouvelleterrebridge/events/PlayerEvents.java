@@ -6,6 +6,7 @@ import com.nouvelleterrebridge.economy.LocalEconomy;
 import com.nouvelleterrebridge.economy.PlaytimeTracker;
 import com.nouvelleterrebridge.http.EventDispatcher;
 import com.nouvelleterrebridge.network.HdvNetworking;
+import net.fabricmc.fabric.api.message.v1.ServerMessageEvents;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -34,6 +35,17 @@ public class PlayerEvents {
 
     public static void register() {
         if (!NouvelleTerreBridge.config.isActiverEvenementJoueur()) return;
+
+        // Chat RP : remplace <YelloX605> par <Colt Trekker> si le nom RP est connu
+        ServerMessageEvents.ALLOW_CHAT_MESSAGE.register((message, sender, params) -> {
+            String nomRP = NouvelleTerreBridge.nomsRP.get(sender.getUuidAsString());
+            if (nomRP == null) return true;
+            String content = message.getContent().getString();
+            sender.getServer().execute(() ->
+                sender.getServer().getPlayerManager().broadcast(
+                    Text.literal("§8<§f" + nomRP + "§8> §f" + content), false));
+            return false;
+        });
 
         // ── Connexion ────────────────────────────────────────────────────────────
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {

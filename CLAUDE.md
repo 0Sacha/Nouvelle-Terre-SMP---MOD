@@ -26,7 +26,7 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `0.x.y-beta` (dans `gradle.properties` → `mod_version`)
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `0.2.23-beta` (URL-encode secret GET + log URL base pour diagnostic)
+- Version actuelle : `0.2.24-beta` (chat RP : <Colt Trekker> remplace <YelloX605> via ALLOW_CHAT_MESSAGE)
 - À chaque rebuild : mettre à jour `mod_version` dans `gradle.properties`, puis `git commit` + `git push`
 
 ---
