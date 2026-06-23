@@ -49,12 +49,17 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Environment(EnvType.CLIENT)
 public class NouvelleTerreBridgeClient implements ClientModInitializer {
 
     /** Set to true by DebugHudMixin when F3 debug screen is rendering this frame. */
     public static volatile boolean debugHudActive = false;
+
+    /** Cache client uuid→nom_rp, peuplé par NT_NOM_RP depuis le serveur. */
+    public static final ConcurrentHashMap<UUID, String> nomsRP = new ConcurrentHashMap<>();
 
     /** Keybinding éditeur HUD — exposé pour affichage dans WikiScreen. */
     public static KeyBinding hudKey;
@@ -113,8 +118,10 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             ServerInfo info = client.getCurrentServerEntry();
             if (info != null) DiscordRPCManager.INSTANCE.onJoin(info.address);
         });
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->
-            DiscordRPCManager.INSTANCE.onLeave());
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            DiscordRPCManager.INSTANCE.onLeave();
+            nomsRP.clear();
+        });
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             DiscordRPCManager.INSTANCE.tick();
@@ -137,6 +144,12 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(HdvNetworking.NT_BALANCE, (client, handler, buf, responseSender) -> {
             int balance = buf.readInt();
             client.execute(() -> BalanceHudOverlay.cachedBalance = balance);
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(HdvNetworking.NT_NOM_RP, (client, handler, buf, responseSender) -> {
+            UUID uuid  = buf.readUuid();
+            String nom = buf.readString();
+            nomsRP.put(uuid, nom);
         });
 
         ClientPlayNetworking.registerGlobalReceiver(HdvNetworking.HDV_OPEN, (client, handler, buf, responseSender) -> {

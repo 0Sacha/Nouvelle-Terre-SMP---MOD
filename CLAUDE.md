@@ -21,7 +21,7 @@ Lit ce fichier automatiquement pour avoir le contexte complet avant de coder.
 # Nécessite Java 17
 ```
 GitHub Action crée une Release automatique à chaque push sur `main`.
-Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueurs doivent installer le JAR Fabric côté client pour le GUI HDV/Bank.
+Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueurs doivent installer le JAR Fabric côté client pour le GUI HDV/Bank/Registre.
 
 ## Convention de version
 - Format : `0.x.y-beta` (dans `gradle.properties` → `mod_version`)
@@ -36,12 +36,14 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 - Toutes les opérations sont instantanées (pas d'HTTP pour le gameplay)
 - Après chaque op, événement async vers le bot pour sync DB Discord
 - `ECONOMY_SALARY` = notification only côté bot (ne pas appeler `db.addShards`, déjà fait via `ECONOMY_REWARD`)
+- `PLAYER_JOIN` inclut `balance` → bot fait `UPDATE joueurs SET shards=? WHERE uuid=?` pour resync au login
 
 ## Architecture marché
 - Annonces : `marche.json` sur le serveur (`MarketManager.java`)
 - `MARKET_SYNC` envoyé au bot 3s après `SERVER_START` et à chaque reconnexion
 - Achat au meilleur prix automatique, peut fractionner sur plusieurs vendeurs
 - `FrenchItemNames.toDisplay()` strip n'importe quel namespace (pas seulement `minecraft:`)
+- Catégories HDV : Tout, Blocs, Matériaux, Outils, Nourriture, Potions, **Médical**, Divers
 
 ## Architecture crédits
 - Crédits : `nouvelle-terre-credits.json` sur le serveur (`LoanManager.java`)
@@ -52,6 +54,22 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 - `LocalEconomy.forceDeduct()` permet de passer en solde négatif pour les pénalités
 - Remboursement : l'emprunteur renvoie le principal au prêteur via `/bank`
 - Pardon : le prêteur peut annuler un crédit sans remboursement
+
+## Architecture noms RP (personnages)
+- Cache serveur : `NouvelleTerreBridge.nomsRP` — `ConcurrentHashMap<String, String>` uuid→nom_rp
+- Peuplé à la connexion via `EventDispatcher.fetchNomRP(uuid, server, callback)`
+- Endpoint bot : `GET {base}/joueur/{uuid}?secret=...` → `{ "nom_rp": "Jean Dupont" }`
+- Si 404 ou pas de personnage confirmé : le cache reste vide, pseudo MC utilisé partout
+- À la déconnexion : entrée supprimée du cache
+- **Tab list** : `ServerPlayerEntityMixin` override `getPlayerListName()` → `"§fNomRP §8(§7pseudo§8)"`
+  + `PlayerListS2CPacket(UPDATE_DISPLAY_NAME)` broadcasté à tous après fetch
+- **Nameplate** (au-dessus de la tête) : `AbstractClientPlayerEntityMixin` override client-side `getDisplayName()`
+  → lit `PlayerListEntry.getDisplayName()` depuis `NetworkHandler` (même texte que tab list)
+- **Chat** : `ServerMessageEvents.ALLOW_CHAT_MESSAGE` — annule le message signé, rebroadcast
+  `§8<§fNomRP§8> §fcontenu` comme message système
+- **Registre** : `EventDispatcher.fetchPersonnages()` → `GET {base}/personnages?secret=...`
+  → `[{ "nom_rp": "...", "pseudo_mc": "...", "en_ligne": bool/int/string }]`
+  Tri : en ligne en premier (point vert), puis alphabétique
 
 ---
 
@@ -68,6 +86,7 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 | `/quetes` | Ouvre le GUI Quêtes |
 | `/quetes refresh` | Recharge quetes-templates.json (op 2) |
 | `/quetes reset` | Réinitialise toute la progression (op 2) |
+| `/registre` | Ouvre le GUI Registre des personnages (screen client Fabric) |
 
 > Toutes les opérations marché (vendre, acheter, retirer) se font **uniquement via `/hdv`**.
 > Virements, crédits et historique se gèrent via `/bank`.
@@ -77,7 +96,9 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Structure des fichiers Java
 ```
 NouvelleTerreBridge.java       → Point d'entrée serveur : init config, events, commands, networking
+                                 + nomsRP : ConcurrentHashMap<String,String> (cache uuid→nom_rp partagé)
 NouvelleTerreBridgeClient.java → Point d'entrée client : récepteurs packets, init HUD
+                                 + récepteur REGISTRE_OPEN → ouvre RegistreScreen
 ModConfig.java                 → Config serveur (config/nouvelle-terre-bridge.json)
                                  Champs : botUrl, sharedSecret, activerEvenementServeur/Joueur, delaiVideFileAttente
 
@@ -89,6 +110,7 @@ commands/
   ConflitCommand.java      → /conflit — déclaration conflit RP
   EventNarratifCommand.java → /evenement — narration (op only)
   QuetesCommand.java       → /quetes (ouvre GUI via QUEST_OPEN), /quetes refresh, /quetes reset
+  RegistreCommand.java     → /registre : appelle fetchPersonnages, envoie REGISTRE_OPEN au client
 
 economy/
   LocalEconomy.java        → Singleton shards.json
@@ -107,17 +129,28 @@ economy/
                              API : load/reload/reset, accept/claim, onMobKilled/onItemHarvested, getQuests/getPlayerProgress/getPlayerCompleted
 
 events/
-  PlayerEvents.java        → JOIN (premier/retour) / LEAVE — dispatch bot + sendBalanceToPlayer à la connexion
+  PlayerEvents.java        → JOIN / LEAVE — dispatch bot, nom RP, chat RP, balance sync
+                             - PLAYER_JOIN inclut balance (resync shards bot)
+                             - fetchNomRP → nomsRP cache + PlayerListS2CPacket UPDATE_DISPLAY_NAME
+                             - ALLOW_CHAT_MESSAGE → cancel signé + rebroadcast <NomRP> msg
+                             - PLAYER_LEAVE → retire du cache + message départ RP
   ServerEvents.java        → SERVER_START / SERVER_STOP / MARKET_SYNC 3s après démarrage
 
 http/
   EventDispatcher.java     → HTTP async vers bot Railway, file d'attente offline
+                             + fetchNomRP() : GET /joueur/{uuid}?secret=... → nom_rp
+                             + fetchPersonnages() : GET /personnages?secret=... → liste personnages
+                             Secret URL-encodé (URLEncoder.encode) pour éviter les chars spéciaux dans l'URI
   EventQueue.java          → Persistance JSON de la file d'attente
 
 mixin/
-  LivingEntityMixin.java   → Intercepte les morts joueurs → event PLAYER_DEATH
-  InGameHudMixin.java      → @Inject InGameHud.render HEAD → reset NouvelleTerreBridgeClient.debugHudActive = false
-  DebugHudMixin.java       → @Inject DebugHud.render HEAD → set debugHudActive = true (détection F3)
+  LivingEntityMixin.java           → Intercepte les morts joueurs → event PLAYER_DEATH
+  InGameHudMixin.java              → @Inject InGameHud.render HEAD → reset debugHudActive = false
+  DebugHudMixin.java               → @Inject DebugHud.render HEAD → set debugHudActive = true (détection F3)
+  ServerPlayerEntityMixin.java     → @Inject getPlayerListName HEAD → retourne "§fNomRP §8(§7pseudo§8)"
+                                     depuis NouvelleTerreBridge.nomsRP (tab list côté serveur)
+  AbstractClientPlayerEntityMixin.java → @Inject getDisplayName HEAD (CLIENT) → lit PlayerListEntry.getDisplayName()
+                                         pour que le nameplate au-dessus de la tête affiche le nom RP
 
 network/
   HdvNetworking.java       → Canaux : HDV_OPEN / HDV_ACTION / HDV_RESULT / NT_VERSION / NT_BALANCE
@@ -127,13 +160,19 @@ network/
                                        TRANSFER(3) / RECURRING_CREATE(4) / RECURRING_CANCEL(5)
   QuestNetworking.java     → Canaux : QUEST_OPEN (S→C, ouvre GUI) / QUEST_ACTION (C→S) / QUEST_RESULT (S→C)
                              Actions : ACTION_ACCEPT(0) / ACTION_CLAIM(1)
+  RegistreNetworking.java  → Canal : REGISTRE_OPEN (S→C, ouvre RegistreScreen)
 
 client/                    ← @Environment(CLIENT) uniquement
   HdvScreen.java           → Screen marché : 4 onglets (Marché / Vendre / Mon Shop / Boutiques)
                              Chip solde haut-droit → BANK_REQUEST → ouvre BankScreen
+                             Catégorie "Médical" : items cottonmod (coton, bandage, medkit, plantes...)
   BankScreen.java          → Screen banque : 5 onglets (Compte / Economie / Classement / Credits / Virements)
   QuetesScreen.java        → Screen quêtes : 2 onglets (Disponibles / Mes Quêtes), PW=420 PH=300,
                              cards avec barre de progression, boutons Accepter/Réclamer
+  RegistreScreen.java      → Screen registre personnages : liste scrollable, PW_MAX=400 PH_MAX=300
+                             record PersonnageData(String nomRp, String pseudoMc, boolean enLigne)
+                             Tri : en ligne en premier (point vert), puis alphabétique
+                             Row : point coloré + nomRp (blanc) + "— pseudoMc" (gris) + "● en ligne" si online
   BalanceHudOverlay.java   → Contient uniquement `cachedBalance` statique (int, init -1)
                              Mis à jour par NT_BALANCE / HDV_OPEN / HDV_RESULT. Plus de rendering ici.
   HudEditorScreen.java     → Éditeur HUD (touche H). Deux modes :
@@ -178,6 +217,8 @@ market/
   MarketListing.java       → POJO annonce (id, seller, item, quantity, pricePerUnit)
   MarketActions.java       → Logique métier : buy / sellByItemId / withdraw
   FrenchItemNames.java     → Dictionnaire FR↔MC + toDisplay() (strip namespace)
+                             Inclut items cottonmod : coton, fil, tissu, aloé, camomille, calendula,
+                             bandage, medkit, parachute, etc. (namespace cottonmod:*)
 ```
 
 ---
@@ -214,6 +255,26 @@ quests[]   : int count → (int id, string type, string target, int qty, int rew
 accepted[] : int count → (int questId, int progress) × count
 completed[]: int count → int questId × count
 ```
+
+### Registre
+```
+REGISTRE_OPEN : int count → (string nomRp, string pseudoMc, bool enLigne) × count
+```
+
+---
+
+## Événements bot Discord
+
+| Type | Champs data | Description |
+|---|---|---|
+| `PLAYER_JOIN` | player, uuid, premiere_mc, **balance** | Connexion — bot UPDATE shards + en_ligne |
+| `PLAYER_LEAVE` | player, uuid, nom_rp? | Déconnexion — bot UPDATE en_ligne=false |
+| `PLAYER_DEATH` | player, uuid, cause | Mort joueur |
+| `ECONOMY_REWARD` | player, amount, reason | Gain ◆ (kill, playtime) |
+| `ECONOMY_TRANSFER` | from, to, amount | Virement |
+| `ECONOMY_ADMIN` | admin, target, action, amount | Admin give/take |
+| `MARKET_SYNC` | listings[] | Resync marché complet |
+| `SERVER_START` / `SERVER_STOP` | — | Démarrage/arrêt |
 
 ---
 
@@ -259,6 +320,15 @@ completed[]: int count → int questId × count
 - `HudEditorScreen.removed()` → `saveAll()` → `ClientConfig.save()` — sauvegarde à la fermeture uniquement
 - Touche H par défaut (catégorie `key.categories.nouvelle-terre-bridge`), rebindable dans Contrôles
 - ModMenu = `modCompileOnly "com.terraformersmc:modmenu:7.2.2"` — entrypoint `modmenu` dans `fabric.mod.json`
+
+## Système noms RP — décisions techniques
+
+- **Signed chat 1.20.1** : `GameProfile.getName()` ne peut pas être changé → seule solution = `ALLOW_CHAT_MESSAGE` cancel + rebroadcast system message
+- **Tab list** : `ServerPlayerEntityMixin.getPlayerListName()` lit le cache `nomsRP` côté serveur
+  → `PlayerListS2CPacket(UPDATE_DISPLAY_NAME)` broadcast immédiat après fetchNomRP pour que tous les clients voient le nom RP
+- **Nameplate** : `entity.getDisplayName()` est appelé côté client (pas via tab list) → `AbstractClientPlayerEntityMixin` nécessaire pour intercepter et retourner `PlayerListEntry.getDisplayName()`
+- **Compatibilité "Styled Player List"** : ce mod client lit `GameProfile.getName()` directement — incompatible avec le renommage tab list. Avec le mixin client `AbstractClientPlayerEntityMixin`, le nameplate fonctionne indépendamment.
+- `URLEncoder.encode(secret, UTF_8)` dans les query params GET — les chars spéciaux (`=`, `+`, etc.) cassent `URI.create()` sinon
 
 ## Couleurs communes (HdvScreen / BankScreen)
 ```java

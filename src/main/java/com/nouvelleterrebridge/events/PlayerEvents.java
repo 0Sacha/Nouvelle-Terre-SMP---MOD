@@ -20,6 +20,7 @@ import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Écouteurs pour les événements liés aux joueurs (connexion, déconnexion).
@@ -81,14 +82,30 @@ public class PlayerEvents {
             versionBuf.writeString(version);
             ServerPlayNetworking.send(joueur, HdvNetworking.NT_VERSION, versionBuf);
 
-            // Récupération du nom RP → nickname + broadcast chat serveur
+            // Envoyer les noms RP des joueurs déjà en ligne au client qui rejoint
+            for (Map.Entry<String, String> e : NouvelleTerreBridge.nomsRP.entrySet()) {
+                try {
+                    PacketByteBuf buf = PacketByteBufs.create();
+                    buf.writeUuid(UUID.fromString(e.getKey()));
+                    buf.writeString(e.getValue());
+                    ServerPlayNetworking.send(joueur, HdvNetworking.NT_NOM_RP, buf);
+                } catch (IllegalArgumentException ignored) {}
+            }
+
+            // Récupération du nom RP → cache serveur + broadcast à tous les clients
             EventDispatcher.fetchNomRP(uuid, server, nomRP -> {
                 NouvelleTerreBridge.nomsRP.put(uuid, nomRP);
 
-                // Le cache peuplé suffit : le mixin ServerPlayerEntityMixin retourne
-                // le nom RP depuis nomsRP quand getPlayerListName() est appelé.
-                // On envoie un UPDATE_DISPLAY_NAME pour que tous les clients voient
-                // immédiatement le nouveau nom dans la tab list et au-dessus de la tête.
+                // Paquet dédié → cache client → mixin AbstractClientPlayerEntityMixin
+                UUID uuidObj = UUID.fromString(uuid);
+                for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
+                    PacketByteBuf buf = PacketByteBufs.create();
+                    buf.writeUuid(uuidObj);
+                    buf.writeString(nomRP);
+                    ServerPlayNetworking.send(p, HdvNetworking.NT_NOM_RP, buf);
+                }
+
+                // Tab list vanilla
                 ServerPlayerEntity online = server.getPlayerManager().getPlayer(pseudo);
                 if (online != null) {
                     server.getPlayerManager().sendToAll(new PlayerListS2CPacket(
