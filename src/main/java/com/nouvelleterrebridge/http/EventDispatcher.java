@@ -10,7 +10,9 @@ import com.google.gson.JsonParser;
 import net.minecraft.server.MinecraftServer;
 
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
+import java.nio.charset.StandardCharsets;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
@@ -161,7 +163,7 @@ public class EventDispatcher {
      * Le callback est toujours exécuté sur le thread principal du serveur Minecraft.
      */
     public static void fetchNomRP(String uuid, MinecraftServer server, Consumer<String> onSuccess) {
-        String url = getBotBase() + "/joueur/" + uuid + "?secret=" + config.getSharedSecret();
+        String url = getBotBase() + "/joueur/" + uuid + "?secret=" + URLEncoder.encode(config.getSharedSecret(), StandardCharsets.UTF_8);
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .timeout(Duration.ofSeconds(5))
@@ -197,7 +199,10 @@ public class EventDispatcher {
      * → [ { "nom_rp": "Jean Dupont", "pseudo_mc": "Steve", "en_ligne": true }, ... ]
      */
     public static void fetchPersonnages(MinecraftServer server, Consumer<List<Map<String, Object>>> onSuccess) {
-        String url = getBotBase() + "/personnages?secret=" + config.getSharedSecret();
+        String encodedSecret = URLEncoder.encode(config.getSharedSecret(), StandardCharsets.UTF_8);
+        String base = getBotBase();
+        NouvelleTerreBridge.LOGGER.info("[EventDispatcher] GET {}/personnages", base);
+        String url = base + "/personnages?secret=" + encodedSecret;
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .timeout(Duration.ofSeconds(5))
