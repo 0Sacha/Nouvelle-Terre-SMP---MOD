@@ -11,7 +11,8 @@
   ],
   "client": [
     "InGameHudMixin",
-    "DebugHudMixin"
+    "DebugHudMixin",
+    "AbstractClientPlayerEntityMixin"
   ],
   "injectors": {
     "defaultRequire": 1
