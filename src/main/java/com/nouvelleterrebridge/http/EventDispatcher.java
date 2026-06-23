@@ -161,7 +161,7 @@ public class EventDispatcher {
      * Le callback est toujours exécuté sur le thread principal du serveur Minecraft.
      */
     public static void fetchNomRP(String uuid, MinecraftServer server, Consumer<String> onSuccess) {
-        String url = getBotBase() + "/joueur/" + uuid;
+        String url = getBotBase() + "/joueur/" + uuid + "?secret=" + config.getSharedSecret();
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .timeout(Duration.ofSeconds(5))
@@ -197,7 +197,7 @@ public class EventDispatcher {
      * → [ { "nom_rp": "Jean Dupont", "pseudo_mc": "Steve", "en_ligne": true }, ... ]
      */
     public static void fetchPersonnages(MinecraftServer server, Consumer<List<Map<String, Object>>> onSuccess) {
-        String url = getBotBase() + "/personnages";
+        String url = getBotBase() + "/personnages?secret=" + config.getSharedSecret();
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .timeout(Duration.ofSeconds(5))
@@ -221,7 +221,15 @@ public class EventDispatcher {
                             Map<String, Object> entry = new HashMap<>();
                             entry.put("nom_rp",    obj.has("nom_rp")    && !obj.get("nom_rp").isJsonNull()    ? obj.get("nom_rp").getAsString()    : "Inconnu");
                             entry.put("pseudo_mc", obj.has("pseudo_mc") && !obj.get("pseudo_mc").isJsonNull() ? obj.get("pseudo_mc").getAsString() : "");
-                            entry.put("en_ligne",  obj.has("en_ligne")  && obj.get("en_ligne").getAsBoolean());
+                            boolean enLigne = false;
+                            if (obj.has("en_ligne") && !obj.get("en_ligne").isJsonNull()) {
+                                var el2 = obj.get("en_ligne");
+                                enLigne = el2.isJsonPrimitive() && (
+                                    (el2.getAsJsonPrimitive().isBoolean() && el2.getAsBoolean()) ||
+                                    (el2.getAsJsonPrimitive().isNumber()  && el2.getAsInt() != 0) ||
+                                    (el2.getAsJsonPrimitive().isString()  && el2.getAsString().equalsIgnoreCase("true")));
+                            }
+                            entry.put("en_ligne", enLigne);
                             list.add(entry);
                         }
                         server.execute(() -> onSuccess.accept(list));
