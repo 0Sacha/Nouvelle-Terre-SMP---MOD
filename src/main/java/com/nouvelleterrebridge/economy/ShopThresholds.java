@@ -11,6 +11,7 @@ import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -43,17 +44,46 @@ public class ShopThresholds {
         } catch (Exception e) {
             NouvelleTerreBridge.LOGGER.error("[ShopThresholds] Erreur lecture : {}", e.getMessage());
         }
+        boolean changed = false;
+        for (Map.Entry<String, Entry> def : getDefaults().entrySet()) {
+            if (!thresholds.containsKey(def.getKey())) {
+                thresholds.put(def.getKey(), def.getValue());
+                changed = true;
+            }
+        }
+        if (changed) {
+            save();
+            NouvelleTerreBridge.LOGGER.info("[ShopThresholds] Nouvelles entrées par défaut fusionnées dans seuils-shop.json.");
+        }
     }
 
     private static void createExample() {
-        thresholds = new HashMap<>();
-        Entry ex = new Entry();
-        ex.seuil    = 576;
-        ex.prix     = 2;
-        ex.quantite = 64;
-        thresholds.put("minecraft:oak_log", ex);
+        thresholds = new LinkedHashMap<>(getDefaults());
         save();
         NouvelleTerreBridge.LOGGER.info("[ShopThresholds] Fichier exemple créé : seuils-shop.json");
+    }
+
+    private static Map<String, Entry> getDefaults() {
+        Map<String, Entry> d = new LinkedHashMap<>();
+        put(d, "minecraft:oak_log",          576,  2, 64);
+        put(d, "cottonmod:cotton",            256,  3, 32);
+        put(d, "cottonmod:aloe_leaf",          64,  5, 16);
+        put(d, "cottonmod:chamomile_flower",   64,  5, 16);
+        put(d, "cottonmod:calendula_flower",   64,  5, 16);
+        put(d, "cottonmod:thread",            128,  5, 16);
+        put(d, "cottonmod:cloth",              64,  8,  8);
+        put(d, "cottonmod:bandage",            32, 12,  8);
+        put(d, "cottonmod:medkit",             16, 25,  4);
+        put(d, "cottonmod:antiseptic",         32, 10,  8);
+        put(d, "cottonmod:aloe_gel",           32,  8,  8);
+        put(d, "cottonmod:salve",              16, 15,  4);
+        put(d, "cottonmod:herbal_medicine",    16, 20,  4);
+        return d;
+    }
+
+    private static void put(Map<String, Entry> map, String id, long seuil, int prix, int quantite) {
+        Entry e = new Entry(); e.seuil = seuil; e.prix = prix; e.quantite = quantite;
+        map.put(id, e);
     }
 
     public static synchronized void save() {
