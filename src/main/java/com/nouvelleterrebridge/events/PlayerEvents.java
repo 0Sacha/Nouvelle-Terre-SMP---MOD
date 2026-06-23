@@ -12,13 +12,10 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.network.PacketByteBuf;
-import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 
-import java.util.EnumSet;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -92,11 +89,11 @@ public class PlayerEvents {
                 } catch (IllegalArgumentException ignored) {}
             }
 
-            // Récupération du nom RP → cache serveur + broadcast à tous les clients
+            // Récupération du nom RP → cache + scoreboard team + broadcast clients
             EventDispatcher.fetchNomRP(uuid, server, nomRP -> {
                 NouvelleTerreBridge.nomsRP.put(uuid, nomRP);
 
-                // Paquet dédié → cache client → mixin AbstractClientPlayerEntityMixin
+                // Paquet dédié → cache client → mixin Entity.getDisplayName (nameplate)
                 UUID uuidObj = UUID.fromString(uuid);
                 for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
                     PacketByteBuf buf = PacketByteBufs.create();
@@ -105,13 +102,16 @@ public class PlayerEvents {
                     ServerPlayNetworking.send(p, HdvNetworking.NT_NOM_RP, buf);
                 }
 
-                // Tab list vanilla
-                ServerPlayerEntity online = server.getPlayerManager().getPlayer(pseudo);
-                if (online != null) {
-                    server.getPlayerManager().sendToAll(new PlayerListS2CPacket(
-                        EnumSet.of(PlayerListS2CPacket.Action.UPDATE_DISPLAY_NAME),
-                        List.of(online)));
-                }
+                // Scoreboard team → tab list : "§fNomRP §8(§7pseudo§8)"
+                // PlayerListEntry.displayName doit rester null pour que Minecraft utilise le team prefix/suffix
+                var scoreboard = server.getScoreboard();
+                var teamName   = "nt_" + uuid.replace("-", "").substring(0, 8);
+                var oldTeam    = scoreboard.getTeam(teamName);
+                if (oldTeam != null) scoreboard.removeTeam(oldTeam);
+                var team = scoreboard.addTeam(teamName);
+                team.setPrefix(Text.literal("§f" + nomRP + " §8(§7"));
+                team.setSuffix(Text.literal("§8)"));
+                scoreboard.addPlayerToTeam(pseudo, team);
 
                 server.getPlayerManager().broadcast(
                     Text.literal("§8[RP] §f" + nomRP + " §8(§7" + pseudo + "§8) §7est arrivé sur le serveur."),
@@ -126,6 +126,12 @@ public class PlayerEvents {
             String uuid   = joueur.getUuidAsString();
 
             PlaytimeTracker.onPlayerLeave(joueur.getUuid());
+
+            // Nettoyage scoreboard team
+            var scoreboard = server.getScoreboard();
+            var teamName   = "nt_" + uuid.replace("-", "").substring(0, 8);
+            var team       = scoreboard.getTeam(teamName);
+            if (team != null) scoreboard.removeTeam(team);
 
             String nomRP = NouvelleTerreBridge.nomsRP.remove(uuid);
             if (nomRP != null) {
