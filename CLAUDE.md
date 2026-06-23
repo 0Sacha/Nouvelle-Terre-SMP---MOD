@@ -26,7 +26,7 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `0.x.y-beta` (dans `gradle.properties` → `mod_version`)
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `0.2.19-beta` (balance envoyée dans PLAYER_JOIN pour sync shards bot)
+- Version actuelle : `0.2.20-beta` (nickname RP tab list + nameplate, /registre)
 - À chaque rebuild : mettre à jour `mod_version` dans `gradle.properties`, puis `git commit` + `git push`
 
 ---

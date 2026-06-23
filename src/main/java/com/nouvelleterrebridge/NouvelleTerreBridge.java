@@ -9,6 +9,7 @@ import com.nouvelleterrebridge.commands.LierCommand;
 import com.nouvelleterrebridge.commands.PayCommand;
 import com.nouvelleterrebridge.commands.ProductionCommand;
 import com.nouvelleterrebridge.commands.QuetesCommand;
+import com.nouvelleterrebridge.commands.RegistreCommand;
 import com.nouvelleterrebridge.commands.WikiCommand;
 import com.nouvelleterrebridge.economy.FirstJoinTracker;
 import com.nouvelleterrebridge.economy.PlayerLevelManager;
@@ -55,6 +56,7 @@ import org.slf4j.LoggerFactory;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 public class NouvelleTerreBridge implements ModInitializer {
@@ -63,6 +65,9 @@ public class NouvelleTerreBridge implements ModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     public static ModConfig config;
+
+    /** Cache uuid → nom RP, partagé entre PlayerEvents et le mixin de nommage. */
+    public static final ConcurrentHashMap<String, String> nomsRP = new ConcurrentHashMap<>();
 
     @Override
     public void onInitialize() {
@@ -117,6 +122,7 @@ public class NouvelleTerreBridge implements ModInitializer {
             EventNarratifCommand.register(dispatcher);
             ProductionCommand.register(dispatcher);
             QuetesCommand.register(dispatcher);
+            RegistreCommand.register(dispatcher);
             WikiCommand.register(dispatcher);
         });
 

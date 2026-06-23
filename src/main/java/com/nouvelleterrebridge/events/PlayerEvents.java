@@ -11,12 +11,14 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.network.PacketByteBuf;
+import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 
+import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Écouteurs pour les événements liés aux joueurs (connexion, déconnexion).
@@ -29,9 +31,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * – La whitelist est gérée exclusivement par le bot via RCON ; le mod ne l'effleure pas.
  */
 public class PlayerEvents {
-
-    // Cache uuid → nom RP pour l'afficher au départ sans refaire une requête HTTP
-    private static final Map<String, String> nomsRP = new ConcurrentHashMap<>();
 
     public static void register() {
         if (!NouvelleTerreBridge.config.isActiverEvenementJoueur()) return;
@@ -70,9 +69,21 @@ public class PlayerEvents {
             versionBuf.writeString(version);
             ServerPlayNetworking.send(joueur, HdvNetworking.NT_VERSION, versionBuf);
 
-            // Récupération du nom RP → broadcast dans le chat serveur
+            // Récupération du nom RP → nickname + broadcast chat serveur
             EventDispatcher.fetchNomRP(uuid, server, nomRP -> {
-                nomsRP.put(uuid, nomRP);
+                NouvelleTerreBridge.nomsRP.put(uuid, nomRP);
+
+                // Le cache peuplé suffit : le mixin ServerPlayerEntityMixin retourne
+                // le nom RP depuis nomsRP quand getPlayerListName() est appelé.
+                // On envoie un UPDATE_DISPLAY_NAME pour que tous les clients voient
+                // immédiatement le nouveau nom dans la tab list et au-dessus de la tête.
+                ServerPlayerEntity online = server.getPlayerManager().getPlayer(pseudo);
+                if (online != null) {
+                    server.getPlayerManager().sendToAll(new PlayerListS2CPacket(
+                        EnumSet.of(PlayerListS2CPacket.Action.UPDATE_DISPLAY_NAME),
+                        List.of(online)));
+                }
+
                 server.getPlayerManager().broadcast(
                     Text.literal("§8[RP] §f" + nomRP + " §8(§7" + pseudo + "§8) §7est arrivé sur le serveur."),
                     false);
@@ -87,8 +98,7 @@ public class PlayerEvents {
 
             PlaytimeTracker.onPlayerLeave(joueur.getUuid());
 
-            // Affiche le nom RP dans le chat si disponible, puis libère le cache
-            String nomRP = nomsRP.remove(uuid);
+            String nomRP = NouvelleTerreBridge.nomsRP.remove(uuid);
             if (nomRP != null) {
                 server.getPlayerManager().broadcast(
                     Text.literal("§8[RP] §f" + nomRP + " §8(§7" + pseudo + "§8) §7a quitté le serveur."),

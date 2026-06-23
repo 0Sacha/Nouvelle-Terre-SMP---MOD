@@ -7,6 +7,7 @@ import com.nouvelleterrebridge.client.DiscordRPCManager;
 import com.nouvelleterrebridge.client.HdvScreen;
 import com.nouvelleterrebridge.client.HudEditorScreen;
 import com.nouvelleterrebridge.client.NotificationHud;
+import com.nouvelleterrebridge.client.RegistreScreen;
 import com.nouvelleterrebridge.client.hud.BalanceWidget;
 import com.nouvelleterrebridge.client.hud.BiomeWidget;
 import com.nouvelleterrebridge.client.hud.CoordsWidget;
@@ -22,6 +23,7 @@ import com.nouvelleterrebridge.client.WikiScreen;
 import com.nouvelleterrebridge.network.BankNetworking;
 import com.nouvelleterrebridge.network.HdvNetworking;
 import com.nouvelleterrebridge.network.QuestNetworking;
+import com.nouvelleterrebridge.network.RegistreNetworking;
 import com.nouvelleterrebridge.network.WikiNetworking;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.api.EnvType;
@@ -224,6 +226,14 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
 
         ClientPlayNetworking.registerGlobalReceiver(WikiNetworking.WIKI_OPEN, (client, handler, buf, responseSender) ->
             client.execute(() -> client.setScreen(new WikiScreen())));
+
+        ClientPlayNetworking.registerGlobalReceiver(RegistreNetworking.REGISTRE_OPEN, (client, handler, buf, responseSender) -> {
+            int count = buf.readInt();
+            List<RegistreScreen.PersonnageData> list = new ArrayList<>(count);
+            for (int i = 0; i < count; i++)
+                list.add(new RegistreScreen.PersonnageData(buf.readString(), buf.readString(), buf.readBoolean()));
+            client.execute(() -> client.setScreen(new RegistreScreen(list)));
+        });
 
         ClientPlayNetworking.registerGlobalReceiver(QuestNetworking.QUEST_RESULT, (client, handler, buf, responseSender) -> {
             boolean ok      = buf.readBoolean();

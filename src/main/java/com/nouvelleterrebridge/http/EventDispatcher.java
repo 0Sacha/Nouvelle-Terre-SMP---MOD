@@ -187,6 +187,49 @@ public class EventDispatcher {
                 });
     }
 
+    /**
+     * Récupère la liste de tous les personnages confirmés depuis le bot.
+     * Endpoint attendu : GET {botBase}/personnages
+     * → [ { "nom_rp": "Jean Dupont", "pseudo_mc": "Steve", "en_ligne": true }, ... ]
+     */
+    public static void fetchPersonnages(MinecraftServer server, Consumer<List<Map<String, Object>>> onSuccess) {
+        String url = getBotBase() + "/personnages";
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .timeout(Duration.ofSeconds(5))
+                .header("X-Secret", config.getSharedSecret())
+                .GET()
+                .build();
+        httpClient.sendAsync(req, HttpResponse.BodyHandlers.ofString())
+                .thenAccept(resp -> {
+                    if (resp.statusCode() != 200) {
+                        server.execute(() -> onSuccess.accept(new ArrayList<>()));
+                        return;
+                    }
+                    try {
+                        var arr = JsonParser.parseString(resp.body()).getAsJsonArray();
+                        List<Map<String, Object>> list = new ArrayList<>();
+                        for (var el : arr) {
+                            var obj = el.getAsJsonObject();
+                            Map<String, Object> entry = new HashMap<>();
+                            entry.put("nom_rp",    obj.has("nom_rp")    && !obj.get("nom_rp").isJsonNull()    ? obj.get("nom_rp").getAsString()    : "Inconnu");
+                            entry.put("pseudo_mc", obj.has("pseudo_mc") && !obj.get("pseudo_mc").isJsonNull() ? obj.get("pseudo_mc").getAsString() : "");
+                            entry.put("en_ligne",  obj.has("en_ligne")  && obj.get("en_ligne").getAsBoolean());
+                            list.add(entry);
+                        }
+                        server.execute(() -> onSuccess.accept(list));
+                    } catch (Exception e) {
+                        NouvelleTerreBridge.LOGGER.warn("[EventDispatcher] Erreur parsing /personnages : {}", e.getMessage());
+                        server.execute(() -> onSuccess.accept(new ArrayList<>()));
+                    }
+                })
+                .exceptionally(e -> {
+                    NouvelleTerreBridge.LOGGER.warn("[EventDispatcher] Registre indisponible : {}", e.getMessage());
+                    server.execute(() -> onSuccess.accept(new ArrayList<>()));
+                    return null;
+                });
+    }
+
     /** Retourne la base de l'URL du bot (sans /event). */
     public static String getBotBase() {
         String url = config.getBotUrl();

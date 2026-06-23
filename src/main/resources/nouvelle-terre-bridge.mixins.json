@@ -6,7 +6,8 @@
   "mixins": [
     "LivingEntityMixin",
     "MobDropMixin",
-    "EntityDropMixin"
+    "EntityDropMixin",
+    "ServerPlayerEntityMixin"
   ],
   "client": [
     "InGameHudMixin",
