@@ -10,6 +10,7 @@ import com.nouvelleterrebridge.commands.PayCommand;
 import com.nouvelleterrebridge.commands.ProductionCommand;
 import com.nouvelleterrebridge.commands.QuetesCommand;
 import com.nouvelleterrebridge.commands.RegistreCommand;
+import com.nouvelleterrebridge.network.RegistreNetworking;
 import com.nouvelleterrebridge.commands.WikiCommand;
 import com.nouvelleterrebridge.economy.FirstJoinTracker;
 import com.nouvelleterrebridge.economy.PlayerLevelManager;
@@ -129,6 +130,7 @@ public class NouvelleTerreBridge implements ModInitializer {
         registerHdvNetworking();
         registerBankNetworking();
         registerQuestNetworking();
+        registerRegistreNetworking();
 
         // Envoie le solde au joueur dès qu'il est en jeu + refresh pool quêtes
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
@@ -550,6 +552,48 @@ public class NouvelleTerreBridge implements ModInitializer {
         var topLevel = PlayerLevelManager.getLeaderboardByLevel(10);
         buf.writeInt(topLevel.size());
         for (var e : topLevel) { buf.writeString(e.getKey()); buf.writeInt(e.getValue()); }
+    }
+
+    // ── Registre networking ──────────────────────────────────────────────────
+
+    private void registerRegistreNetworking() {
+        ServerPlayNetworking.registerGlobalReceiver(RegistreNetworking.REGISTRE_DETAIL_REQUEST,
+            (server, player, handler, buf, responseSender) -> {
+                String pseudo = buf.readString();
+                EventDispatcher.fetchPersonnageDetail(pseudo, server, detail -> {
+                    PacketByteBuf resp = PacketByteBufs.create();
+                    if (detail == null) {
+                        resp.writeBoolean(false);
+                        ServerPlayNetworking.send(player, RegistreNetworking.REGISTRE_DETAIL, resp);
+                        return;
+                    }
+                    resp.writeBoolean(true);
+                    resp.writeString(sVal(detail, "nom_rp"));
+                    resp.writeString(sVal(detail, "pseudo_mc"));
+                    resp.writeBoolean(bVal(detail, "en_ligne"));
+                    resp.writeString(sVal(detail, "metier"));
+                    resp.writeInt(iVal(detail, "age"));
+                    resp.writeString(sVal(detail, "origine"));
+                    resp.writeString(sVal(detail, "specialite"));
+                    resp.writeString(sVal(detail, "traits"));
+                    resp.writeString(sVal(detail, "passe"));
+                    resp.writeString(sVal(detail, "description_physique"));
+                    resp.writeString(sVal(detail, "description_personnage"));
+                    resp.writeString(sVal(detail, "objectifs"));
+                    resp.writeString(sVal(detail, "citation"));
+                    ServerPlayNetworking.send(player, RegistreNetworking.REGISTRE_DETAIL, resp);
+                });
+            });
+    }
+
+    private static String sVal(Map<String, Object> m, String k) {
+        Object v = m.get(k); return v != null ? v.toString() : "";
+    }
+    private static boolean bVal(Map<String, Object> m, String k) {
+        Object v = m.get(k); return v instanceof Boolean b && b;
+    }
+    private static int iVal(Map<String, Object> m, String k) {
+        Object v = m.get(k); return v instanceof Number n ? n.intValue() : 0;
     }
 
     private static void writeQuest(PacketByteBuf buf, com.nouvelleterrebridge.economy.Quest q) {

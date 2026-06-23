@@ -248,6 +248,21 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             client.execute(() -> client.setScreen(new RegistreScreen(list)));
         });
 
+        ClientPlayNetworking.registerGlobalReceiver(RegistreNetworking.REGISTRE_DETAIL, (client, handler, buf, responseSender) -> {
+            boolean ok = buf.readBoolean();
+            if (!ok) {
+                client.execute(() -> { if (client.currentScreen instanceof RegistreScreen s) s.onDetailError(); });
+                return;
+            }
+            var detail = new RegistreScreen.DetailData(
+                buf.readString(), buf.readString(), buf.readBoolean(),
+                buf.readString(), buf.readInt(),    buf.readString(),
+                buf.readString(), buf.readString(), buf.readString(),
+                buf.readString(), buf.readString(), buf.readString(), buf.readString()
+            );
+            client.execute(() -> { if (client.currentScreen instanceof RegistreScreen s) s.onDetailReceived(detail); });
+        });
+
         ClientPlayNetworking.registerGlobalReceiver(QuestNetworking.QUEST_RESULT, (client, handler, buf, responseSender) -> {
             boolean ok      = buf.readBoolean();
             String  message = buf.readString();

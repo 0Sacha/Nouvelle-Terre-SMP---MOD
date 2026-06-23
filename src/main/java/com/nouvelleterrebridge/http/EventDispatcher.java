@@ -250,6 +250,74 @@ public class EventDispatcher {
                 });
     }
 
+    /**
+     * Récupère la fiche complète d'un personnage.
+     * Endpoint attendu : GET {botBase}/personnages/{pseudo}
+     * → { nom_rp, pseudo_mc, en_ligne, metier, age, origine, specialite,
+     *     traits, passe, description_physique, description_personnage, objectifs, citation }
+     * Callback appelé sur le thread principal du serveur avec null en cas d'erreur.
+     */
+    public static void fetchPersonnageDetail(String pseudo, MinecraftServer server, Consumer<Map<String, Object>> onResult) {
+        String encodedPseudo = URLEncoder.encode(pseudo, StandardCharsets.UTF_8);
+        String encodedSecret = URLEncoder.encode(config.getSharedSecret(), StandardCharsets.UTF_8);
+        String url = getBotBase() + "/personnages/" + encodedPseudo + "?secret=" + encodedSecret;
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .timeout(Duration.ofSeconds(5))
+                .header("X-Secret", config.getSharedSecret())
+                .GET()
+                .build();
+        httpClient.sendAsync(req, HttpResponse.BodyHandlers.ofString())
+                .thenAccept(resp -> {
+                    if (resp.statusCode() != 200) {
+                        NouvelleTerreBridge.LOGGER.warn("[EventDispatcher] /personnages/{} → HTTP {}", pseudo, resp.statusCode());
+                        server.execute(() -> onResult.accept(null));
+                        return;
+                    }
+                    try {
+                        var obj = JsonParser.parseString(resp.body()).getAsJsonObject();
+                        Map<String, Object> d = new HashMap<>();
+                        d.put("nom_rp",                  jsStr(obj, "nom_rp", ""));
+                        d.put("pseudo_mc",               jsStr(obj, "pseudo_mc", pseudo));
+                        d.put("en_ligne",                jsBool(obj, "en_ligne"));
+                        d.put("metier",                  jsStr(obj, "metier", ""));
+                        d.put("age",                     jsInt(obj,  "age",   0));
+                        d.put("origine",                 jsStr(obj, "origine", ""));
+                        d.put("specialite",              jsStr(obj, "specialite", ""));
+                        d.put("traits",                  jsStr(obj, "traits", ""));
+                        d.put("passe",                   jsStr(obj, "passe", ""));
+                        d.put("description_physique",    jsStr(obj, "description_physique", ""));
+                        d.put("description_personnage",  jsStr(obj, "description_personnage", ""));
+                        d.put("objectifs",               jsStr(obj, "objectifs", ""));
+                        d.put("citation",                jsStr(obj, "citation", ""));
+                        server.execute(() -> onResult.accept(d));
+                    } catch (Exception e) {
+                        NouvelleTerreBridge.LOGGER.warn("[EventDispatcher] Erreur parsing /personnages/{} : {}", pseudo, e.getMessage());
+                        server.execute(() -> onResult.accept(null));
+                    }
+                })
+                .exceptionally(e -> {
+                    NouvelleTerreBridge.LOGGER.warn("[EventDispatcher] Detail indisponible pour {} : {}", pseudo, e.getMessage());
+                    server.execute(() -> onResult.accept(null));
+                    return null;
+                });
+    }
+
+    private static String jsStr(com.google.gson.JsonObject o, String k, String def) {
+        return o.has(k) && !o.get(k).isJsonNull() ? o.get(k).getAsString() : def;
+    }
+    private static int jsInt(com.google.gson.JsonObject o, String k, int def) {
+        try { return o.has(k) && !o.get(k).isJsonNull() ? o.get(k).getAsInt() : def; }
+        catch (Exception e) { return def; }
+    }
+    private static boolean jsBool(com.google.gson.JsonObject o, String k) {
+        if (!o.has(k) || o.get(k).isJsonNull()) return false;
+        var el = o.get(k).getAsJsonPrimitive();
+        return (el.isBoolean() && el.getAsBoolean())
+            || (el.isNumber()  && el.getAsInt() != 0)
+            || (el.isString()  && el.getAsString().equalsIgnoreCase("true"));
+    }
+
     /** Retourne la base de l'URL du bot (sans /event). */
     public static String getBotBase() {
         String url = config.getBotUrl();
