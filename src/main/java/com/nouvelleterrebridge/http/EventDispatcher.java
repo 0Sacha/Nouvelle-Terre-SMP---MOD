@@ -170,7 +170,11 @@ public class EventDispatcher {
                 .build();
         httpClient.sendAsync(req, HttpResponse.BodyHandlers.ofString())
                 .thenAccept(resp -> {
-                    if (resp.statusCode() != 200) return;
+                    if (resp.statusCode() != 200) {
+                        NouvelleTerreBridge.LOGGER.warn("[EventDispatcher] /joueur/{} → HTTP {} : {}",
+                            uuid, resp.statusCode(), resp.body().length() > 300 ? resp.body().substring(0, 300) : resp.body());
+                        return;
+                    }
                     try {
                         var obj = JsonParser.parseString(resp.body()).getAsJsonObject();
                         if (!obj.has("nom_rp") || obj.get("nom_rp").isJsonNull()) return;
@@ -203,9 +207,12 @@ public class EventDispatcher {
         httpClient.sendAsync(req, HttpResponse.BodyHandlers.ofString())
                 .thenAccept(resp -> {
                     if (resp.statusCode() != 200) {
+                        NouvelleTerreBridge.LOGGER.warn("[EventDispatcher] /personnages → HTTP {} : {}",
+                            resp.statusCode(), resp.body().length() > 300 ? resp.body().substring(0, 300) : resp.body());
                         server.execute(() -> onSuccess.accept(new ArrayList<>()));
                         return;
                     }
+                    NouvelleTerreBridge.LOGGER.info("[EventDispatcher] /personnages → {} octets reçus", resp.body().length());
                     try {
                         var arr = JsonParser.parseString(resp.body()).getAsJsonArray();
                         List<Map<String, Object>> list = new ArrayList<>();
