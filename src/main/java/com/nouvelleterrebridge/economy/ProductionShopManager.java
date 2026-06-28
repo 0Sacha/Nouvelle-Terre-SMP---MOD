@@ -15,7 +15,7 @@ public class ProductionShopManager {
     public static final String AUTO_SELLER = "$Serveur";
 
     public static void checkItem(String itemId, long count) {
-        ShopThresholds.Entry entry = ShopThresholds.get(itemId);
+        ShopThresholds.Entry entry = ShopThresholds.getOrCreate(itemId);
         if (entry == null) return;
         if (count >= entry.seuil && !MarketManager.getInstance().hasAutoListing(itemId, AUTO_SELLER)) {
             MarketManager.getInstance().addListing(AUTO_SELLER, itemId, entry.quantite, entry.prix);

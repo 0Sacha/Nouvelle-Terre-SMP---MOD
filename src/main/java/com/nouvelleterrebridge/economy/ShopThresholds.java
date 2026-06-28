@@ -5,23 +5,30 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
+import net.minecraft.registry.Registries;
+import net.minecraft.util.Identifier;
+import net.minecraft.util.Rarity;
 
 import java.io.*;
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Charge les seuils de déblocage du shop depuis <gameDir>/seuils-shop.json.
- * Format : { "minecraft:oak_log": { "seuil": 576, "prix": 2, "quantite": 64 } }
+ * Seuils de déblocage du shop auto, persistés dans <gameDir>/seuils-shop.json.
+ * Les entrées sont créées dynamiquement au premier contact avec un item (bloc cassé,
+ * drop mob, craft). Le seuil est calculé automatiquement d'après la rareté vanilla.
+ * Les admins peuvent éditer le JSON pour surcharger n'importe quelle entrée.
  */
 public class ShopThresholds {
 
     public static class Entry {
-        public long seuil    = 64;
+        public long seuil    = 512;
         public int  prix     = 1;
         public int  quantite = 64;
     }
@@ -33,7 +40,9 @@ public class ShopThresholds {
     public static synchronized void load() {
         File f = FILE.toFile();
         if (!f.exists()) {
-            createExample();
+            thresholds = new HashMap<>();
+            save();
+            NouvelleTerreBridge.LOGGER.info("[ShopThresholds] Fichier seuils-shop.json créé (auto-rempli au jeu).");
             return;
         }
         try (Reader r = new InputStreamReader(new FileInputStream(f), StandardCharsets.UTF_8)) {
@@ -44,46 +53,39 @@ public class ShopThresholds {
         } catch (Exception e) {
             NouvelleTerreBridge.LOGGER.error("[ShopThresholds] Erreur lecture : {}", e.getMessage());
         }
-        boolean changed = false;
-        for (Map.Entry<String, Entry> def : getDefaults().entrySet()) {
-            if (!thresholds.containsKey(def.getKey())) {
-                thresholds.put(def.getKey(), def.getValue());
-                changed = true;
-            }
-        }
-        if (changed) {
-            save();
-            NouvelleTerreBridge.LOGGER.info("[ShopThresholds] Nouvelles entrées par défaut fusionnées dans seuils-shop.json.");
-        }
     }
 
-    private static void createExample() {
-        thresholds = new LinkedHashMap<>(getDefaults());
+    /**
+     * Retourne l'entrée pour cet item, en la créant automatiquement si elle n'existe pas encore.
+     * Retourne null pour les items invalides (air, identifiant inconnu).
+     */
+    public static synchronized Entry getOrCreate(String itemId) {
+        Entry existing = thresholds.get(itemId);
+        if (existing != null) return existing;
+
+        Identifier id = Identifier.tryParse(itemId);
+        if (id == null) return null;
+        Item item = Registries.ITEM.get(id);
+        if (item == Items.AIR) return null;
+
+        Rarity rarity = new ItemStack(item).getRarity();
+        Entry e = fromRarity(rarity);
+        thresholds.put(itemId, e);
         save();
-        NouvelleTerreBridge.LOGGER.info("[ShopThresholds] Fichier exemple créé : seuils-shop.json");
+        NouvelleTerreBridge.LOGGER.info("[ShopThresholds] Nouveau seuil auto — {} (rareté {}) : seuil={} prix={}◆",
+            itemId, rarity, e.seuil, e.prix);
+        return e;
     }
 
-    private static Map<String, Entry> getDefaults() {
-        Map<String, Entry> d = new LinkedHashMap<>();
-        put(d, "minecraft:oak_log",          576,  2, 64);
-        put(d, "cottonmod:cotton",            256,  3, 32);
-        put(d, "cottonmod:aloe_leaf",          64,  5, 16);
-        put(d, "cottonmod:chamomile_flower",   64,  5, 16);
-        put(d, "cottonmod:calendula_flower",   64,  5, 16);
-        put(d, "cottonmod:thread",            128,  5, 16);
-        put(d, "cottonmod:cloth",              64,  8,  8);
-        put(d, "cottonmod:bandage",            32, 12,  8);
-        put(d, "cottonmod:medkit",             16, 25,  4);
-        put(d, "cottonmod:antiseptic",         32, 10,  8);
-        put(d, "cottonmod:aloe_gel",           32,  8,  8);
-        put(d, "cottonmod:salve",              16, 15,  4);
-        put(d, "cottonmod:herbal_medicine",    16, 20,  4);
-        return d;
-    }
-
-    private static void put(Map<String, Entry> map, String id, long seuil, int prix, int quantite) {
-        Entry e = new Entry(); e.seuil = seuil; e.prix = prix; e.quantite = quantite;
-        map.put(id, e);
+    private static Entry fromRarity(Rarity rarity) {
+        Entry e = new Entry();
+        switch (rarity) {
+            case UNCOMMON -> { e.seuil = 32;  e.prix = 5;  e.quantite = 16; }
+            case RARE     -> { e.seuil = 8;   e.prix = 15; e.quantite = 8;  }
+            case EPIC     -> { e.seuil = 2;   e.prix = 40; e.quantite = 2;  }
+            default       -> { e.seuil = 512; e.prix = 1;  e.quantite = 64; } // COMMON
+        }
+        return e;
     }
 
     public static synchronized void save() {
@@ -98,6 +100,7 @@ public class ShopThresholds {
         return new HashMap<>(thresholds);
     }
 
+    /** Pour compatibilité avec ProductionCommand.info — lit sans créer. */
     public static synchronized Entry get(String itemId) {
         return thresholds.get(itemId);
     }
