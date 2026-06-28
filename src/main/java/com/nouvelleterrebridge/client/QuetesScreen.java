@@ -147,8 +147,8 @@ public class QuetesScreen extends Screen {
         Tab[]    tabs   = {Tab.DISPONIBLES, Tab.EN_COURS, Tab.A_RECLAMER, Tab.CLASSEMENTS};
         String[] labels = {
             "Disponibles",
-            "En cours (" + active.size() + ")",
-            "À Réclamer (" + pending.size() + ")",
+            "En cours (" + getInProgress().size() + ")",
+            "À Réclamer (" + (pending.size() + getCompleted().size()) + ")",
             "Classements"
         };
         int tabW = (pw - PAD * 2) / 4;
@@ -159,7 +159,6 @@ public class QuetesScreen extends Screen {
             boolean hov = !act && mx >= tabX && mx < tabX + tabW && my >= tabY && my < tabY + 16;
             ctx.fill(tabX, tabY, tabX + tabW, tabY + 16, act ? C_SURFACE : (hov ? C_HOVER : C_PANEL));
             if (act) ctx.fill(tabX, tabY + 14, tabX + tabW, tabY + 16, C_GOLD);
-            int tw = textRenderer.getWidth(labels[i]);
             // Tronquer le texte si nécessaire
             String lbl = labels[i];
             while (textRenderer.getWidth(lbl) > tabW - 4 && lbl.length() > 3)
@@ -236,16 +235,17 @@ public class QuetesScreen extends Screen {
     // ── Onglet En cours ───────────────────────────────────────────────────────
 
     private void renderActive(DrawContext ctx, int mx, int my, int startY) {
-        if (active.isEmpty()) { drawCentered(ctx, "Aucune quête en cours.", startY + 60); return; }
-        int rows = (active.size() + COLS - 1) / COLS;
+        List<ActiveQuestData> inProgress = getInProgress();
+        if (inProgress.isEmpty()) { drawCentered(ctx, "Aucune quête en cours.", startY + 60); return; }
+        int rows = (inProgress.size() + COLS - 1) / COLS;
         int maxScroll = Math.max(0, rows - visibleRows());
         scrollRow = Math.min(scrollRow, maxScroll);
 
         for (int row = 0; row < visibleRows(); row++) {
             for (int col = 0; col < COLS; col++) {
                 int idx = (scrollRow + row) * COLS + col;
-                if (idx >= active.size()) continue;
-                ActiveQuestData aq = active.get(idx);
+                if (idx >= inProgress.size()) continue;
+                ActiveQuestData aq = inProgress.get(idx);
                 int cx = px + PAD + col * (cardW + GAP);
                 int cy = startY + PAD + row * (CARD_H + GAP);
                 boolean hover = mx >= cx && mx < cx + cardW && my >= cy && my < cy + CARD_H;
@@ -299,15 +299,7 @@ public class QuetesScreen extends Screen {
             ctx.fill(x + 6, cy, x + 6 + barW2, cy + 4, C_BORDER);
             ctx.fill(x + 6, cy, x + 6 + (int)(barW2 * pct), cy + 4, pct >= 1f ? C_GREEN : C_GOLD);
             ctx.drawText(textRenderer, prog + "/" + total, x + 6, cy + 6, C_MID, false);
-            if (pct >= 1f) {
-                int bw = textRenderer.getWidth("Réclamer") + 12;
-                int bx = x + cardW - bw - 4;
-                boolean bhov = mx >= bx && mx < bx + bw && my >= claimBtnY && my < claimBtnY + BTN_H;
-                ctx.fill(bx, claimBtnY, bx + bw, claimBtnY + BTN_H, bhov ? C_GREEN : 0xFF1A6645);
-                ctx.fill(bx, claimBtnY, bx + bw, claimBtnY + 1, C_GREEN);
-                ctx.drawText(textRenderer, "Réclamer", bx + 6, claimBtnY + 5, C_WHITE, false);
-                cardBounds.add(new int[]{bx, claimBtnY, bw, BTN_H, aq.questId(), QuestNetworking.ACTION_CLAIM});
-            }
+            // Réclamer bouton jamais affiché ici : les quêtes 100% passent dans "À Réclamer"
         }
 
         int cw2 = textRenderer.getWidth("Annuler") + 10;
@@ -321,23 +313,61 @@ public class QuetesScreen extends Screen {
     // ── Onglet À Réclamer ─────────────────────────────────────────────────────
 
     private void renderPending(DrawContext ctx, int mx, int my, int startY) {
-        if (pending.isEmpty()) { drawCentered(ctx, "Aucune récompense en attente.", startY + 60); return; }
-        int rows = (pending.size() + COLS - 1) / COLS;
+        List<ActiveQuestData> completed = getCompleted();
+        int total = completed.size() + pending.size();
+        if (total == 0) { drawCentered(ctx, "Aucune récompense en attente.", startY + 60); return; }
+        int rows = (total + COLS - 1) / COLS;
         int maxScroll = Math.max(0, rows - visibleRows());
         scrollRow = Math.min(scrollRow, maxScroll);
 
         for (int row = 0; row < visibleRows(); row++) {
             for (int col = 0; col < COLS; col++) {
                 int idx = (scrollRow + row) * COLS + col;
-                if (idx >= pending.size()) continue;
-                PendingRewardData pr = pending.get(idx);
+                if (idx >= total) continue;
                 int cx = px + PAD + col * (cardW + GAP);
                 int cy = startY + PAD + row * (CARD_H + GAP);
                 boolean hover = mx >= cx && mx < cx + cardW && my >= cy && my < cy + CARD_H;
-                renderPendingCard(ctx, pr, cx, cy, hover, mx, my, idx);
+                if (idx < completed.size()) {
+                    renderClaimableCard(ctx, completed.get(idx), cx, cy, hover, mx, my);
+                } else {
+                    renderPendingCard(ctx, pending.get(idx - completed.size()), cx, cy, hover, mx, my, idx - completed.size());
+                }
             }
         }
         renderScrollbar(ctx, startY, rows, visibleRows(), scrollRow, maxScroll);
+    }
+
+    private void renderClaimableCard(DrawContext ctx, ActiveQuestData aq, int x, int y, boolean hover, int mx, int my) {
+        QuestData q = aq.snapshot();
+        if (q == null) return;
+        ctx.fill(x, y, x + cardW, y + CARD_H, hover ? C_HOVER : C_SURFACE);
+        ctx.fill(x, y, x + 3, y + CARD_H, C_GREEN);
+        ctx.fill(x, y + CARD_H - 1, x + cardW, y + CARD_H, C_BORDER);
+
+        renderItemIcon(ctx, q.target(), x + cardW - 22, y + 7);
+        ctx.drawText(textRenderer, "✅ Terminée", x + 6, y + 8, C_GREEN, false);
+        ctx.drawText(textRenderer, q.label(), x + 6, y + 20, C_WHITE, false);
+        int lw = textRenderer.getWidth(q.label());
+        ctx.drawText(textRenderer, " ×" + q.quantity(), x + 6 + lw, y + 20, C_MID, false);
+        renderReward(ctx, q, x + 6, y + 32);
+
+        int cancelBtnY = y + CARD_H - BTN_H - 4;
+        int claimBtnY  = cancelBtnY - BTN_H - 4;
+
+        int bw = textRenderer.getWidth("Réclamer") + 12;
+        int bx = x + cardW - bw - 4;
+        boolean bhov = mx >= bx && mx < bx + bw && my >= claimBtnY && my < claimBtnY + BTN_H;
+        ctx.fill(bx, claimBtnY, bx + bw, claimBtnY + BTN_H, bhov ? C_GREEN : 0xFF1A6645);
+        ctx.fill(bx, claimBtnY, bx + bw, claimBtnY + 1, C_GREEN);
+        ctx.drawText(textRenderer, "Réclamer", bx + 6, claimBtnY + 5, C_WHITE, false);
+        cardBounds.add(new int[]{bx, claimBtnY, bw, BTN_H, aq.questId(), QuestNetworking.ACTION_CLAIM});
+
+        int cw2 = textRenderer.getWidth("Annuler") + 10;
+        boolean chov = mx >= x + 6 && mx < x + 6 + cw2 && my >= cancelBtnY && my < cancelBtnY + BTN_H;
+        ctx.fill(x + 6, cancelBtnY, x + 6 + cw2, cancelBtnY + BTN_H, chov ? C_RED : 0xFF3D0A16);
+        ctx.fill(x + 6, cancelBtnY, x + 6 + cw2, cancelBtnY + 1, C_RED);
+        ctx.drawText(textRenderer, "Annuler", x + 11, cancelBtnY + 5, C_WHITE, false);
+        cardBounds.add(new int[]{x + 6, cancelBtnY, cw2, BTN_H, aq.questId(), QuestNetworking.ACTION_CANCEL});
     }
 
     private void renderPendingCard(DrawContext ctx, PendingRewardData pr, int x, int y,
@@ -548,8 +578,8 @@ public class QuetesScreen extends Screen {
         if (tab == Tab.CLASSEMENTS) return 0;
         int count = switch (tab) {
             case DISPONIBLES -> getAvailableFiltered().size();
-            case EN_COURS    -> active.size();
-            case A_RECLAMER  -> pending.size();
+            case EN_COURS    -> getInProgress().size();
+            case A_RECLAMER  -> pending.size() + getCompleted().size();
             default          -> 0;
         };
         return (count + COLS - 1) / COLS;
@@ -559,6 +589,22 @@ public class QuetesScreen extends Screen {
         if (id == null || id.isEmpty()) return "?";
         String raw = id.contains(":") ? id.split(":")[1] : id;
         return raw.replace("_", " ");
+    }
+
+    private List<ActiveQuestData> getInProgress() {
+        return active.stream()
+            .filter(aq -> aq.snapshot() == null
+                    || "DELIVERY".equals(aq.snapshot().type())
+                    || aq.progress() < aq.snapshot().quantity())
+            .toList();
+    }
+
+    private List<ActiveQuestData> getCompleted() {
+        return active.stream()
+            .filter(aq -> aq.snapshot() != null
+                    && !"DELIVERY".equals(aq.snapshot().type())
+                    && aq.progress() >= aq.snapshot().quantity())
+            .toList();
     }
 
     private boolean hasItemsInInventory(String itemId, int qty) {
