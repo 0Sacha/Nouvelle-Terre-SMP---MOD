@@ -844,6 +844,8 @@ public class BankScreen extends Screen {
 
         // ── Onglet Virements ──
         if (activeTab == Tab.TRANSFERS) {
+            // D'abord les champs texte (focus clavier), sinon les boutons/dropdowns
+            if (super.mouseClicked(mx0, my0, btn)) return true;
             handleTransfersClick(x, y);
             return true;
         }

@@ -26,7 +26,7 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `0.x.y-beta` (dans `gradle.properties` → `mod_version`)
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `0.2.38-beta` (registre : statut en ligne pris du serveur, plus de la DB bot)
+- Version actuelle : `0.2.39-beta` (fix focus des champs montant onglet Virements)
 - À chaque rebuild : mettre à jour `mod_version` dans `gradle.properties`, puis `git commit` + `git push`
 
 ---
@@ -348,6 +348,7 @@ entries[]  : int count → (string itemId, long count, long seuil, int prix, int
 
 - **Onglet Virements** : 2 cards (`cardW = (pw - GAP) / 2`), `renderInfoCard()` partagé
 - **Dropdowns** : rendu dans `render()` après le tab content, overlay `0xAA000000` + scissor + scroll. Champs montant cachés via `setY(-200)` quand dropdown ouvert
+- **Focus des champs texte** : dans `mouseClicked` onglet TRANSFERS, appeler `super.mouseClicked()` AVANT `handleTransfersClick()` — sinon les TextFieldWidget ne prennent jamais le focus clavier
 - **Positions UI dans render()** : `trfDropX/Y/W`, `recurDropX/Y/W`, `trfSendBtnY`, `recurCreateBtnY`, `recurCancelBtnY[]` — relus dans `mouseClicked()`
 - Pénalité check : `while` dans `LoanManager.tick()` rattrape plusieurs jours si serveur éteint
 - `lastPenaltyMs` initialisé à `dueTimestamp` → premier jour de retard = J+1 après échéance
