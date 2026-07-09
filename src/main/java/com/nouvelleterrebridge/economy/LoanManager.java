@@ -22,8 +22,21 @@ public class LoanManager {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static LoanManager instance;
 
+    /** Demande de crédit en attente de l'accord du prêteur. */
+    public static class LoanRequest {
+        public int    id;
+        public String lender;
+        public String borrower;
+        public int    principal;
+        public int    durationDays;
+        public int    penaltyBase;
+        public int    penaltyIncrease;
+        public long   createdAt;
+    }
+
     private final Path fichier;
     private final List<Loan> loans = new ArrayList<>();
+    private final List<LoanRequest> requests = new ArrayList<>();
     private int nextId = 1;
     private int tickCount = 0;
 
@@ -40,6 +53,67 @@ public class LoanManager {
     public static void register() {
         getInstance();
         ServerTickEvents.END_SERVER_TICK.register(server -> getInstance().tick(server));
+    }
+
+    // ── Demandes de crédit ───────────────────────────────────────────────────
+
+    /**
+     * L'emprunteur envoie une demande de crédit au prêteur.
+     * Aucun fonds n'est transféré tant que le prêteur n'a pas accepté.
+     * Retourne null en cas de succès, un message d'erreur sinon.
+     */
+    public synchronized String request(String borrower, String lender, int principal,
+                                       int durationDays, int penaltyBase, int penaltyIncrease) {
+        boolean dejaEnAttente = requests.stream().anyMatch(r ->
+            r.borrower.equalsIgnoreCase(borrower) && r.lender.equalsIgnoreCase(lender));
+        if (dejaEnAttente) return "Vous avez deja une demande en attente aupres de ce joueur.";
+        LoanRequest r = new LoanRequest();
+        r.id              = nextId++;
+        r.lender          = lender;
+        r.borrower        = borrower;
+        r.principal       = principal;
+        r.durationDays    = durationDays;
+        r.penaltyBase     = penaltyBase;
+        r.penaltyIncrease = penaltyIncrease;
+        r.createdAt       = System.currentTimeMillis();
+        requests.add(r);
+        sauvegarder();
+        return null;
+    }
+
+    /** Le prêteur accepte une demande : le crédit est créé et les fonds transférés. */
+    public synchronized String acceptRequest(String lender, int requestId) {
+        LoanRequest r = findRequest(requestId);
+        if (r == null || !r.lender.equalsIgnoreCase(lender)) return "Demande introuvable.";
+        String err = add(lender, r.borrower, r.principal, r.durationDays, r.penaltyBase, r.penaltyIncrease);
+        if (err != null) return err;
+        requests.remove(r);
+        sauvegarder();
+        return null;
+    }
+
+    /** Le prêteur refuse, ou l'emprunteur annule sa propre demande. */
+    public synchronized String declineRequest(String who, int requestId) {
+        LoanRequest r = findRequest(requestId);
+        if (r == null || (!r.lender.equalsIgnoreCase(who) && !r.borrower.equalsIgnoreCase(who)))
+            return "Demande introuvable.";
+        requests.remove(r);
+        sauvegarder();
+        return null;
+    }
+
+    public synchronized LoanRequest getRequest(int id) { return findRequest(id); }
+
+    public synchronized List<LoanRequest> getRequestsAsLender(String lender) {
+        return requests.stream().filter(r -> r.lender.equalsIgnoreCase(lender)).collect(Collectors.toList());
+    }
+
+    public synchronized List<LoanRequest> getRequestsAsBorrower(String borrower) {
+        return requests.stream().filter(r -> r.borrower.equalsIgnoreCase(borrower)).collect(Collectors.toList());
+    }
+
+    private LoanRequest findRequest(int id) {
+        return requests.stream().filter(r -> r.id == id).findFirst().orElse(null);
     }
 
     // ── API ───────────────────────────────────────────────────────────────────
@@ -149,7 +223,13 @@ public class LoanManager {
             Type type = new TypeToken<List<Loan>>() {}.getType();
             List<Loan> loaded = GSON.fromJson(root.getAsJsonArray("loans"), type);
             if (loaded != null) loans.addAll(loaded);
-            NouvelleTerreBridge.LOGGER.info("[LoanManager] {} credit(s) charge(s).", loans.size());
+            if (root.has("requests")) {
+                Type reqType = new TypeToken<List<LoanRequest>>() {}.getType();
+                List<LoanRequest> loadedReqs = GSON.fromJson(root.getAsJsonArray("requests"), reqType);
+                if (loadedReqs != null) requests.addAll(loadedReqs);
+            }
+            NouvelleTerreBridge.LOGGER.info("[LoanManager] {} credit(s) et {} demande(s) charge(s).",
+                loans.size(), requests.size());
         } catch (Exception e) {
             NouvelleTerreBridge.LOGGER.error("[LoanManager] Erreur chargement : {}", e.getMessage());
         }
@@ -160,6 +240,7 @@ public class LoanManager {
             JsonObject root = new JsonObject();
             root.addProperty("nextId", nextId);
             root.add("loans", GSON.toJsonTree(loans));
+            root.add("requests", GSON.toJsonTree(requests));
             GSON.toJson(root, w);
         } catch (Exception e) {
             NouvelleTerreBridge.LOGGER.error("[LoanManager] Erreur sauvegarde : {}", e.getMessage());

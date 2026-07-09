@@ -197,12 +197,14 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             List<BankScreen.LeaderboardEntry> lb        = readLeaderboard(buf);
             List<BankScreen.LoanData>         asLender  = readLoans(buf);
             List<BankScreen.LoanData>         asBorrow  = readLoans(buf);
+            List<BankScreen.LoanRequestData>  reqLender = readLoanRequests(buf);
+            List<BankScreen.LoanRequestData>  reqBorrow = readLoanRequests(buf);
             List<String>                      known     = readStringList(buf);
             List<BankScreen.RecurringData>    recurring = readBankRecurring(buf);
             client.execute(() -> {
                 if (client.currentScreen instanceof BankScreen screen) {
                     screen.handleResult(ok, message, balance, ticksReward, txs,
-                        totalShards, playerCount, lb, asLender, asBorrow, known, recurring);
+                        totalShards, playerCount, lb, asLender, asBorrow, reqLender, reqBorrow, known, recurring);
                 }
             });
         });
@@ -309,10 +311,21 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
         List<BankScreen.LeaderboardEntry> lb        = readLeaderboard(buf);
         List<BankScreen.LoanData>         asLender  = readLoans(buf);
         List<BankScreen.LoanData>         asBorrow  = readLoans(buf);
+        List<BankScreen.LoanRequestData>  reqLender = readLoanRequests(buf);
+        List<BankScreen.LoanRequestData>  reqBorrow = readLoanRequests(buf);
         List<String>                      known     = readStringList(buf);
         List<BankScreen.RecurringData>    recurring = readBankRecurring(buf);
         return new BankScreen(balance, ticksReward, txs, totalShards, playerCount,
-            lb, asLender, asBorrow, known, recurring);
+            lb, asLender, asBorrow, reqLender, reqBorrow, known, recurring);
+    }
+
+    private static List<BankScreen.LoanRequestData> readLoanRequests(PacketByteBuf buf) {
+        int count = buf.readInt();
+        List<BankScreen.LoanRequestData> list = new ArrayList<>(count);
+        for (int i = 0; i < count; i++)
+            list.add(new BankScreen.LoanRequestData(
+                buf.readInt(), buf.readString(), buf.readInt(), buf.readInt(), buf.readInt()));
+        return list;
     }
 
     private static List<BankScreen.RecurringData> readBankRecurring(PacketByteBuf buf) {

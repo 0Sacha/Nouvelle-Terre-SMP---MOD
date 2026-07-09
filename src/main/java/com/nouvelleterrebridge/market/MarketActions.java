@@ -2,6 +2,7 @@ package com.nouvelleterrebridge.market;
 
 import com.nouvelleterrebridge.commands.EconomieCommand;
 import com.nouvelleterrebridge.economy.LocalEconomy;
+import com.nouvelleterrebridge.economy.ProductionShopManager;
 import com.nouvelleterrebridge.economy.TransactionLog;
 import com.nouvelleterrebridge.http.EventDispatcher;
 import net.minecraft.item.Item;
@@ -64,6 +65,7 @@ public final class MarketActions {
             if (restant <= 0) break;
             int pris = Math.min(restant, ann.quantity);
             int cout = pris * ann.pricePerUnit;
+            boolean isAuto = ann.seller.equals(ProductionShopManager.AUTO_SELLER);
 
             eco.transfer(pseudo, ann.seller, cout);
 
@@ -75,23 +77,27 @@ public final class MarketActions {
                 aDistrib -= sz;
             }
 
-            int nouvelleQte = ann.quantity - pris;
-            MarketManager.getInstance().updateQuantity(ann.id, nouvelleQte);
+            if (!isAuto) {
+                // Annonce joueur : décrémente le stock (l'annonce disparaît à 0)
+                int nouvelleQte = ann.quantity - pris;
+                MarketManager.getInstance().updateQuantity(ann.id, nouvelleQte);
 
-            // Notif vendeur en ligne
-            ServerPlayerEntity vend = player.getServer().getPlayerManager().getPlayer(ann.seller);
-            if (vend != null) vend.sendMessage(Text.literal(String.format(
-                "§a💰 §f%s§a a acheté §f%dx %s§a pour §f%d💎§a !%s Solde : §f%d💎§a.",
-                pseudo, pris, nomItem, cout,
-                nouvelleQte > 0 ? " §7(§f" + nouvelleQte + " restants§7)" : " §7(stock épuisé)",
-                eco.getBalance(ann.seller))));
+                // Notif vendeur en ligne
+                ServerPlayerEntity vend = player.getServer().getPlayerManager().getPlayer(ann.seller);
+                if (vend != null) vend.sendMessage(Text.literal(String.format(
+                    "§a💰 §f%s§a a acheté §f%dx %s§a pour §f%d💎§a !%s Solde : §f%d💎§a.",
+                    pseudo, pris, nomItem, cout,
+                    nouvelleQte > 0 ? " §7(§f" + nouvelleQte + " restants§7)" : " §7(stock épuisé)",
+                    eco.getBalance(ann.seller))));
 
-            TransactionLog.log(ann.seller, TransactionLog.TYPE_SELL, pris + "x " + nomItem + " (à " + pseudo + ")", cout);
-            Map<String, Object> data = new HashMap<>();
-            data.put("seller", ann.seller); data.put("buyer", pseudo);
-            data.put("item", ann.item);     data.put("quantity", pris);
-            data.put("total", cout);        data.put("id", ann.id);
-            EventDispatcher.envoyer("SALE_COMPLETED", data);
+                TransactionLog.log(ann.seller, TransactionLog.TYPE_SELL, pris + "x " + nomItem + " (à " + pseudo + ")", cout);
+                Map<String, Object> data = new HashMap<>();
+                data.put("seller", ann.seller); data.put("buyer", pseudo);
+                data.put("item", ann.item);     data.put("quantity", pris);
+                data.put("total", cout);        data.put("id", ann.id);
+                EventDispatcher.envoyer("SALE_COMPLETED", data);
+            }
+            // Annonce $Serveur : stock illimité, l'annonce reste en place telle quelle
             restant -= pris;
         }
 

@@ -26,7 +26,7 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `0.x.y-beta` (dans `gradle.properties` → `mod_version`)
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `0.2.25-beta` (nameplate RP via mixin client AbstractClientPlayerEntity.getDisplayName)
+- Version actuelle : `0.2.33-beta` (crédits sur demande + shop auto stock infini + $Serveur hors stats)
 - À chaque rebuild : mettre à jour `mod_version` dans `gradle.properties`, puis `git commit` + `git push`
 
 ---
@@ -44,16 +44,26 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 - Achat au meilleur prix automatique, peut fractionner sur plusieurs vendeurs
 - `FrenchItemNames.toDisplay()` strip n'importe quel namespace (pas seulement `minecraft:`)
 - Catégories HDV : Tout, Blocs, Matériaux, Outils, Nourriture, Potions, **Médical**, Divers
+- **Shop auto (`$Serveur`)** : seuils créés dynamiquement au premier contact avec un item
+  (`ShopThresholds.getOrCreate()`, calculés par `Rarity` vanilla). **Stock illimité** :
+  l'achat ne décrémente pas la quantité, pas de SALE_COMPLETED envoyé au bot.
+  L'argent des achats va sur le compte `$Serveur` (préfixe `$` = compte système,
+  **exclu** du classement, des stats économie, du total shards et des dropdowns joueurs)
 
 ## Architecture crédits
-- Crédits : `nouvelle-terre-credits.json` sur le serveur (`LoanManager.java`)
-- Création : le prêteur définit montant, durée (jours) et pénalité de base (◆/j)
-- Au déclenchement, le montant est **transféré automatiquement** du prêteur à l'emprunteur
+- Crédits + demandes : `nouvelle-terre-credits.json` sur le serveur (`LoanManager.java`, clés `loans` + `requests`)
+- **Flux sur demande** : l'**emprunteur** envoie une demande (prêteur, montant, durée, pénalité ◆/j)
+  via `/bank` → Crédits → "Demander un credit". Aucun fonds transféré à ce stade.
+- Le prêteur est notifié en chat (s'il est en ligne) et voit la demande dans `/bank` → Crédits
+  ("ON VOUS DEMANDE UN CREDIT") avec boutons Accepter / Refuser
+- **Accepter** (`ACTION_LOAN_ACCEPT`) : crédit créé + montant transféré prêteur → emprunteur
+- **Refuser/Annuler** (`ACTION_LOAN_DECLINE`) : le prêteur refuse OU l'emprunteur annule sa demande
+- Une seule demande en attente par paire emprunteur/prêteur
 - Pénalités automatiques : vérifiées toutes les minutes (1200 ticks), appliquées chaque jour de retard
 - Pénalité jour N = `penaltyBase + (N-1) * 5` ◆ (augmente de 5 ◆/j par défaut)
 - `LocalEconomy.forceDeduct()` permet de passer en solde négatif pour les pénalités
 - Remboursement : l'emprunteur renvoie le principal au prêteur via `/bank`
-- Pardon : le prêteur peut annuler un crédit sans remboursement
+- Pardon ("Effacer la dette") : le prêteur peut annuler un crédit sans remboursement
 
 ## Architecture noms RP (personnages)
 - Cache serveur : `NouvelleTerreBridge.nomsRP` — `ConcurrentHashMap<String, String>` uuid→nom_rp
@@ -61,10 +71,12 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 - Endpoint bot : `GET {base}/joueur/{uuid}?secret=...` → `{ "nom_rp": "Jean Dupont" }`
 - Si 404 ou pas de personnage confirmé : le cache reste vide, pseudo MC utilisé partout
 - À la déconnexion : entrée supprimée du cache
-- **Tab list** : `ServerPlayerEntityMixin` override `getPlayerListName()` → `"§fNomRP §8(§7pseudo§8)"`
-  + `PlayerListS2CPacket(UPDATE_DISPLAY_NAME)` broadcasté à tous après fetch
-- **Nameplate** (au-dessus de la tête) : `AbstractClientPlayerEntityMixin` override client-side `getDisplayName()`
-  → lit `PlayerListEntry.getDisplayName()` depuis `NetworkHandler` (même texte que tab list)
+- **Tab list** : **scoreboard team** côté serveur — `"nt_" + uuid[0..8]`, prefix=`"§fNomRP §8(§7"`, suffix=`"§8)"`.
+  Minecraft affiche nativement `NomRP (pseudo)`. Créée après `fetchNomRP`, supprimée à la déconnexion.
+  `PlayerListEntry.displayName` reste null → Minecraft utilise le team prefix/suffix. ✓
+- **Nameplate** (au-dessus de la tête) : **NON FONCTIONNEL — abandonné**. Ne pas retenter :
+  `AbstractClientPlayerEntityMixin` cible `Entity.getDisplayName()` avec garde instanceof + cache NT_NOM_RP,
+  mais un mod client tiers rend son propre nameplate par-dessus.
 - **Chat** : `ServerMessageEvents.ALLOW_CHAT_MESSAGE` — annule le message signé, rebroadcast
   `§8<§fNomRP§8> §fcontenu` comme message système
 - **Registre** : `EventDispatcher.fetchPersonnages()` → `GET {base}/personnages?secret=...`
@@ -156,8 +168,9 @@ network/
   HdvNetworking.java       → Canaux : HDV_OPEN / HDV_ACTION / HDV_RESULT / NT_VERSION / NT_BALANCE
                              Actions : ACTION_BUY(0) / ACTION_SELL(1) / ACTION_WITHDRAW(2)
   BankNetworking.java      → Canaux : BANK_OPEN / BANK_ACTION / BANK_RESULT / BANK_REQUEST
-                             Actions : LOAN_CREATE(0) / LOAN_REPAY(1) / LOAN_FORGIVE(2) /
-                                       TRANSFER(3) / RECURRING_CREATE(4) / RECURRING_CANCEL(5)
+                             Actions : LOAN_REQUEST(0) / LOAN_REPAY(1) / LOAN_FORGIVE(2) /
+                                       TRANSFER(3) / RECURRING_CREATE(4) / RECURRING_CANCEL(5) /
+                                       LOAN_ACCEPT(6) / LOAN_DECLINE(7)
   QuestNetworking.java     → Canaux : QUEST_OPEN (S→C, ouvre GUI) / QUEST_ACTION (C→S) / QUEST_RESULT (S→C)
                              Actions : ACTION_ACCEPT(0) / ACTION_CLAIM(1)
   RegistreNetworking.java  → Canal : REGISTRE_OPEN (S→C, ouvre RegistreScreen)
@@ -236,12 +249,14 @@ listings[]: int count → (int id, string seller, string itemId, int qty, int pr
 ### Bank
 ```
 BANK_OPEN  : int balance | int ticksReward | txs[] | int totalShards | int playerCount
-             | leaderboard[] | loansAsLender[] | loansAsBorrower[] | known[] | recurring[]
+             | leaderboard[] | loansAsLender[] | loansAsBorrower[]
+             | requestsAsLender[] | requestsAsBorrower[] | known[] | recurring[]
 BANK_RESULT: bool ok | string msg | [même contenu que BANK_OPEN]
 txs[]         : int count → (int type, string label, int amount, long timestamp) × count
 leaderboard[] : int count → (string name, int balance) × count
 loansAs*[]    : int count → (int id, string other, int principal, long dueMs,
                              int daysOverdue, int totalPenalty, int nextPenalty, bool repaid) × count
+requestsAs*[] : int count → (int id, string other, int principal, int durationDays, int penaltyBase) × count
 known[]       : int count → string × count
 recurring[]   : int count → (int id, string to, int amount, int intervalTicks, int ticksUntilNext) × count
 ```

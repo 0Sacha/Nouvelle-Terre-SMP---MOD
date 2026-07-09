@@ -269,31 +269,73 @@ public class NouvelleTerreBridge implements ModInitializer {
             int type = buf.readInt();
             final String result;
             switch (type) {
-                case BankNetworking.ACTION_LOAN_CREATE -> {
-                    String borrower    = buf.readString();
-                    int amount         = buf.readInt();
-                    int durationDays   = buf.readInt();
-                    int penaltyBase    = buf.readInt();
+                case BankNetworking.ACTION_LOAN_REQUEST -> {
+                    String lenderName   = buf.readString();
+                    int amount          = buf.readInt();
+                    int durationDays    = buf.readInt();
+                    int penaltyBase     = buf.readInt();
                     int penaltyIncrease = buf.readInt();
-                    String lender = player.getName().getString();
-                    if (lender.equalsIgnoreCase(borrower)) {
-                        result = "§cVous ne pouvez pas vous accorder un credit.";
-                    } else if (!LocalEconomy.getInstance().estConnu(borrower)) {
+                    String borrower = player.getName().getString();
+                    if (borrower.equalsIgnoreCase(lenderName)) {
+                        result = "§cVous ne pouvez pas vous emprunter a vous-meme.";
+                    } else if (!LocalEconomy.getInstance().estConnu(lenderName)) {
                         result = "§cJoueur inconnu.";
                     } else if (amount <= 0 || durationDays <= 0 || penaltyBase <= 0) {
                         result = "§cValeurs invalides.";
                     } else {
-                        String err = LoanManager.getInstance().add(lender, borrower, amount, durationDays, penaltyBase, penaltyIncrease);
+                        String err = LoanManager.getInstance().request(borrower, lenderName, amount, durationDays, penaltyBase, penaltyIncrease);
                         if (err != null) {
                             result = "§c" + err;
                         } else {
-                            result = "§a✅ Credit de " + amount + " ◆ accorde a §f" + borrower + "§a !";
+                            result = "§a✅ Demande envoyee a §f" + lenderName + "§a — en attente de son accord.";
                             server.execute(() -> {
-                                ServerPlayerEntity bp = server.getPlayerManager().getPlayer(borrower);
-                                if (bp != null) bp.sendMessage(Text.literal(
-                                    "§a[Nouvelle Terre] §f" + lender + " §avous a accorde un credit de §f" + amount + " ◆§a !"));
+                                ServerPlayerEntity lp = server.getPlayerManager().getPlayer(lenderName);
+                                if (lp != null) lp.sendMessage(Text.literal(
+                                    "§e[Banque] §f" + borrower + " §esouhaite vous emprunter §f" + amount
+                                    + " ◆§e (duree " + durationDays + " j, penalite " + penaltyBase
+                                    + " ◆/j de retard). §7Ouvre /bank → Credits pour accepter ou refuser."));
                             });
                         }
+                    }
+                }
+                case BankNetworking.ACTION_LOAN_ACCEPT -> {
+                    int requestId = buf.readInt();
+                    String lenderName = player.getName().getString();
+                    LoanManager.LoanRequest req = LoanManager.getInstance().getRequest(requestId);
+                    String err = LoanManager.getInstance().acceptRequest(lenderName, requestId);
+                    if (err != null) {
+                        result = "§c" + err;
+                    } else {
+                        result = "§a✅ Credit de " + req.principal + " ◆ accorde a §f" + req.borrower + "§a !";
+                        server.execute(() -> {
+                            ServerPlayerEntity bp = server.getPlayerManager().getPlayer(req.borrower);
+                            if (bp != null) {
+                                bp.sendMessage(Text.literal(
+                                    "§a[Banque] §f" + lenderName + " §aa accepte votre demande — §f"
+                                    + req.principal + " ◆§a recus ! A rembourser sous " + req.durationDays + " j."));
+                                sendBalanceToPlayer(bp);
+                            }
+                        });
+                    }
+                }
+                case BankNetworking.ACTION_LOAN_DECLINE -> {
+                    int requestId = buf.readInt();
+                    String who = player.getName().getString();
+                    LoanManager.LoanRequest req = LoanManager.getInstance().getRequest(requestId);
+                    String err = LoanManager.getInstance().declineRequest(who, requestId);
+                    if (err != null) {
+                        result = "§c" + err;
+                    } else {
+                        boolean estPreteur = req.lender.equalsIgnoreCase(who);
+                        result = estPreteur ? "§a✅ Demande refusee." : "§a✅ Demande annulee.";
+                        String autre = estPreteur ? req.borrower : req.lender;
+                        String msg = estPreteur
+                            ? "§c[Banque] §f" + who + " §ca refuse votre demande de credit (" + req.principal + " ◆)."
+                            : "§e[Banque] §f" + who + " §ea annule sa demande de credit (" + req.principal + " ◆).";
+                        server.execute(() -> {
+                            ServerPlayerEntity op = server.getPlayerManager().getPlayer(autre);
+                            if (op != null) op.sendMessage(Text.literal(msg));
+                        });
                     }
                 }
                 case BankNetworking.ACTION_LOAN_REPAY -> {
@@ -397,15 +439,18 @@ public class NouvelleTerreBridge implements ModInitializer {
             buf.writeInt(e.type()); buf.writeString(e.label()); buf.writeInt(e.amount()); buf.writeLong(e.timestamp());
         }
 
-        // Stats économiques
+        // Stats économiques — les comptes système ($Serveur) sont exclus
         Map<String, Integer> allBalances = eco.getAllBalances();
-        int totalShards = allBalances.values().stream().mapToInt(Integer::intValue).filter(v -> v > 0).sum();
+        int totalShards = allBalances.entrySet().stream()
+            .filter(e -> !e.getKey().startsWith("$"))
+            .mapToInt(Map.Entry::getValue).filter(v -> v > 0).sum();
         buf.writeInt(totalShards);
-        buf.writeInt(allBalances.size());
+        buf.writeInt((int) allBalances.keySet().stream().filter(k -> !k.startsWith("$")).count());
 
-        // Classement top 10
+        // Classement top 10 (hors comptes système)
         Map<String, String> casing = buildCasingMap(server, eco);
         List<Map.Entry<String, Integer>> top = allBalances.entrySet().stream()
+            .filter(e -> !e.getKey().startsWith("$"))
             .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
             .limit(10)
             .collect(Collectors.toList());
@@ -425,9 +470,19 @@ public class NouvelleTerreBridge implements ModInitializer {
         buf.writeInt(asBorrower.size());
         for (Loan l : asBorrower) writeLoanData(buf, l.lender, l);
 
-        // Joueurs connus (dropdown)
+        // Demandes de crédit reçues (en tant que prêteur, à accepter/refuser)
+        List<LoanManager.LoanRequest> reqAsLender = LoanManager.getInstance().getRequestsAsLender(name);
+        buf.writeInt(reqAsLender.size());
+        for (LoanManager.LoanRequest r : reqAsLender) writeLoanRequest(buf, r.borrower, r);
+
+        // Demandes de crédit envoyées (en tant qu'emprunteur, en attente)
+        List<LoanManager.LoanRequest> reqAsBorrower = LoanManager.getInstance().getRequestsAsBorrower(name);
+        buf.writeInt(reqAsBorrower.size());
+        for (LoanManager.LoanRequest r : reqAsBorrower) writeLoanRequest(buf, r.lender, r);
+
+        // Joueurs connus (dropdown) — comptes système exclus
         List<String> known = eco.getSoldesKeys().stream()
-            .filter(k -> !k.equalsIgnoreCase(name))
+            .filter(k -> !k.equalsIgnoreCase(name) && !k.startsWith("$"))
             .map(k -> casing.getOrDefault(k, k))
             .sorted(String.CASE_INSENSITIVE_ORDER)
             .collect(Collectors.toList());
@@ -455,6 +510,14 @@ public class NouvelleTerreBridge implements ModInitializer {
         buf.writeInt(l.totalPenalty);
         buf.writeInt(l.nextPenalty());
         buf.writeBoolean(l.repaid);
+    }
+
+    private static void writeLoanRequest(PacketByteBuf buf, String other, LoanManager.LoanRequest r) {
+        buf.writeInt(r.id);
+        buf.writeString(other);
+        buf.writeInt(r.principal);
+        buf.writeInt(r.durationDays);
+        buf.writeInt(r.penaltyBase);
     }
 
     private static Map<String, String> buildCasingMap(MinecraftServer server, LocalEconomy eco) {
