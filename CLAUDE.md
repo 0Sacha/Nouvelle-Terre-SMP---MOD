@@ -26,7 +26,7 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `0.x.y-beta` (dans `gradle.properties` → `mod_version`)
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `0.2.33-beta` (crédits sur demande + shop auto stock infini + $Serveur hors stats)
+- Version actuelle : `0.2.34-beta` (crédits sur proposition du prêteur + shop auto stock infini + $Serveur hors stats)
 - À chaque rebuild : mettre à jour `mod_version` dans `gradle.properties`, puis `git commit` + `git push`
 
 ---
@@ -51,14 +51,14 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
   **exclu** du classement, des stats économie, du total shards et des dropdowns joueurs)
 
 ## Architecture crédits
-- Crédits + demandes : `nouvelle-terre-credits.json` sur le serveur (`LoanManager.java`, clés `loans` + `requests`)
-- **Flux sur demande** : l'**emprunteur** envoie une demande (prêteur, montant, durée, pénalité ◆/j)
-  via `/bank` → Crédits → "Demander un credit". Aucun fonds transféré à ce stade.
-- Le prêteur est notifié en chat (s'il est en ligne) et voit la demande dans `/bank` → Crédits
-  ("ON VOUS DEMANDE UN CREDIT") avec boutons Accepter / Refuser
-- **Accepter** (`ACTION_LOAN_ACCEPT`) : crédit créé + montant transféré prêteur → emprunteur
-- **Refuser/Annuler** (`ACTION_LOAN_DECLINE`) : le prêteur refuse OU l'emprunteur annule sa demande
-- Une seule demande en attente par paire emprunteur/prêteur
+- Crédits + propositions : `nouvelle-terre-credits.json` sur le serveur (`LoanManager.java`, clés `loans` + `requests`)
+- **Flux sur proposition** : le **prêteur** propose un crédit (emprunteur, montant, durée, pénalité ◆/j)
+  via `/bank` → Crédits → "Proposer un credit". Aucun fonds transféré à ce stade.
+- L'emprunteur est notifié en chat (s'il est en ligne) et voit la proposition dans `/bank` → Crédits
+  ("ON VOUS PROPOSE UN CREDIT") avec boutons Accepter / Refuser
+- **Accepter** (`ACTION_LOAN_ACCEPT`, côté emprunteur) : crédit créé + montant transféré prêteur → emprunteur
+- **Refuser/Annuler** (`ACTION_LOAN_DECLINE`) : l'emprunteur refuse OU le prêteur annule sa proposition
+- Une seule proposition en attente par paire emprunteur/prêteur
 - Pénalités automatiques : vérifiées toutes les minutes (1200 ticks), appliquées chaque jour de retard
 - Pénalité jour N = `penaltyBase + (N-1) * 5` ◆ (augmente de 5 ◆/j par défaut)
 - `LocalEconomy.forceDeduct()` permet de passer en solde négatif pour les pénalités

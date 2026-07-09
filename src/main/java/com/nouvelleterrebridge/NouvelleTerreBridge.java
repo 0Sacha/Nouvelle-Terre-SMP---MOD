@@ -270,28 +270,28 @@ public class NouvelleTerreBridge implements ModInitializer {
             final String result;
             switch (type) {
                 case BankNetworking.ACTION_LOAN_REQUEST -> {
-                    String lenderName   = buf.readString();
+                    String borrowerName = buf.readString();
                     int amount          = buf.readInt();
                     int durationDays    = buf.readInt();
                     int penaltyBase     = buf.readInt();
                     int penaltyIncrease = buf.readInt();
-                    String borrower = player.getName().getString();
-                    if (borrower.equalsIgnoreCase(lenderName)) {
-                        result = "§cVous ne pouvez pas vous emprunter a vous-meme.";
-                    } else if (!LocalEconomy.getInstance().estConnu(lenderName)) {
+                    String lender = player.getName().getString();
+                    if (lender.equalsIgnoreCase(borrowerName)) {
+                        result = "§cVous ne pouvez pas vous preter a vous-meme.";
+                    } else if (!LocalEconomy.getInstance().estConnu(borrowerName)) {
                         result = "§cJoueur inconnu.";
                     } else if (amount <= 0 || durationDays <= 0 || penaltyBase <= 0) {
                         result = "§cValeurs invalides.";
                     } else {
-                        String err = LoanManager.getInstance().request(borrower, lenderName, amount, durationDays, penaltyBase, penaltyIncrease);
+                        String err = LoanManager.getInstance().request(borrowerName, lender, amount, durationDays, penaltyBase, penaltyIncrease);
                         if (err != null) {
                             result = "§c" + err;
                         } else {
-                            result = "§a✅ Demande envoyee a §f" + lenderName + "§a — en attente de son accord.";
+                            result = "§a✅ Proposition envoyee a §f" + borrowerName + "§a — en attente de son accord.";
                             server.execute(() -> {
-                                ServerPlayerEntity lp = server.getPlayerManager().getPlayer(lenderName);
-                                if (lp != null) lp.sendMessage(Text.literal(
-                                    "§e[Banque] §f" + borrower + " §esouhaite vous emprunter §f" + amount
+                                ServerPlayerEntity bp = server.getPlayerManager().getPlayer(borrowerName);
+                                if (bp != null) bp.sendMessage(Text.literal(
+                                    "§e[Banque] §f" + lender + " §evous propose un credit de §f" + amount
                                     + " ◆§e (duree " + durationDays + " j, penalite " + penaltyBase
                                     + " ◆/j de retard). §7Ouvre /bank → Credits pour accepter ou refuser."));
                             });
@@ -300,20 +300,22 @@ public class NouvelleTerreBridge implements ModInitializer {
                 }
                 case BankNetworking.ACTION_LOAN_ACCEPT -> {
                     int requestId = buf.readInt();
-                    String lenderName = player.getName().getString();
+                    String borrowerName = player.getName().getString();
                     LoanManager.LoanRequest req = LoanManager.getInstance().getRequest(requestId);
-                    String err = LoanManager.getInstance().acceptRequest(lenderName, requestId);
+                    String err = LoanManager.getInstance().acceptRequest(borrowerName, requestId);
                     if (err != null) {
                         result = "§c" + err;
                     } else {
-                        result = "§a✅ Credit de " + req.principal + " ◆ accorde a §f" + req.borrower + "§a !";
+                        result = "§a✅ Credit accepte — §f" + req.principal + " ◆§a recus de §f" + req.lender
+                            + "§a ! A rembourser sous " + req.durationDays + " j.";
                         server.execute(() -> {
-                            ServerPlayerEntity bp = server.getPlayerManager().getPlayer(req.borrower);
-                            if (bp != null) {
-                                bp.sendMessage(Text.literal(
-                                    "§a[Banque] §f" + lenderName + " §aa accepte votre demande — §f"
-                                    + req.principal + " ◆§a recus ! A rembourser sous " + req.durationDays + " j."));
-                                sendBalanceToPlayer(bp);
+                            sendBalanceToPlayer(player);
+                            ServerPlayerEntity lp = server.getPlayerManager().getPlayer(req.lender);
+                            if (lp != null) {
+                                lp.sendMessage(Text.literal(
+                                    "§a[Banque] §f" + borrowerName + " §aa accepte votre credit — §f"
+                                    + req.principal + " ◆§a transferes."));
+                                sendBalanceToPlayer(lp);
                             }
                         });
                     }
@@ -327,11 +329,11 @@ public class NouvelleTerreBridge implements ModInitializer {
                         result = "§c" + err;
                     } else {
                         boolean estPreteur = req.lender.equalsIgnoreCase(who);
-                        result = estPreteur ? "§a✅ Demande refusee." : "§a✅ Demande annulee.";
+                        result = estPreteur ? "§a✅ Proposition annulee." : "§a✅ Proposition refusee.";
                         String autre = estPreteur ? req.borrower : req.lender;
                         String msg = estPreteur
-                            ? "§c[Banque] §f" + who + " §ca refuse votre demande de credit (" + req.principal + " ◆)."
-                            : "§e[Banque] §f" + who + " §ea annule sa demande de credit (" + req.principal + " ◆).";
+                            ? "§e[Banque] §f" + who + " §ea annule sa proposition de credit (" + req.principal + " ◆)."
+                            : "§c[Banque] §f" + who + " §ca refuse votre proposition de credit (" + req.principal + " ◆).";
                         server.execute(() -> {
                             ServerPlayerEntity op = server.getPlayerManager().getPlayer(autre);
                             if (op != null) op.sendMessage(Text.literal(msg));

@@ -456,8 +456,8 @@ public class BankScreen extends Screen {
         creditBtnBounds.clear();
         int px = winX + PAD, pw = winW - PAD * 2;
 
-        // Bouton "Demander un credit"
-        String btnLabel = "+ Demander un credit";
+        // Bouton "Proposer un credit"
+        String btnLabel = "+ Proposer un credit";
         int btnW = textRenderer.getWidth(btnLabel) + 20;
         int btnX = winX + winW - btnW - PAD;
         boolean btnHov = mx >= btnX && mx < btnX + btnW && my >= cy && my < cy + 22;
@@ -466,20 +466,20 @@ public class BankScreen extends Screen {
         newLoanBtnX = btnX; newLoanBtnY = cy; newLoanBtnW = btnW;
         cy += 30;
 
-        // Demandes reçues — le prêteur doit accepter ou refuser
-        if (!requestsAsLender.isEmpty()) {
-            ctx.drawText(textRenderer, "ON VOUS DEMANDE UN CREDIT (" + requestsAsLender.size() + ")", px, cy, C_GOLD, false);
+        // Propositions reçues — l'emprunteur doit accepter ou refuser
+        if (!requestsAsBorrower.isEmpty()) {
+            ctx.drawText(textRenderer, "ON VOUS PROPOSE UN CREDIT (" + requestsAsBorrower.size() + ")", px, cy, C_GOLD, false);
             cy += textRenderer.fontHeight + 6;
-            for (LoanRequestData r : requestsAsLender)
+            for (LoanRequestData r : requestsAsBorrower)
                 cy = renderRequestRow(ctx, mx, my, px, pw, cy, r, true);
             cy += GAP;
         }
 
-        // Demandes envoyées — en attente de l'accord du prêteur
-        if (!requestsAsBorrower.isEmpty()) {
-            ctx.drawText(textRenderer, "VOS DEMANDES EN ATTENTE (" + requestsAsBorrower.size() + ")", px, cy, C_DIM, false);
+        // Propositions envoyées — en attente de l'accord de l'emprunteur
+        if (!requestsAsLender.isEmpty()) {
+            ctx.drawText(textRenderer, "VOS PROPOSITIONS EN ATTENTE (" + requestsAsLender.size() + ")", px, cy, C_DIM, false);
             cy += textRenderer.fontHeight + 6;
-            for (LoanRequestData r : requestsAsBorrower)
+            for (LoanRequestData r : requestsAsLender)
                 cy = renderRequestRow(ctx, mx, my, px, pw, cy, r, false);
             cy += GAP;
         }
@@ -507,7 +507,7 @@ public class BankScreen extends Screen {
         }
     }
 
-    /** Ligne de demande de crédit. incoming=true : on me demande ; false : ma demande en attente. */
+    /** Ligne de proposition de crédit. incoming=true : on me propose ; false : ma proposition en attente. */
     private int renderRequestRow(DrawContext ctx, int mx, int my,
                                  int px, int pw, int y, LoanRequestData r, boolean incoming) {
         int rowH = 36;
@@ -515,24 +515,21 @@ public class BankScreen extends Screen {
         ctx.fill(px, y, px + 3, y + rowH, incoming ? C_GOLD : C_BLUE);
         ctx.fill(px, y + rowH - 1, px + pw, y + rowH, C_BORDER);
 
-        boolean canAccept = !incoming || balance >= r.principal();
         String line1 = incoming
-            ? r.other() + " souhaite vous emprunter " + fmt(r.principal()) + " ◆"
-            : "Demande envoyee a " + r.other() + " — " + fmt(r.principal()) + " ◆ (en attente de son accord)";
+            ? r.other() + " vous propose un credit de " + fmt(r.principal()) + " ◆"
+            : "Proposition envoyee a " + r.other() + " — " + fmt(r.principal()) + " ◆ (en attente de son accord)";
         ctx.drawText(textRenderer, line1, px + 12, y + 6, C_WHITE, false);
-        String line2 = "Duree " + r.durationDays() + " j · penalite " + r.penaltyBase() + " ◆/j en cas de retard";
-        if (incoming && !canAccept) line2 += " · §cSolde insuffisant pour accepter";
+        String line2 = "A rembourser sous " + r.durationDays() + " j · penalite " + r.penaltyBase() + " ◆/j en cas de retard";
         ctx.drawText(textRenderer, line2, px + 12, y + 19, C_MID, false);
 
         int bw = 70, ay = y + (rowH - 20) / 2;
         if (incoming) {
-            // Accepter
+            // Accepter (je reçois l'argent et je m'engage à rembourser)
             int ax = px + pw - bw * 2 - 16;
-            boolean ah = canAccept && mx >= ax && mx < ax + bw && my >= ay && my < ay + 20;
-            ctx.fill(ax, ay, ax + bw, ay + 20, canAccept ? (ah ? 0xFF1A8050 : C_GREEN) : C_DARK);
-            ctx.drawCenteredTextWithShadow(textRenderer, "Accepter", ax + bw / 2, ay + 6, canAccept ? C_WHITE : C_DIM);
-            if (canAccept)
-                creditBtnBounds.add(new int[]{ax, ay, bw, 20, BankNetworking.ACTION_LOAN_ACCEPT, r.id()});
+            boolean ah = mx >= ax && mx < ax + bw && my >= ay && my < ay + 20;
+            ctx.fill(ax, ay, ax + bw, ay + 20, ah ? 0xFF1A8050 : C_GREEN);
+            ctx.drawCenteredTextWithShadow(textRenderer, "Accepter", ax + bw / 2, ay + 6, C_WHITE);
+            creditBtnBounds.add(new int[]{ax, ay, bw, 20, BankNetworking.ACTION_LOAN_ACCEPT, r.id()});
             // Refuser
             int dx = px + pw - bw - 8;
             boolean dh = mx >= dx && mx < dx + bw && my >= ay && my < ay + 20;
@@ -540,7 +537,7 @@ public class BankScreen extends Screen {
             ctx.drawCenteredTextWithShadow(textRenderer, "Refuser", dx + bw / 2, ay + 6, C_WHITE);
             creditBtnBounds.add(new int[]{dx, ay, bw, 20, BankNetworking.ACTION_LOAN_DECLINE, r.id()});
         } else {
-            // Annuler ma demande
+            // Annuler ma proposition
             int ax = px + pw - bw - 8;
             boolean ah = mx >= ax && mx < ax + bw && my >= ay && my < ay + 20;
             ctx.fill(ax, ay, ax + bw, ay + 20, ah ? 0xFF8B1030 : C_RED);
@@ -624,13 +621,13 @@ public class BankScreen extends Screen {
         ctx.fill(mx0, my0, mx0 + 1, my0 + mh, C_GOLD);
         ctx.fill(mx0 + mw - 1, my0, mx0 + mw, my0 + mh, C_BORDER);
 
-        ctx.drawText(textRenderer, "DEMANDER UN CREDIT", mx0 + PAD, my0 + 10, C_GOLD, false);
+        ctx.drawText(textRenderer, "PROPOSER UN CREDIT", mx0 + PAD, my0 + 10, C_GOLD, false);
         ctx.fill(mx0, my0 + 28, mx0 + mw, my0 + 29, C_BORDER);
 
         int fy = my0 + 36;
 
-        // Dropdown prêteur
-        ctx.drawText(textRenderer, "A qui demander (le preteur)", mx0 + PAD, fy, C_DIM, false);
+        // Dropdown emprunteur
+        ctx.drawText(textRenderer, "A qui preter (l'emprunteur)", mx0 + PAD, fy, C_DIM, false);
         fy += textRenderer.fontHeight + 4;
         int dw = mw - PAD * 2;
         modalBorrowDropX = mx0 + PAD; modalBorrowDropY = fy; modalBorrowDropW = dw;
@@ -647,7 +644,7 @@ public class BankScreen extends Screen {
         fy += 24;
 
         // Champ montant (positionné par render())
-        ctx.drawText(textRenderer, "Montant a emprunter", mx0 + PAD, fy, C_DIM, false);
+        ctx.drawText(textRenderer, "Montant a preter", mx0 + PAD, fy, C_DIM, false);
         fy += textRenderer.fontHeight + 4;
         fy += 22; // espace pour le TextFieldWidget
 
@@ -668,21 +665,22 @@ public class BankScreen extends Screen {
             mx0 + PAD, fy, C_DIM, false);
         fy += textRenderer.fontHeight + 6;
 
-        // Rappel : le prêteur doit accepter
+        // Rappel : l'emprunteur doit accepter avant le transfert
         int amount = parseAmount();
         String warn = amount > 0
-            ? "Le preteur devra accepter avant de recevoir les " + fmt(amount) + " ◆"
-            : "Le preteur recevra une demande a accepter";
-        ctx.drawText(textRenderer, warn, mx0 + mw / 2 - textRenderer.getWidth(warn) / 2, fy, C_MID, false);
+            ? fmt(amount) + " ◆ preleves de votre compte s'il accepte"
+            : "L'emprunteur devra accepter la proposition";
+        ctx.drawText(textRenderer, warn, mx0 + mw / 2 - textRenderer.getWidth(warn) / 2, fy,
+            amount > balance ? C_RED : C_MID, false);
         fy += textRenderer.fontHeight + 6;
 
         // Bouton envoyer
-        boolean canCreate = amount > 0 && !knownPlayers.isEmpty();
+        boolean canCreate = amount > 0 && amount <= balance && !knownPlayers.isEmpty();
         boolean cHov = canCreate && mx >= mx0 + PAD && mx < mx0 + mw - PAD
             && my >= fy && my < fy + 26;
         ctx.fill(mx0 + PAD, fy, mx0 + mw - PAD, fy + 26,
             canCreate ? (cHov ? 0xFF1A8050 : C_GREEN) : C_DARK);
-        ctx.drawCenteredTextWithShadow(textRenderer, "Envoyer la demande",
+        ctx.drawCenteredTextWithShadow(textRenderer, "Envoyer la proposition",
             mx0 + mw / 2, fy + 9, canCreate ? C_WHITE : C_DIM);
         modalCreateBtnX = mx0 + PAD; modalCreateBtnY = fy; modalCreateBtnW = mw - PAD * 2;
     }
@@ -775,11 +773,11 @@ public class BankScreen extends Screen {
                     modalPenaltyIdx = (modalPenaltyIdx + 1) % PENALTIES.length;
                 return true;
             }
-            // Bouton envoyer la demande
+            // Bouton envoyer la proposition
             if (y >= modalCreateBtnY && y < modalCreateBtnY + 26
                     && x >= modalCreateBtnX && x < modalCreateBtnX + modalCreateBtnW) {
                 int amount = parseAmount();
-                if (amount > 0 && !knownPlayers.isEmpty())
+                if (amount > 0 && amount <= balance && !knownPlayers.isEmpty())
                     sendLoanRequest(amount);
                 return true;
             }
@@ -880,12 +878,12 @@ public class BankScreen extends Screen {
 
     // ── Réseau ─────────────────────────────────────────────────────────────────
 
-    /** Envoie une demande de crédit au prêteur sélectionné dans le modal. */
+    /** Envoie une proposition de crédit à l'emprunteur sélectionné dans le modal. */
     private void sendLoanRequest(int amount) {
         if (knownPlayers.isEmpty()) return;
         PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
         buf.writeInt(BankNetworking.ACTION_LOAN_REQUEST);
-        buf.writeString(knownPlayers.get(modalBorrowerIdx)); // le prêteur choisi
+        buf.writeString(knownPlayers.get(modalBorrowerIdx)); // l'emprunteur choisi
         buf.writeInt(amount);
         buf.writeInt(DURATIONS[modalDurationIdx]);
         buf.writeInt(PENALTIES[modalPenaltyIdx]);

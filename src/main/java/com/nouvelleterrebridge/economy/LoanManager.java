@@ -58,15 +58,15 @@ public class LoanManager {
     // ── Demandes de crédit ───────────────────────────────────────────────────
 
     /**
-     * L'emprunteur envoie une demande de crédit au prêteur.
-     * Aucun fonds n'est transféré tant que le prêteur n'a pas accepté.
+     * Le prêteur propose un crédit à l'emprunteur.
+     * Aucun fonds n'est transféré tant que l'emprunteur n'a pas accepté.
      * Retourne null en cas de succès, un message d'erreur sinon.
      */
     public synchronized String request(String borrower, String lender, int principal,
                                        int durationDays, int penaltyBase, int penaltyIncrease) {
         boolean dejaEnAttente = requests.stream().anyMatch(r ->
             r.borrower.equalsIgnoreCase(borrower) && r.lender.equalsIgnoreCase(lender));
-        if (dejaEnAttente) return "Vous avez deja une demande en attente aupres de ce joueur.";
+        if (dejaEnAttente) return "Vous avez deja une proposition en attente aupres de ce joueur.";
         LoanRequest r = new LoanRequest();
         r.id              = nextId++;
         r.lender          = lender;
@@ -81,22 +81,22 @@ public class LoanManager {
         return null;
     }
 
-    /** Le prêteur accepte une demande : le crédit est créé et les fonds transférés. */
-    public synchronized String acceptRequest(String lender, int requestId) {
+    /** L'emprunteur accepte une proposition : le crédit est créé et les fonds transférés. */
+    public synchronized String acceptRequest(String borrower, int requestId) {
         LoanRequest r = findRequest(requestId);
-        if (r == null || !r.lender.equalsIgnoreCase(lender)) return "Demande introuvable.";
-        String err = add(lender, r.borrower, r.principal, r.durationDays, r.penaltyBase, r.penaltyIncrease);
+        if (r == null || !r.borrower.equalsIgnoreCase(borrower)) return "Proposition introuvable.";
+        String err = add(r.lender, r.borrower, r.principal, r.durationDays, r.penaltyBase, r.penaltyIncrease);
         if (err != null) return err;
         requests.remove(r);
         sauvegarder();
         return null;
     }
 
-    /** Le prêteur refuse, ou l'emprunteur annule sa propre demande. */
+    /** L'emprunteur refuse, ou le prêteur annule sa propre proposition. */
     public synchronized String declineRequest(String who, int requestId) {
         LoanRequest r = findRequest(requestId);
         if (r == null || (!r.lender.equalsIgnoreCase(who) && !r.borrower.equalsIgnoreCase(who)))
-            return "Demande introuvable.";
+            return "Proposition introuvable.";
         requests.remove(r);
         sauvegarder();
         return null;
