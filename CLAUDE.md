@@ -26,7 +26,7 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `0.x.y-beta` (dans `gradle.properties` → `mod_version`)
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `0.2.37-beta` (GUI /production épuré : header compact, reset avec confirmation + wipe complet)
+- Version actuelle : `0.2.38-beta` (registre : statut en ligne pris du serveur, plus de la DB bot)
 - À chaque rebuild : mettre à jour `mod_version` dans `gradle.properties`, puis `git commit` + `git push`
 
 ---
@@ -129,6 +129,7 @@ commands/
   EventNarratifCommand.java → /evenement — narration (op only)
   QuetesCommand.java       → /quetes (ouvre GUI via QUEST_OPEN), /quetes refresh, /quetes reset
   RegistreCommand.java     → /registre : appelle fetchPersonnages, envoie REGISTRE_OPEN au client
+                             en_ligne recalculé depuis server.getPlayerManager() (la DB bot peut être désync)
   ProductionCommand.java   → /production (ouvre GUI via PROD_OPEN, tous joueurs — GUI only, pas de sous-commandes)
 
 economy/
