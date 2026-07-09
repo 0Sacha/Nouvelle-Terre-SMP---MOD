@@ -1,5 +1,7 @@
 package com.nouvelleterrebridge.economy;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.*;
 
 public class QuestGenerator {
@@ -85,7 +87,65 @@ public class QuestGenerator {
         // ── DELIVERY — GROUPE ─────────────────────────────────────────────────
         d("minecraft:oak_log",   "Collecte de Bois",      64,  "MOYEN",   "SHARDS",110, null, 0, 100, 0, 0, 2);
         d("minecraft:cooked_beef","Banquet Collectif",    32,  "DIFFICILE","ITEM",   0, "minecraft:enchanted_golden_apple", 2, 200, 20, 5, 3);
+
+        // ── KILL — extension ────────────────────────────────────────────────
+        k("minecraft:slime",     "Slimes",                8, 2f, "FACILE",   "SHARDS", 40,  7f, null, 0,  30,  0,  0, 1);
+        k("minecraft:zombie_villager","Villageois Infectes",4,1f,"MOYEN",   "SHARDS", 70, 12f, null, 0,  75,  0,  5, 1);
+        k("minecraft:magma_cube","Cubes de Magma",        6, 2f, "DIFFICILE","SHARDS",100, 15f, null, 0, 110,  0, 15, 1);
+        k("minecraft:hoglin",    "Hoglins",               5, 1f, "DIFFICILE","SHARDS",105, 15f, null, 0, 115,  0, 15, 1);
+        k("minecraft:piglin_brute","Brutes Piglin",       3, 1f, "LÉGENDAIRE","SHARDS",160,20f, null, 0, 200,  0, 30, 1);
+        k("minecraft:ravager",   "Ravageurs",             2, 0f, "LÉGENDAIRE","SHARDS",200,25f, null, 0, 250, 10, 30, 1);
+        k("minecraft:shulker",   "Shulkers",              4, 1f, "LÉGENDAIRE","ITEM",   0, 0f, "minecraft:shulker_shell", 2, 250, 0, 30, 1);
+
+        // ── HARVEST — extension FACILE ──────────────────────────────────────
+        h("minecraft:birch_log", "Bucheron de Bouleau",   32,  8f, "FACILE",  "SHARDS", 28,  4f, null, 0, 25, 0, 0, 1);
+        h("minecraft:spruce_log","Bucheron de Sapin",     32,  8f, "FACILE",  "SHARDS", 28,  4f, null, 0, 25, 0, 0, 1);
+        h("minecraft:dirt",      "Terrassier",            64, 16f, "FACILE",  "SHARDS", 18,  3f, null, 0, 15, 0, 0, 1);
+        h("minecraft:sand",      "Ramasseur de Sable",    48, 12f, "FACILE",  "SHARDS", 20,  3f, null, 0, 18, 0, 0, 1);
+        h("minecraft:carrot",    "Maraicher de Carottes", 48, 12f, "FACILE",  "SHARDS", 24,  4f, null, 0, 25, 0, 0, 1);
+        h("minecraft:potato",    "Cultivateur de Patates",48, 12f, "FACILE",  "SHARDS", 24,  4f, null, 0, 25, 0, 0, 1);
+        h("minecraft:melon_slice","Recolteur de Pasteques",48,12f, "FACILE",  "SHARDS", 22,  3f, null, 0, 20, 0, 0, 1);
+        h("minecraft:pumpkin",   "Citrouilleur",          24,  6f, "FACILE",  "SHARDS", 26,  4f, null, 0, 25, 0, 0, 1);
+        h("minecraft:bamboo",    "Coupeur de Bambou",     64, 16f, "FACILE",  "SHARDS", 20,  3f, null, 0, 18, 0, 0, 1);
+        h("minecraft:kelp",      "Algoculteur",           48, 12f, "FACILE",  "SHARDS", 20,  3f, null, 0, 18, 0, 0, 1);
+
+        // ── HARVEST — extension MOYEN ───────────────────────────────────────
+        h("minecraft:raw_copper","Mineur de Cuivre",      24,  6f, "MOYEN",   "SHARDS", 55,  9f, null, 0, 60, 0, 5, 1);
+        h("minecraft:nether_wart","Herboriste du Nether", 32,  8f, "MOYEN",   "SHARDS", 65, 10f, null, 0, 75, 0, 5, 1);
+        h("minecraft:glowstone_dust","Recolteur de Lumiere",24,6f, "MOYEN",   "SHARDS", 60, 10f, null, 0, 70, 0, 5, 1);
+        h("cottonmod:cotton",    "Recolteur de Coton",    32,  8f, "MOYEN",   "SHARDS", 60, 10f, null, 0, 65, 0, 5, 1);
+
+        // ── DELIVERY — extension ────────────────────────────────────────────
+        d("minecraft:baked_potato","Cantine du Village",  24,  "FACILE",  "SHARDS", 40, null, 0,  30,  0,  0, 1);
+        d("minecraft:torch",     "Allumeur de Rues",      64,  "FACILE",  "SHARDS", 35, null, 0,  30,  0,  0, 1);
+        d("minecraft:pumpkin_pie","Patissier",             8,  "MOYEN",   "SHARDS", 75, null, 0,  85,  0,  5, 1);
+        d("minecraft:cake",      "Grand Gateau",           2,  "MOYEN",   "SHARDS", 85, null, 0,  90,  0,  5, 1);
+        d("minecraft:paper",     "Papeterie",             48,  "MOYEN",   "SHARDS", 70, null, 0,  80,  0,  5, 1);
+        d("minecraft:book",      "Libraire",              12,  "MOYEN",   "SHARDS", 80, null, 0,  85,  0,  5, 1);
+        d("minecraft:stone_bricks","Maconnerie",          64,  "MOYEN",   "SHARDS", 70, null, 0,  75,  0,  5, 1);
+        d("minecraft:hay_block", "Fourrage pour Betail",  16,  "MOYEN",   "SHARDS", 70, null, 0,  75,  0,  5, 1);
+        d("minecraft:lantern",   "Lanternier",            16,  "DIFFICILE","SHARDS",120, null, 0, 120,  0, 15, 1);
+        d("minecraft:ender_pearl","Chasseur de Perles",    8,  "DIFFICILE","SHARDS",130, null, 0, 130,  0, 15, 1);
+        d("cottonmod:bandage",   "Fournitures Medicales", 12,  "MOYEN",   "SHARDS", 85, null, 0,  90,  0,  5, 1);
     }
+
+    // ── Quêtes communautaires (pool dédié) ────────────────────────────────────
+    // {type, target, label, quantité globale, récompense ◆ par contributeur}
+
+    private record CommunityTemplate(String type, String target, String label, int quantity, int reward) {}
+
+    private static final List<CommunityTemplate> COMMUNITY_POOL = List.of(
+        new CommunityTemplate("HARVEST", "minecraft:cobblestone", "Grande Carriere Communale",   3000, 150),
+        new CommunityTemplate("HARVEST", "minecraft:oak_log",     "Reserve de Bois du Village",   800, 150),
+        new CommunityTemplate("HARVEST", "minecraft:wheat",       "Grenier Communal",            1500, 150),
+        new CommunityTemplate("HARVEST", "minecraft:coal",        "Effort Collectif : Charbon",  1000, 180),
+        new CommunityTemplate("HARVEST", "minecraft:sugar_cane",  "Plantation Collective",       1200, 150),
+        new CommunityTemplate("HARVEST", "minecraft:sand",        "Verrerie du Village",         1500, 140),
+        new CommunityTemplate("KILL",    "minecraft:zombie",      "Purge des Morts-Vivants",      300, 200),
+        new CommunityTemplate("KILL",    "minecraft:skeleton",    "Nettoyage des Ossements",      250, 200),
+        new CommunityTemplate("KILL",    "minecraft:creeper",     "Demineurs Volontaires",        120, 250),
+        new CommunityTemplate("KILL",    "minecraft:spider",      "Chasse aux Araignees",         250, 180)
+    );
 
     // ── Builder helpers ───────────────────────────────────────────────────────
 
@@ -122,6 +182,71 @@ public class QuestGenerator {
             .filter(t -> t.maxPlayers() > 1 && t.minLevel() <= maxLevel)
             .toList();
         return buildFromTemplates(eligible, maxLevel, count);
+    }
+
+    /** Epoch ms du prochain minuit (heure locale du serveur). */
+    public static long nextMidnightMs() {
+        return LocalDate.now().plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();
+    }
+
+    /**
+     * Génère les 3 quêtes journalières : une FACILE, une MOYEN, une DIFFICILE.
+     * Accessibles à tous (pas de niveau requis, pas de coût), expirent à minuit.
+     */
+    public static List<Quest> generateDailies() {
+        List<Quest> result = new ArrayList<>();
+        long expires = nextMidnightMs();
+        for (String diff : new String[]{"FACILE", "MOYEN", "DIFFICILE"}) {
+            List<Template> pool = POOL.stream()
+                .filter(t -> t.maxPlayers() == 1 && diff.equals(t.difficulty()))
+                .toList();
+            if (pool.isEmpty()) continue;
+            Template t = pool.get(RAND.nextInt(pool.size()));
+            Quest q = new Quest();
+            q.id            = nextId++;
+            q.type          = t.type();
+            q.target        = t.target();
+            q.label         = t.label();
+            q.levelRequired = 0;                 // journalière : accessible à tous
+            q.maxPlayers    = 1;
+            q.isGlobal      = false;
+            q.quantity      = Math.max(1, t.baseQty());
+            q.rewardType    = t.rewardType();
+            q.rewardXp      = t.rewardXp();
+            q.costShards    = 0;                 // journalière : gratuite
+            q.expiresAt     = expires;
+            if ("SHARDS".equals(t.rewardType())) q.rewardShards = Math.max(1, t.baseShards());
+            else { q.rewardItem = t.rewardItem(); q.rewardItemQty = t.rewardItemQty(); }
+            q.tags.add("JOURNALIÈRE");
+            q.tags.add("SOLO");
+            q.tags.add(t.type());
+            q.tags.add(diff);
+            q.tags.add(t.rewardType());
+            result.add(q);
+        }
+        return result;
+    }
+
+    /** Génère la quête communautaire du jour (objectif global du serveur). */
+    public static Quest generateCommunity() {
+        CommunityTemplate t = COMMUNITY_POOL.get(RAND.nextInt(COMMUNITY_POOL.size()));
+        Quest q = new Quest();
+        q.id            = nextId++;
+        q.type          = t.type();
+        q.target        = t.target();
+        q.label         = t.label();
+        q.levelRequired = 0;
+        q.maxPlayers    = 999;
+        q.isGlobal      = true;
+        q.quantity      = t.quantity();
+        q.rewardType    = "SHARDS";
+        q.rewardShards  = t.reward();
+        q.rewardXp      = 50;
+        q.costShards    = 0;
+        q.expiresAt     = nextMidnightMs();
+        q.tags.add("COMMUNAUTAIRE");
+        q.tags.add(t.type());
+        return q;
     }
 
     private static List<Quest> generate(int playerLevel, int count, int forcedMaxPlayers) {

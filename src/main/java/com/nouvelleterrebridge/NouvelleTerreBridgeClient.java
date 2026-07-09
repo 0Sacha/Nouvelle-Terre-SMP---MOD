@@ -230,12 +230,13 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             Map<Integer, Integer>                gp  = readIntIntMap(buf);
             List<QuetesScreen.LeaderboardEntry>  lbC = readLb(buf);
             List<QuetesScreen.LeaderboardEntry>  lbL = readLb(buf);
+            QuetesScreen.CommunityData           cm  = readCommunity(buf);
             client.execute(() -> {
                 updateQuestWidget(ac);
                 if (client.currentScreen instanceof QuetesScreen s)
-                    s.update(level, xp, xpNext, av, ac, pe, gp, lbC, lbL);
+                    s.update(level, xp, xpNext, av, ac, pe, gp, lbC, lbL, cm);
                 else
-                    client.setScreen(new QuetesScreen(level, xp, xpNext, av, ac, pe, gp, lbC, lbL));
+                    client.setScreen(new QuetesScreen(level, xp, xpNext, av, ac, pe, gp, lbC, lbL, cm));
             });
         });
 
@@ -275,11 +276,12 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             Map<Integer, Integer>                gp  = readIntIntMap(buf);
             List<QuetesScreen.LeaderboardEntry>  lbC = readLb(buf);
             List<QuetesScreen.LeaderboardEntry>  lbL = readLb(buf);
+            QuetesScreen.CommunityData           cm  = readCommunity(buf);
             int color = ok ? 0xFF2EAD6B : 0xFFBF2040;
             client.execute(() -> {
                 updateQuestWidget(ac);
                 if (client.currentScreen instanceof QuetesScreen s)
-                    s.update(level, xp, xpNext, av, ac, pe, gp, lbC, lbL);
+                    s.update(level, xp, xpNext, av, ac, pe, gp, lbC, lbL, cm);
                 NotificationHud.push(color, message);
             });
         });
@@ -360,6 +362,13 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
                 buf.readInt(), buf.readString(), buf.readInt(), buf.readLong(),
                 buf.readInt(), buf.readInt(), buf.readInt(), buf.readBoolean()));
         return list;
+    }
+
+    private static QuetesScreen.CommunityData readCommunity(PacketByteBuf buf) {
+        if (!buf.readBoolean()) return null;
+        return new QuetesScreen.CommunityData(
+            buf.readString(), buf.readString(), buf.readString(),
+            buf.readInt(), buf.readInt(), buf.readInt(), buf.readBoolean(), buf.readInt());
     }
 
     private static List<QuetesScreen.QuestData> readQuestList(PacketByteBuf buf) {

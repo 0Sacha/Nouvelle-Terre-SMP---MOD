@@ -34,6 +34,9 @@ public class QuetesScreen extends Screen {
 
     public record LeaderboardEntry(String name, int value) {}
 
+    public record CommunityData(String label, String type, String target, int quantity,
+                                int progress, int reward, boolean completed, int myContribution) {}
+
     // ── Couleurs ──────────────────────────────────────────────────────────────
 
     private static final int C_BG      = 0xFF14161A;
@@ -74,6 +77,9 @@ public class QuetesScreen extends Screen {
     private Map<Integer, Integer>   groupPending = new HashMap<>();
     private List<LeaderboardEntry>  lbCompleted  = new ArrayList<>();
     private List<LeaderboardEntry>  lbLevel      = new ArrayList<>();
+    private CommunityData           community    = null;
+
+    private static final int BANNER_H = 44;
 
     private enum Tab { DISPONIBLES, EN_COURS, A_RECLAMER, CLASSEMENTS }
     private Tab tab       = Tab.DISPONIBLES;
@@ -88,9 +94,10 @@ public class QuetesScreen extends Screen {
     public QuetesScreen(int level, int xp, int xpNext,
                         List<QuestData> available, List<ActiveQuestData> active,
                         List<PendingRewardData> pending, Map<Integer, Integer> groupPending,
-                        List<LeaderboardEntry> lbCompleted, List<LeaderboardEntry> lbLevel) {
+                        List<LeaderboardEntry> lbCompleted, List<LeaderboardEntry> lbLevel,
+                        CommunityData community) {
         super(Text.literal("Quêtes"));
-        update(level, xp, xpNext, available, active, pending, groupPending, lbCompleted, lbLevel);
+        update(level, xp, xpNext, available, active, pending, groupPending, lbCompleted, lbLevel, community);
     }
 
     @Override
@@ -171,6 +178,12 @@ public class QuetesScreen extends Screen {
     // ── Onglet Disponibles ────────────────────────────────────────────────────
 
     private void renderAvailable(DrawContext ctx, int mx, int my, int startY) {
+        int cardsY = startY;
+        if (community != null) {
+            renderCommunityBanner(ctx, px + PAD, startY + PAD, pw - PAD * 2);
+            cardsY += BANNER_H + GAP;
+        }
+
         List<QuestData> list = getAvailableFiltered();
         int rows      = (list.size() + COLS - 1) / COLS;
         int maxScroll = Math.max(0, rows - visibleRows());
@@ -182,12 +195,40 @@ public class QuetesScreen extends Screen {
                 if (idx >= list.size()) continue;
                 QuestData q = list.get(idx);
                 int cx = px + PAD + col * (cardW + GAP);
-                int cy = startY + PAD + row * (CARD_H + GAP);
+                int cy = cardsY + PAD + row * (CARD_H + GAP);
                 boolean hover = mx >= cx && mx < cx + cardW && my >= cy && my < cy + CARD_H;
                 renderAvailableCard(ctx, q, cx, cy, hover, mx, my);
             }
         }
-        renderScrollbar(ctx, startY, rows, visibleRows(), scrollRow, maxScroll);
+        renderScrollbar(ctx, cardsY, rows, visibleRows(), scrollRow, maxScroll);
+    }
+
+    /** Bannière de la quête communautaire du serveur (progression globale). */
+    private void renderCommunityBanner(DrawContext ctx, int x, int y, int w) {
+        int violet = 0xFFB060FF;
+        ctx.fill(x, y, x + w, y + BANNER_H, C_SURFACE);
+        ctx.fill(x, y, x + 3, y + BANNER_H, violet);
+        ctx.fill(x, y + BANNER_H - 1, x + w, y + BANNER_H, C_BORDER);
+
+        ctx.drawText(textRenderer, "QUÊTE DU SERVEUR — " + community.label() + " ×" + community.quantity(),
+            x + 8, y + 6, violet, false);
+        String rw = "+" + community.reward() + " ◆ par participant";
+        ctx.drawText(textRenderer, rw, x + w - textRenderer.getWidth(rw) - 8, y + 6, C_GOLD, false);
+
+        float pct = community.quantity() > 0
+            ? Math.min(1f, (float) community.progress() / community.quantity()) : 0f;
+        int barW = w - 16;
+        ctx.fill(x + 8, y + 18, x + 8 + barW, y + 23, C_BORDER);
+        if (pct > 0) ctx.fill(x + 8, y + 18, x + 8 + (int)(barW * pct),
+            y + 23, community.completed() ? C_GREEN : C_GOLD);
+
+        String prog = community.completed()
+            ? "Accomplie ! Récompense distribuée à tous les participants."
+            : community.progress() + " / " + community.quantity()
+              + (community.myContribution() > 0
+                 ? "  ·  ma contribution : " + community.myContribution() : "  ·  tout le serveur y contribue");
+        ctx.drawText(textRenderer, prog, x + 8, y + 28,
+            community.completed() ? C_GREEN : C_MID, false);
     }
 
     private void renderAvailableCard(DrawContext ctx, QuestData q, int x, int y, boolean hover, int mx, int my) {
@@ -198,7 +239,7 @@ public class QuetesScreen extends Screen {
         renderItemIcon(ctx, q.target(), x + cardW - 22, y + 7);
 
         List<String> filteredTags = q.tags().stream()
-            .filter(t -> "SOLO".equals(t) || "GROUPE".equals(t)
+            .filter(t -> "SOLO".equals(t) || "GROUPE".equals(t) || "JOURNALIÈRE".equals(t)
                       || "KILL".equals(t) || "HARVEST".equals(t) || "DELIVERY".equals(t))
             .toList();
         int cy = renderTagsCompact(ctx, filteredTags, x + 6, y + 8);
@@ -265,7 +306,7 @@ public class QuetesScreen extends Screen {
 
         renderItemIcon(ctx, q.target(), x + cardW - 22, y + 7);
         List<String> filteredTags = q.tags().stream()
-            .filter(t -> "SOLO".equals(t) || "GROUPE".equals(t)
+            .filter(t -> "SOLO".equals(t) || "GROUPE".equals(t) || "JOURNALIÈRE".equals(t)
                       || "KILL".equals(t) || "HARVEST".equals(t) || "DELIVERY".equals(t))
             .toList();
         int cy = renderTagsCompact(ctx, filteredTags, x + 6, y + 8);
@@ -503,12 +544,13 @@ public class QuetesScreen extends Screen {
 
     private int tagColor(String tag) {
         return switch (tag) {
-            case "SOLO"     -> C_MID;
-            case "GROUPE"   -> C_BLUE;
-            case "KILL"     -> 0xFFBF4040;
-            case "HARVEST"  -> 0xFF5EA85E;
-            case "DELIVERY" -> 0xFF5BA8D4;
-            default         -> C_DIM;
+            case "SOLO"        -> C_MID;
+            case "GROUPE"      -> C_BLUE;
+            case "JOURNALIÈRE" -> C_GOLD;
+            case "KILL"        -> 0xFFBF4040;
+            case "HARVEST"     -> 0xFF5EA85E;
+            case "DELIVERY"    -> 0xFF5BA8D4;
+            default            -> C_DIM;
         };
     }
 
@@ -571,6 +613,7 @@ public class QuetesScreen extends Screen {
 
     private int visibleRows() {
         int contentH = ph - TOP_H - 1 - PAD * 2;
+        if (tab == Tab.DISPONIBLES && community != null) contentH -= BANNER_H + GAP;
         return Math.max(1, contentH / (CARD_H + GAP));
     }
 
@@ -629,7 +672,8 @@ public class QuetesScreen extends Screen {
     public void update(int level, int xp, int xpNext,
                        List<QuestData> available, List<ActiveQuestData> active,
                        List<PendingRewardData> pending, Map<Integer, Integer> groupPending,
-                       List<LeaderboardEntry> lbCompleted, List<LeaderboardEntry> lbLevel) {
+                       List<LeaderboardEntry> lbCompleted, List<LeaderboardEntry> lbLevel,
+                       CommunityData community) {
         this.playerLevel  = level;
         this.playerXp     = xp;
         this.xpToNext     = xpNext;
@@ -639,5 +683,6 @@ public class QuetesScreen extends Screen {
         this.groupPending = groupPending;
         this.lbCompleted  = lbCompleted;
         this.lbLevel      = lbLevel;
+        this.community    = community;
     }
 }

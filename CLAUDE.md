@@ -26,7 +26,7 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `0.x.y-beta` (dans `gradle.properties` → `mod_version`)
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `0.2.34-beta` (crédits sur proposition du prêteur + shop auto stock infini + $Serveur hors stats)
+- Version actuelle : `0.2.35-beta` (quêtes journalières 00h + quête communautaire + auto-claim + bonus quotidien)
 - À chaque rebuild : mettre à jour `mod_version` dans `gradle.properties`, puis `git commit` + `git push`
 
 ---
@@ -37,6 +37,11 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 - Après chaque op, événement async vers le bot pour sync DB Discord
 - `ECONOMY_SALARY` = notification only côté bot (ne pas appeler `db.addShards`, déjà fait via `ECONOMY_REWARD`)
 - `PLAYER_JOIN` inclut `balance` → bot fait `UPDATE joueurs SET shards=? WHERE uuid=?` pour resync au login
+- **Robinets (argent créé par le serveur via `addShards`)** : récompenses de quêtes SHARDS,
+  quête communautaire (◆ par contributeur), bonus quotidien de connexion (+25 ◆/jour réel),
+  kills de mobs (`KillRewards`), temps de jeu (+5 ◆/30 min), conversion des récompenses items
+  non récupérées à minuit, 500 ◆ de départ
+- **Puits (argent détruit/absorbé)** : achats au shop auto `$Serveur`, coûts d'acceptation de quêtes
 
 ## Architecture marché
 - Annonces : `marche.json` sur le serveur (`MarketManager.java`)
@@ -136,9 +141,24 @@ economy/
   Loan.java                → POJO crédit (id, lender, borrower, principal, dueTimestamp, penaltyBase,
                              penaltyIncrease, daysOverdue, totalPenalty, repaid, lastPenaltyMs)
   LoanManager.java         → Singleton nouvelle-terre-credits.json, check pénalités toutes les 1200 ticks
-  Quest.java               → POJO quête (id, type, target, quantity, reward, label)
-  QuestManager.java        → Singleton quetes-templates.json + quetes-progress.json
-                             API : load/reload/reset, accept/claim, onMobKilled/onItemHarvested, getQuests/getPlayerProgress/getPlayerCompleted
+  Quest.java               → POJO quête (id, type, target, quantity, rewardType/Shards/Item/Xp, tags, label, expiresAt)
+  QuestGenerator.java      → Pool de ~70 templates (KILL/HARVEST/DELIVERY × FACILE/MOYEN/DIFFICILE/LÉGENDAIRE)
+                             + generateDailies() (3 journalières : 1 par difficulté, expirent à minuit)
+                             + generateCommunity() (pool dédié de 10 objectifs serveur)
+                             + nextMidnightMs() (epoch du prochain minuit, heure locale serveur)
+  QuestManager.java        → Singleton quetes.json (players + globalGroup + dailySolo + community + dailyDate)
+                             API : load/reset, accept/claim/cancel, collectReward/cancelPending,
+                             onMobKilled/onItemHarvested (avec MinecraftServer), tick(server)
+                             - **Auto-claim** : quête KILL/HARVEST à 100 % → récompense immédiate
+                               (SHARDS versés direct + msg chat ; ITEM → pendingRewards "À Réclamer")
+                             - **Rollover journalier** : tick vérifie chaque minute si la date a changé (00h réel)
+                               → deliverAllPending (items donnés si place, sinon convertis en shards créés,
+                               valeur = prix shop auto × qté), retire les journalières expirées, régénère
+                               dailySolo + community, broadcast serveur
+                             - **Quête communautaire** : progression globale sans acceptation, contributors
+                               map name→contribution, à l'objectif : +reward ◆ créés pour CHAQUE contributeur
+  DailyBonusTracker.java   → Bonus quotidien +25 ◆ créés à la première connexion de chaque jour réel
+                             Persistance nouvelle-terre-bonus.json (pseudo → date), hook dans PlayerEvents.JOIN
 
 events/
   PlayerEvents.java        → JOIN / LEAVE — dispatch bot, nom RP, chat RP, balance sync
@@ -263,12 +283,13 @@ recurring[]   : int count → (int id, string to, int amount, int intervalTicks,
 
 ### Quêtes
 ```
-QUEST_OPEN  : quests[] | accepted[] | completed[]
-QUEST_ACTION: int action | int questId
-QUEST_RESULT: bool ok | string msg | quests[] | accepted[] | completed[]
-quests[]   : int count → (int id, string type, string target, int qty, int reward, string label) × count
-accepted[] : int count → (int questId, int progress) × count
-completed[]: int count → int questId × count
+QUEST_OPEN  : int level | int xp | int xpToNext | available[] | active[] | pending[]
+              | groupPending[] | lbCompleted[] | lbLevel[] | community
+QUEST_ACTION: int action | int param (questId ou index selon l'action)
+QUEST_RESULT: bool ok | string msg | [même contenu que QUEST_OPEN]
+community   : bool has → (string label, string type, string target, int quantity,
+                          int progress, int rewardShards, bool completed, int myContribution)
+Actions : ACCEPT(0) / CLAIM(1) / CANCEL(2) / COLLECT(3) / CANCEL_PENDING(4)
 ```
 
 ### Registre

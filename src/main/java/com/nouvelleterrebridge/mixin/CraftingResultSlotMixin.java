@@ -19,6 +19,6 @@ public class CraftingResultSlotMixin {
         if (player.getWorld().isClient()) return;
         String itemId = Registries.ITEM.getId(stack.getItem()).toString();
         ProductionTracker.add(itemId, stack.getCount());
-        QuestManager.onItemHarvested(player.getName().getString(), itemId, stack.getCount());
+        QuestManager.onItemHarvested(player.getName().getString(), itemId, stack.getCount(), player.getServer());
     }
 }

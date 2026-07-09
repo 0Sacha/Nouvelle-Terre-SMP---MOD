@@ -61,6 +61,14 @@ public class PlayerEvents {
                     "§6[Nouvelle Terre] §f✨ Bienvenue ! Tu reçois §e§l500 ◆ §fde départ. Bonne aventure !"));
             }
 
+            // Bonus quotidien : +25 ◆ créés à la première connexion de chaque jour réel
+            if (!premiereFois && com.nouvelleterrebridge.economy.DailyBonusTracker.claimToday(pseudo)) {
+                LocalEconomy.getInstance().addShards(pseudo, com.nouvelleterrebridge.economy.DailyBonusTracker.BONUS);
+                joueur.sendMessage(Text.literal(
+                    "§6[Banque] §fBonus quotidien de connexion : §a+"
+                    + com.nouvelleterrebridge.economy.DailyBonusTracker.BONUS + " ◆"));
+            }
+
             // Envoi de l'événement — le bot fait UPDATE joueurs SET en_ligne=true,
             // derniere_connexion=NOW(), shards=? [, premiere_connexion=NOW() si encore nulle]
             Map<String, Object> data = new HashMap<>();

@@ -93,6 +93,7 @@ public class NouvelleTerreBridge implements ModInitializer {
         PlayerLevelManager.load();
         QuestManager.load();
         FirstJoinTracker.getInstance().load();
+        com.nouvelleterrebridge.economy.DailyBonusTracker.load();
 
         // Blocs cassés → drops réels (fortune/silk touch inclus)
         PlayerBlockBreakEvents.AFTER.register((world, player, pos, state, blockEntity) -> {
@@ -102,7 +103,7 @@ public class NouvelleTerreBridge implements ModInitializer {
             for (ItemStack drop : drops) {
                 String itemId = Registries.ITEM.getId(drop.getItem()).toString();
                 ProductionTracker.add(itemId, drop.getCount());
-                QuestManager.onItemHarvested(pName, itemId, drop.getCount());
+                QuestManager.onItemHarvested(pName, itemId, drop.getCount(), sw.getServer());
             }
         });
 
@@ -110,8 +111,11 @@ public class NouvelleTerreBridge implements ModInitializer {
         ServerEntityCombatEvents.AFTER_KILLED_OTHER_ENTITY.register((world, entity, killedEntity) -> {
             if (!(entity instanceof ServerPlayerEntity player)) return;
             String typeId = Registries.ENTITY_TYPE.getId(killedEntity.getType()).toString();
-            QuestManager.onMobKilled(player.getName().getString(), typeId);
+            QuestManager.onMobKilled(player.getName().getString(), typeId, player.getServer());
         });
+
+        // Rollover des quêtes journalières (00h heure réelle, vérifié chaque minute)
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register(QuestManager::tick);
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             HdvCommand.register(dispatcher);
@@ -617,6 +621,21 @@ public class NouvelleTerreBridge implements ModInitializer {
         var topLevel = PlayerLevelManager.getLeaderboardByLevel(10);
         buf.writeInt(topLevel.size());
         for (var e : topLevel) { buf.writeString(e.getKey()); buf.writeInt(e.getValue()); }
+
+        // Quête communautaire du jour
+        QuestManager.CommunityState cs = QuestManager.getCommunity();
+        boolean hasCommunity = cs != null && cs.quest != null;
+        buf.writeBoolean(hasCommunity);
+        if (hasCommunity) {
+            buf.writeString(cs.quest.label);
+            buf.writeString(cs.quest.type != null ? cs.quest.type : "");
+            buf.writeString(cs.quest.target != null ? cs.quest.target : "");
+            buf.writeInt(cs.quest.quantity);
+            buf.writeInt(cs.progress);
+            buf.writeInt(cs.quest.rewardShards);
+            buf.writeBoolean(cs.completed);
+            buf.writeInt(QuestManager.getCommunityContribution(playerName));
+        }
     }
 
     // ── Registre networking ──────────────────────────────────────────────────
