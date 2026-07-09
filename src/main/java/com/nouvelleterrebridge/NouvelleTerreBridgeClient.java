@@ -7,6 +7,7 @@ import com.nouvelleterrebridge.client.DiscordRPCManager;
 import com.nouvelleterrebridge.client.HdvScreen;
 import com.nouvelleterrebridge.client.HudEditorScreen;
 import com.nouvelleterrebridge.client.NotificationHud;
+import com.nouvelleterrebridge.client.ProductionScreen;
 import com.nouvelleterrebridge.client.RegistreScreen;
 import com.nouvelleterrebridge.client.hud.BalanceWidget;
 import com.nouvelleterrebridge.client.hud.BiomeWidget;
@@ -22,6 +23,7 @@ import com.nouvelleterrebridge.client.QuetesScreen;
 import com.nouvelleterrebridge.client.WikiScreen;
 import com.nouvelleterrebridge.network.BankNetworking;
 import com.nouvelleterrebridge.network.HdvNetworking;
+import com.nouvelleterrebridge.network.ProductionNetworking;
 import com.nouvelleterrebridge.network.QuestNetworking;
 import com.nouvelleterrebridge.network.RegistreNetworking;
 import com.nouvelleterrebridge.network.WikiNetworking;
@@ -240,6 +242,23 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             });
         });
 
+        ClientPlayNetworking.registerGlobalReceiver(ProductionNetworking.PROD_OPEN, (client, handler, buf, responseSender) -> {
+            boolean isOp = buf.readBoolean();
+            List<ProductionScreen.ProdEntry> list = readProdEntries(buf);
+            client.execute(() -> client.setScreen(new ProductionScreen(isOp, list)));
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(ProductionNetworking.PROD_RESULT, (client, handler, buf, responseSender) -> {
+            boolean ok      = buf.readBoolean();
+            String  message = buf.readString();
+            boolean isOp    = buf.readBoolean();
+            List<ProductionScreen.ProdEntry> list = readProdEntries(buf);
+            client.execute(() -> {
+                if (client.currentScreen instanceof ProductionScreen s)
+                    s.handleResult(ok, message, isOp, list);
+            });
+        });
+
         ClientPlayNetworking.registerGlobalReceiver(WikiNetworking.WIKI_OPEN, (client, handler, buf, responseSender) ->
             client.execute(() -> client.setScreen(new WikiScreen())));
 
@@ -361,6 +380,16 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             list.add(new BankScreen.LoanData(
                 buf.readInt(), buf.readString(), buf.readInt(), buf.readLong(),
                 buf.readInt(), buf.readInt(), buf.readInt(), buf.readBoolean()));
+        return list;
+    }
+
+    private static List<ProductionScreen.ProdEntry> readProdEntries(PacketByteBuf buf) {
+        int count = buf.readInt();
+        List<ProductionScreen.ProdEntry> list = new ArrayList<>(count);
+        for (int i = 0; i < count; i++)
+            list.add(new ProductionScreen.ProdEntry(
+                buf.readString(), buf.readLong(), buf.readLong(),
+                buf.readInt(), buf.readInt(), buf.readBoolean()));
         return list;
     }
 

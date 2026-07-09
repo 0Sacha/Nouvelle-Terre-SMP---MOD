@@ -26,7 +26,7 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `0.x.y-beta` (dans `gradle.properties` → `mod_version`)
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `0.2.35-beta` (quêtes journalières 00h + quête communautaire + auto-claim + bonus quotidien)
+- Version actuelle : `0.2.36-beta` (GUI /production : liste scrollable + barres de progression, boutons admin op only)
 - À chaque rebuild : mettre à jour `mod_version` dans `gradle.properties`, puis `git commit` + `git push`
 
 ---
@@ -104,6 +104,8 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 | `/quetes refresh` | Recharge quetes-templates.json (op 2) |
 | `/quetes reset` | Réinitialise toute la progression (op 2) |
 | `/registre` | Ouvre le GUI Registre des personnages (screen client Fabric) |
+| `/production` | Ouvre le GUI Production naturelle (tous les joueurs, boutons admin si op 2) |
+| `/production reset/info/recheck/reload` | Sous-commandes texte admin (op 2) |
 
 > Toutes les opérations marché (vendre, acheter, retirer) se font **uniquement via `/hdv`**.
 > Virements, crédits et historique se gèrent via `/bank`.
@@ -128,6 +130,8 @@ commands/
   EventNarratifCommand.java → /evenement — narration (op only)
   QuetesCommand.java       → /quetes (ouvre GUI via QUEST_OPEN), /quetes refresh, /quetes reset
   RegistreCommand.java     → /registre : appelle fetchPersonnages, envoie REGISTRE_OPEN au client
+  ProductionCommand.java   → /production (ouvre GUI via PROD_OPEN, tous joueurs)
+                             + reset/info/recheck/reload en texte (op 2)
 
 economy/
   LocalEconomy.java        → Singleton shards.json
@@ -194,6 +198,8 @@ network/
   QuestNetworking.java     → Canaux : QUEST_OPEN (S→C, ouvre GUI) / QUEST_ACTION (C→S) / QUEST_RESULT (S→C)
                              Actions : ACTION_ACCEPT(0) / ACTION_CLAIM(1)
   RegistreNetworking.java  → Canal : REGISTRE_OPEN (S→C, ouvre RegistreScreen)
+  ProductionNetworking.java → Canaux : PROD_OPEN (S→C, ouvre GUI) / PROD_ACTION (C→S) / PROD_RESULT (S→C)
+                             Actions (op only, revalidées serveur) : RESET(0) / RECHECK(1) / RELOAD(2)
 
 client/                    ← @Environment(CLIENT) uniquement
   HdvScreen.java           → Screen marché : 4 onglets (Marché / Vendre / Mon Shop / Boutiques)
@@ -202,6 +208,9 @@ client/                    ← @Environment(CLIENT) uniquement
   BankScreen.java          → Screen banque : 5 onglets (Compte / Economie / Classement / Credits / Virements)
   QuetesScreen.java        → Screen quêtes : 2 onglets (Disponibles / Mes Quêtes), PW=420 PH=300,
                              cards avec barre de progression, boutons Accepter/Réclamer
+  ProductionScreen.java    → Screen production : liste scrollable (icône + nom FR + barre + count/seuil + statut),
+                             tri : en vente d'abord puis progression desc. Boutons admin (Recheck/Recharger/Reset)
+                             rendus uniquement si isOp (revalidé serveur). PW_MAX=520 PH_MAX=420
   RegistreScreen.java      → Screen registre personnages : liste scrollable, PW_MAX=400 PH_MAX=300
                              record PersonnageData(String nomRp, String pseudoMc, boolean enLigne)
                              Tri : en ligne en premier (point vert), puis alphabétique
@@ -295,6 +304,14 @@ Actions : ACCEPT(0) / CLAIM(1) / CANCEL(2) / COLLECT(3) / CANCEL_PENDING(4)
 ### Registre
 ```
 REGISTRE_OPEN : int count → (string nomRp, string pseudoMc, bool enLigne) × count
+```
+
+### Production
+```
+PROD_OPEN  : bool isOp | entries[]
+PROD_ACTION: int action (RESET 0 / RECHECK 1 / RELOAD 2 — op only)
+PROD_RESULT: bool ok | string msg | bool isOp | entries[]
+entries[]  : int count → (string itemId, long count, long seuil, int prix, int quantite, bool enVente) × count
 ```
 
 ---

@@ -39,6 +39,7 @@ import com.nouvelleterrebridge.http.EventDispatcher;
 import com.nouvelleterrebridge.http.EventQueue;
 import com.nouvelleterrebridge.network.BankNetworking;
 import com.nouvelleterrebridge.network.HdvNetworking;
+import com.nouvelleterrebridge.network.ProductionNetworking;
 import com.nouvelleterrebridge.market.MarketActions;
 import com.nouvelleterrebridge.market.MarketListing;
 import com.nouvelleterrebridge.market.MarketManager;
@@ -135,6 +136,7 @@ public class NouvelleTerreBridge implements ModInitializer {
         registerBankNetworking();
         registerQuestNetworking();
         registerRegistreNetworking();
+        registerProductionNetworking();
 
         // Envoie le solde au joueur dès qu'il est en jeu + refresh pool quêtes
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
@@ -636,6 +638,59 @@ public class NouvelleTerreBridge implements ModInitializer {
             buf.writeBoolean(cs.completed);
             buf.writeInt(QuestManager.getCommunityContribution(playerName));
         }
+    }
+
+    // ── Production networking ────────────────────────────────────────────────
+
+    /** Envoie l'état de la production au joueur (ouvre le GUI côté client). */
+    public static void sendProductionOpen(ServerPlayerEntity player) {
+        PacketByteBuf buf = PacketByteBufs.create();
+        writeProductionData(buf, player);
+        ServerPlayNetworking.send(player, ProductionNetworking.PROD_OPEN, buf);
+    }
+
+    private static void writeProductionData(PacketByteBuf buf, ServerPlayerEntity player) {
+        buf.writeBoolean(player.hasPermissionLevel(2));
+        Map<String, ShopThresholds.Entry> all = ShopThresholds.all();
+        buf.writeInt(all.size());
+        for (Map.Entry<String, ShopThresholds.Entry> e : all.entrySet()) {
+            buf.writeString(e.getKey());
+            buf.writeLong(ProductionTracker.get(e.getKey()));
+            buf.writeLong(e.getValue().seuil);
+            buf.writeInt(e.getValue().prix);
+            buf.writeInt(e.getValue().quantite);
+            buf.writeBoolean(MarketManager.getInstance().hasAutoListing(e.getKey(), ProductionShopManager.AUTO_SELLER));
+        }
+    }
+
+    private void registerProductionNetworking() {
+        ServerPlayNetworking.registerGlobalReceiver(ProductionNetworking.PROD_ACTION, (server, player, handler, buf, responseSender) -> {
+            int action = buf.readInt();
+            server.execute(() -> {
+                boolean ok;
+                String msg;
+                if (!player.hasPermissionLevel(2)) {
+                    ok = false; msg = "§cRéservé aux opérateurs.";
+                } else if (action == ProductionNetworking.ACTION_RESET) {
+                    ProductionTracker.reset();
+                    ok = true; msg = "§a✅ Compteurs réinitialisés, annonces auto supprimées.";
+                } else if (action == ProductionNetworking.ACTION_RECHECK) {
+                    ProductionShopManager.checkAll();
+                    ok = true; msg = "§a✅ Seuils re-vérifiés.";
+                } else if (action == ProductionNetworking.ACTION_RELOAD) {
+                    ShopThresholds.load();
+                    ProductionShopManager.checkAll();
+                    ok = true; msg = "§a✅ seuils-shop.json rechargé.";
+                } else {
+                    ok = false; msg = "§cAction inconnue.";
+                }
+                PacketByteBuf resp = PacketByteBufs.create();
+                resp.writeBoolean(ok);
+                resp.writeString(msg);
+                writeProductionData(resp, player);
+                ServerPlayNetworking.send(player, ProductionNetworking.PROD_RESULT, resp);
+            });
+        });
     }
 
     // ── Registre networking ──────────────────────────────────────────────────

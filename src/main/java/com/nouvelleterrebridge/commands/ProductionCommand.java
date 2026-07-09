@@ -1,11 +1,13 @@
 package com.nouvelleterrebridge.commands;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.nouvelleterrebridge.NouvelleTerreBridge;
 import com.nouvelleterrebridge.economy.ProductionShopManager;
 import com.nouvelleterrebridge.economy.ProductionTracker;
 import com.nouvelleterrebridge.economy.ShopThresholds;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 
 import java.util.Map;
@@ -14,9 +16,20 @@ public class ProductionCommand {
 
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
         dispatcher.register(CommandManager.literal("production")
-            .requires(src -> src.hasPermissionLevel(2))
+
+            // /production sans argument : ouvre le GUI (tous les joueurs)
+            .executes(ctx -> {
+                ServerPlayerEntity player = ctx.getSource().getPlayer();
+                if (player == null) {
+                    ctx.getSource().sendFeedback(() -> Text.literal("§cCommande joueur uniquement."), false);
+                    return 0;
+                }
+                NouvelleTerreBridge.sendProductionOpen(player);
+                return 1;
+            })
 
             .then(CommandManager.literal("reset")
+                .requires(src -> src.hasPermissionLevel(2))
                 .executes(ctx -> {
                     ProductionTracker.reset();
                     ctx.getSource().sendFeedback(() -> Text.literal(
@@ -28,6 +41,7 @@ public class ProductionCommand {
                 }))
 
             .then(CommandManager.literal("info")
+                .requires(src -> src.hasPermissionLevel(2))
                 .executes(ctx -> {
                     Map<String, ShopThresholds.Entry> thresholds = ShopThresholds.all();
                     if (thresholds.isEmpty()) {
@@ -57,6 +71,7 @@ public class ProductionCommand {
                 }))
 
             .then(CommandManager.literal("recheck")
+                .requires(src -> src.hasPermissionLevel(2))
                 .executes(ctx -> {
                     ProductionShopManager.checkAll();
                     ctx.getSource().sendFeedback(() -> Text.literal(
@@ -65,6 +80,7 @@ public class ProductionCommand {
                 }))
 
             .then(CommandManager.literal("reload")
+                .requires(src -> src.hasPermissionLevel(2))
                 .executes(ctx -> {
                     ShopThresholds.load();
                     ProductionShopManager.checkAll();
