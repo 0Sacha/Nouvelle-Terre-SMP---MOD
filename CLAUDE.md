@@ -26,7 +26,7 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `0.x.y-beta` (dans `gradle.properties` → `mod_version`)
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `0.2.36-beta` (GUI /production : liste scrollable + barres de progression, boutons admin op only)
+- Version actuelle : `0.2.37-beta` (GUI /production épuré : header compact, reset avec confirmation + wipe complet)
 - À chaque rebuild : mettre à jour `mod_version` dans `gradle.properties`, puis `git commit` + `git push`
 
 ---
@@ -104,8 +104,7 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 | `/quetes refresh` | Recharge quetes-templates.json (op 2) |
 | `/quetes reset` | Réinitialise toute la progression (op 2) |
 | `/registre` | Ouvre le GUI Registre des personnages (screen client Fabric) |
-| `/production` | Ouvre le GUI Production naturelle (tous les joueurs, boutons admin si op 2) |
-| `/production reset/info/recheck/reload` | Sous-commandes texte admin (op 2) |
+| `/production` | Ouvre le GUI Production naturelle (tous les joueurs ; boutons admin si op 2, pas de sous-commandes) |
 
 > Toutes les opérations marché (vendre, acheter, retirer) se font **uniquement via `/hdv`**.
 > Virements, crédits et historique se gèrent via `/bank`.
@@ -130,8 +129,7 @@ commands/
   EventNarratifCommand.java → /evenement — narration (op only)
   QuetesCommand.java       → /quetes (ouvre GUI via QUEST_OPEN), /quetes refresh, /quetes reset
   RegistreCommand.java     → /registre : appelle fetchPersonnages, envoie REGISTRE_OPEN au client
-  ProductionCommand.java   → /production (ouvre GUI via PROD_OPEN, tous joueurs)
-                             + reset/info/recheck/reload en texte (op 2)
+  ProductionCommand.java   → /production (ouvre GUI via PROD_OPEN, tous joueurs — GUI only, pas de sous-commandes)
 
 economy/
   LocalEconomy.java        → Singleton shards.json
@@ -210,7 +208,9 @@ client/                    ← @Environment(CLIENT) uniquement
                              cards avec barre de progression, boutons Accepter/Réclamer
   ProductionScreen.java    → Screen production : liste scrollable (icône + nom FR + barre + count/seuil + statut),
                              tri : en vente d'abord puis progression desc. Boutons admin (Recheck/Recharger/Reset)
-                             rendus uniquement si isOp (revalidé serveur). PW_MAX=520 PH_MAX=420
+                             rendus uniquement si isOp (revalidé serveur). Reset = double-clic ("Confirmer ?" 3 s)
+                             → remise à zéro complète : compteurs + seuils dynamiques + annonces auto.
+                             PW_MAX=520 PH_MAX=420
   RegistreScreen.java      → Screen registre personnages : liste scrollable, PW_MAX=400 PH_MAX=300
                              record PersonnageData(String nomRp, String pseudoMc, boolean enLigne)
                              Tri : en ligne en premier (point vert), puis alphabétique

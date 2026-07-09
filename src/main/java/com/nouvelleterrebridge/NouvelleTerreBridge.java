@@ -673,7 +673,8 @@ public class NouvelleTerreBridge implements ModInitializer {
                     ok = false; msg = "§cRéservé aux opérateurs.";
                 } else if (action == ProductionNetworking.ACTION_RESET) {
                     ProductionTracker.reset();
-                    ok = true; msg = "§a✅ Compteurs réinitialisés, annonces auto supprimées.";
+                    ShopThresholds.resetAll();
+                    ok = true; msg = "§a✅ Production remise à zéro : compteurs, seuils et annonces auto.";
                 } else if (action == ProductionNetworking.ACTION_RECHECK) {
                     ProductionShopManager.checkAll();
                     ok = true; msg = "§a✅ Seuils re-vérifiés.";

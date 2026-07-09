@@ -100,8 +100,15 @@ public class ShopThresholds {
         return new HashMap<>(thresholds);
     }
 
-    /** Pour compatibilité avec ProductionCommand.info — lit sans créer. */
+    /** Lit sans créer. */
     public static synchronized Entry get(String itemId) {
         return thresholds.get(itemId);
+    }
+
+    /** Vide tous les seuils (ils se recréent dynamiquement au premier contact). */
+    public static synchronized void resetAll() {
+        thresholds.clear();
+        save();
+        NouvelleTerreBridge.LOGGER.info("[ShopThresholds] Seuils remis à zéro.");
     }
 }

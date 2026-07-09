@@ -48,7 +48,7 @@ public class ProductionScreen extends Screen {
 
     private static final int MAX_PW = 520;
     private static final int MAX_PH = 420;
-    private static final int TOP_H  = 46;
+    private static final int TOP_H  = 40;
     private static final int PAD    = 12;
     private static final int ROW_H  = 30;
 
@@ -63,6 +63,9 @@ public class ProductionScreen extends Screen {
     private String  toastMsg;
     private boolean toastOk;
     private long    toastEnd;
+
+    // Confirmation du Reset : premier clic arme, second clic (dans les 3 s) exécute
+    private long resetConfirmUntil = 0;
 
     // Bounds boutons admin : {x, y, w, h, action}
     private final List<int[]> adminBtnBounds = new ArrayList<>();
@@ -120,9 +123,8 @@ public class ProductionScreen extends Screen {
         ctx.fill(px, py + TOP_H, px + pw, py + TOP_H + 1, C_BORDER);
         ctx.drawText(textRenderer, "⛏  Production naturelle", px + PAD, py + 9, C_GOLD, false);
         long enVente = entries.stream().filter(ProdEntry::enVente).count();
-        ctx.drawText(textRenderer, "Seuil atteint → l'item apparaît au shop $Serveur  ·  §a"
-            + enVente + " en vente§7 / " + entries.size(),
-            px + PAD, py + 24, C_DIM, false);
+        ctx.drawText(textRenderer, "§a" + enVente + " en vente§7 / " + entries.size(),
+            px + PAD, py + 23, C_DIM, false);
 
         adminBtnBounds.clear();
         if (isOp) renderAdminButtons(ctx, mx, my);
@@ -156,18 +158,20 @@ public class ProductionScreen extends Screen {
     private void renderAdminButtons(DrawContext ctx, int mx, int my) {
         String[] labels  = {"Recheck", "Recharger", "Reset"};
         int[]    actions = {ProductionNetworking.ACTION_RECHECK, ProductionNetworking.ACTION_RELOAD, ProductionNetworking.ACTION_RESET};
+        boolean resetArmed = System.currentTimeMillis() < resetConfirmUntil;
         int bx = px + pw - PAD;
         for (int i = labels.length - 1; i >= 0; i--) {
-            int bw = textRenderer.getWidth(labels[i]) + 14;
-            bx -= bw;
-            int by = py + 9;
             boolean danger = actions[i] == ProductionNetworking.ACTION_RESET;
+            String  label  = danger && resetArmed ? "Confirmer ?" : labels[i];
+            int bw = textRenderer.getWidth(label) + 14;
+            bx -= bw;
+            int by = py + 11;
             boolean hov = mx >= bx && mx < bx + bw && my >= by && my < by + 18;
-            int base  = danger ? 0xFF3D0A16 : C_SURFACE;
+            int base  = danger ? (resetArmed ? C_RED : 0xFF3D0A16) : C_SURFACE;
             int hover = danger ? C_RED : C_HOVER;
             ctx.fill(bx, by, bx + bw, by + 18, hov ? hover : base);
             ctx.fill(bx, by, bx + bw, by + 1, danger ? C_RED : C_BORDER);
-            ctx.drawText(textRenderer, labels[i], bx + 7, by + 5, danger ? C_WHITE : C_MID, false);
+            ctx.drawText(textRenderer, label, bx + 7, by + 5, danger ? C_WHITE : C_MID, false);
             adminBtnBounds.add(new int[]{bx, by, bw, 18, actions[i]});
             bx -= 6;
         }
@@ -239,6 +243,13 @@ public class ProductionScreen extends Screen {
 
         for (int[] b : adminBtnBounds) {
             if (x >= b[0] && x < b[0] + b[2] && y >= b[1] && y < b[1] + b[3]) {
+                if (b[4] == ProductionNetworking.ACTION_RESET
+                        && System.currentTimeMillis() >= resetConfirmUntil) {
+                    // Premier clic : arme la confirmation pendant 3 s
+                    resetConfirmUntil = System.currentTimeMillis() + 3000;
+                    return true;
+                }
+                resetConfirmUntil = 0;
                 PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
                 buf.writeInt(b[4]);
                 ClientPlayNetworking.send(ProductionNetworking.PROD_ACTION, buf);
