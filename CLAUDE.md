@@ -26,7 +26,7 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `1.0.1` (wiki à jour : toutes les commandes + sections Production et Roleplay)
+- Version actuelle : `1.1.0` (GUI /conflit — plus aucune commande à arguments dans le chat)
 - À chaque rebuild : mettre à jour `mod_version` dans `gradle.properties`, puis `git commit` + `git push`
 
 ---
@@ -98,7 +98,7 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 | `/hdv` | Ouvre le GUI Marché (screen client Fabric) |
 | `/bank` | Ouvre le GUI Banque (screen client Fabric) |
 | `/discord` | Lier compte Minecraft ↔ Discord |
-| `/conflit <cible> <raison>` | Déclarer un conflit RP |
+| `/conflit` | Ouvre le GUI Conflit RP (liste joueurs en ligne + raison → alerte Discord) |
 | `/evenement <message>` | Narration (op only) |
 | `/quetes` | Ouvre le GUI Quêtes |
 | `/quetes refresh` | Recharge quetes-templates.json (op 2) |
@@ -125,7 +125,7 @@ commands/
   HdvCommand.java          → /hdv : envoie HDV_OPEN au client via ServerPlayNetworking
   BankCommand.java         → /bank : envoie BANK_OPEN au client
   LierCommand.java         → /discord — liaison compte Minecraft ↔ Discord
-  ConflitCommand.java      → /conflit — déclaration conflit RP
+  ConflitCommand.java      → /conflit : envoie CONFLIT_OPEN (liste joueurs en ligne) → GUI client
   EventNarratifCommand.java → /evenement — narration (op only)
   QuetesCommand.java       → /quetes (ouvre GUI via QUEST_OPEN), /quetes refresh, /quetes reset
   RegistreCommand.java     → /registre : appelle fetchPersonnages, envoie REGISTRE_OPEN au client
@@ -199,6 +199,8 @@ network/
   RegistreNetworking.java  → Canal : REGISTRE_OPEN (S→C, ouvre RegistreScreen)
   ProductionNetworking.java → Canaux : PROD_OPEN (S→C, ouvre GUI) / PROD_ACTION (C→S) / PROD_RESULT (S→C)
                              Actions (op only, revalidées serveur) : RESET(0) / RECHECK(1) / RELOAD(2)
+  ConflitNetworking.java   → Canaux : CONFLIT_OPEN (S→C, liste joueurs) / CONFLIT_ACTION (C→S, cible+raison)
+                             / CONFLIT_RESULT (S→C, ok+msg → toast NotificationHud, ferme le screen si ok)
 
 client/                    ← @Environment(CLIENT) uniquement
   HdvScreen.java           → Screen marché : 4 onglets (Marché / Vendre / Mon Shop / Boutiques)
@@ -212,6 +214,8 @@ client/                    ← @Environment(CLIENT) uniquement
                              rendus uniquement si isOp (revalidé serveur). Reset = double-clic ("Confirmer ?" 3 s)
                              → remise à zéro complète : compteurs + seuils dynamiques + annonces auto.
                              PW_MAX=520 PH_MAX=420
+  ConflitScreen.java       → Screen conflit RP : liste joueurs en ligne (clic = sélection) + champ raison
+                             + bouton rouge "Déclarer le conflit". PW_MAX=340 PH_MAX=320
   RegistreScreen.java      → Screen registre personnages : liste scrollable, PW_MAX=400 PH_MAX=300
                              record PersonnageData(String nomRp, String pseudoMc, boolean enLigne)
                              Tri : en ligne en premier (point vert), puis alphabétique
@@ -313,6 +317,13 @@ PROD_OPEN  : bool isOp | entries[]
 PROD_ACTION: int action (RESET 0 / RECHECK 1 / RELOAD 2 — op only)
 PROD_RESULT: bool ok | string msg | bool isOp | entries[]
 entries[]  : int count → (string itemId, long count, long seuil, int prix, int quantite, bool enVente) × count
+```
+
+### Conflit
+```
+CONFLIT_OPEN  : int count → string joueur × count (en ligne, sauf soi-même)
+CONFLIT_ACTION: string cible | string raison
+CONFLIT_RESULT: bool ok | string msg
 ```
 
 ---

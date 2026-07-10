@@ -38,6 +38,7 @@ import com.nouvelleterrebridge.events.ServerEvents;
 import com.nouvelleterrebridge.http.EventDispatcher;
 import com.nouvelleterrebridge.http.EventQueue;
 import com.nouvelleterrebridge.network.BankNetworking;
+import com.nouvelleterrebridge.network.ConflitNetworking;
 import com.nouvelleterrebridge.network.HdvNetworking;
 import com.nouvelleterrebridge.network.ProductionNetworking;
 import com.nouvelleterrebridge.market.MarketActions;
@@ -137,6 +138,7 @@ public class NouvelleTerreBridge implements ModInitializer {
         registerQuestNetworking();
         registerRegistreNetworking();
         registerProductionNetworking();
+        registerConflitNetworking();
 
         // Envoie le solde au joueur dès qu'il est en jeu + refresh pool quêtes
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
@@ -690,6 +692,37 @@ public class NouvelleTerreBridge implements ModInitializer {
                 resp.writeString(msg);
                 writeProductionData(resp, player);
                 ServerPlayNetworking.send(player, ProductionNetworking.PROD_RESULT, resp);
+            });
+        });
+    }
+
+    // ── Conflit networking ───────────────────────────────────────────────────
+
+    private void registerConflitNetworking() {
+        ServerPlayNetworking.registerGlobalReceiver(ConflitNetworking.CONFLIT_ACTION, (server, player, handler, buf, responseSender) -> {
+            String cible  = buf.readString();
+            String raison = buf.readString();
+            server.execute(() -> {
+                String pseudo = player.getName().getString();
+                boolean ok;
+                String msg;
+                if (pseudo.equalsIgnoreCase(cible)) {
+                    ok = false; msg = "Vous ne pouvez pas vous déclarer conflit à vous-même.";
+                } else if (raison.trim().length() < 3) {
+                    ok = false; msg = "Raison trop courte.";
+                } else {
+                    ok = true;
+                    msg = "⚔ Conflit déclaré contre " + cible + " — le Conseil des Fondateurs est alerté.";
+                    Map<String, Object> data = new HashMap<>();
+                    data.put("player", pseudo);
+                    data.put("target", cible);
+                    data.put("reason", raison.trim());
+                    EventDispatcher.envoyer("CONFLICT_DECLARED", data);
+                }
+                PacketByteBuf resp = PacketByteBufs.create();
+                resp.writeBoolean(ok);
+                resp.writeString(msg);
+                ServerPlayNetworking.send(player, ConflitNetworking.CONFLIT_RESULT, resp);
             });
         });
     }

@@ -6,6 +6,7 @@ import com.nouvelleterrebridge.client.ClientConfig;
 import com.nouvelleterrebridge.client.DiscordRPCManager;
 import com.nouvelleterrebridge.client.HdvScreen;
 import com.nouvelleterrebridge.client.HudEditorScreen;
+import com.nouvelleterrebridge.client.ConflitScreen;
 import com.nouvelleterrebridge.client.NotificationHud;
 import com.nouvelleterrebridge.client.ProductionScreen;
 import com.nouvelleterrebridge.client.RegistreScreen;
@@ -22,6 +23,7 @@ import com.nouvelleterrebridge.client.hud.QuestWidget;
 import com.nouvelleterrebridge.client.QuetesScreen;
 import com.nouvelleterrebridge.client.WikiScreen;
 import com.nouvelleterrebridge.network.BankNetworking;
+import com.nouvelleterrebridge.network.ConflitNetworking;
 import com.nouvelleterrebridge.network.HdvNetworking;
 import com.nouvelleterrebridge.network.ProductionNetworking;
 import com.nouvelleterrebridge.network.QuestNetworking;
@@ -256,6 +258,20 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             client.execute(() -> {
                 if (client.currentScreen instanceof ProductionScreen s)
                     s.handleResult(ok, message, isOp, list);
+            });
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(ConflitNetworking.CONFLIT_OPEN, (client, handler, buf, responseSender) -> {
+            List<String> joueurs = readStringList(buf);
+            client.execute(() -> client.setScreen(new ConflitScreen(joueurs)));
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(ConflitNetworking.CONFLIT_RESULT, (client, handler, buf, responseSender) -> {
+            boolean ok      = buf.readBoolean();
+            String  message = buf.readString();
+            client.execute(() -> {
+                if (client.currentScreen instanceof ConflitScreen && ok) client.setScreen(null);
+                NotificationHud.push(ok ? 0xFFBF2040 : 0xFFE8A838, message);
             });
         });
 
