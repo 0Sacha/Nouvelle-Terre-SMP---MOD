@@ -55,3 +55,10 @@ tasks.named('remapJar') {
 		delete fileTree(dir: layout.buildDirectory.dir('libs').get().asFile, include: '*.jar')
 	}
 }
+
+// Supprime les anciens jars de dev (build/devlibs) avant chaque build
+tasks.named('jar') {
+	doFirst {
+		delete fileTree(dir: layout.buildDirectory.dir('devlibs').get().asFile, include: '*.jar')
+	}
+}
