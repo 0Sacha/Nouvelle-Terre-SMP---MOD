@@ -72,9 +72,19 @@ public class NouvelleTerreBridge implements ModInitializer {
     /** Cache uuid → nom RP, partagé entre PlayerEvents et le mixin de nommage. */
     public static final ConcurrentHashMap<String, String> nomsRP = new ConcurrentHashMap<>();
 
+    /** Shard ◆ — monnaie physique (1 item = 1 ◆). Retrait via /bank, dépôt par clic droit. */
+    public static final net.minecraft.item.Item SHARD = new com.nouvelleterrebridge.item.ShardItem(
+        new net.minecraft.item.Item.Settings().rarity(net.minecraft.util.Rarity.UNCOMMON));
+
     @Override
     public void onInitialize() {
         LOGGER.info("[NouvelleTerreBridge] Initialisation du mod...");
+
+        net.minecraft.registry.Registry.register(net.minecraft.registry.Registries.ITEM,
+            new net.minecraft.util.Identifier(MOD_ID, "shard"), SHARD);
+        net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents
+            .modifyEntriesEvent(net.minecraft.item.ItemGroups.INGREDIENTS)
+            .register(entries -> entries.add(SHARD));
 
         config = ModConfig.charger();
         LOGGER.info("[NouvelleTerreBridge] Configuration chargée : url={}", config.getBotUrl());
@@ -413,6 +423,29 @@ public class NouvelleTerreBridge implements ModInitializer {
                     int id = buf.readInt();
                     boolean ok = RecurringTransferManager.getInstance().cancel(id, player.getName().getString());
                     result = ok ? "§a✅ Virement récurrent annulé." : "§cVirement introuvable.";
+                }
+                case BankNetworking.ACTION_WITHDRAW_SHARDS -> {
+                    int amount = buf.readInt();
+                    String name = player.getName().getString();
+                    if (amount <= 0) {
+                        result = "§cMontant invalide.";
+                    } else if (LocalEconomy.getInstance().getBalance(name) < amount) {
+                        result = "§cSolde insuffisant.";
+                    } else {
+                        LocalEconomy.getInstance().removeShards(name, amount);
+                        TransactionLog.log(name, TransactionLog.TYPE_TRANSFER_OUT, "Retrait en Shards physiques", amount);
+                        result = "§a✅ " + amount + " Shard(s) ◆ retirés — clic droit dessus pour les redéposer.";
+                        server.execute(() -> {
+                            int restant = amount;
+                            while (restant > 0) {
+                                int sz = Math.min(64, restant);
+                                net.minecraft.item.ItemStack stack = new net.minecraft.item.ItemStack(SHARD, sz);
+                                if (!player.getInventory().insertStack(stack)) player.dropItem(stack, false);
+                                restant -= sz;
+                            }
+                            sendBalanceToPlayer(player);
+                        });
+                    }
                 }
                 default -> result = "§cAction inconnue.";
             }

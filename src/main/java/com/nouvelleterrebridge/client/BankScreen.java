@@ -124,6 +124,14 @@ public class BankScreen extends Screen {
     private int     modalPenaltyIdx    = 2; // 15 ◆/j par défaut
     private TextFieldWidget modalAmountField;
 
+    // ── Modal — retrait en Shards physiques ────────────────────────────────────
+
+    private boolean wModalOpen = false;
+    private TextFieldWidget withdrawAmountField;
+    private int wBtnX = -1, wBtnY = -1, wBtnW;
+    private int wModalX, wModalY, wModalW, wModalH;
+    private int wConfirmBtnY = -1;
+
     // Positions cachées pour le mouseClicked
     private int modalX, modalY, modalW, modalH;
     private int modalBorrowDropX, modalBorrowDropY, modalBorrowDropW;
@@ -166,6 +174,11 @@ public class BankScreen extends Screen {
         modalAmountField.setMaxLength(8);
         modalAmountField.setPlaceholder(Text.literal("Montant..."));
         addSelectableChild(modalAmountField);
+
+        withdrawAmountField = new TextFieldWidget(textRenderer, 0, -200, 160, 18, Text.empty());
+        withdrawAmountField.setMaxLength(8);
+        withdrawAmountField.setPlaceholder(Text.literal("Montant..."));
+        addSelectableChild(withdrawAmountField);
 
         trfAmountField = new TextFieldWidget(textRenderer, 0, -200, 100, 18, Text.empty());
         trfAmountField.setMaxLength(8);
@@ -215,6 +228,7 @@ public class BankScreen extends Screen {
         this.recurringList      = new ArrayList<>(recurring);
         this.screenOpenTime     = System.currentTimeMillis();
         modalOpen        = false;
+        wModalOpen       = false;
         borrowerDropOpen = false;
         txScroll         = 0;
         trfDropOpen      = false;
@@ -267,6 +281,18 @@ public class BankScreen extends Screen {
             }
         } else if (modalAmountField != null) {
             modalAmountField.setY(-200);
+        }
+
+        // Modal retrait en Shards
+        if (wModalOpen) {
+            ctx.fill(winX, winY + TOP_H, winX + winW, winY + winH, 0x88000000);
+            renderWithdrawModal(ctx, mx, my);
+            withdrawAmountField.setX(wModalX + PAD);
+            withdrawAmountField.setY(wModalY + 48);
+            withdrawAmountField.setWidth(wModalW - PAD * 2);
+            withdrawAmountField.render(ctx, mx, my, delta);
+        } else if (withdrawAmountField != null) {
+            withdrawAmountField.setY(-200);
         }
 
         // Dropdowns virements — APRÈS le tab mais AVANT super.render()
@@ -345,6 +371,17 @@ public class BankScreen extends Screen {
             px + (pw - textRenderer.getWidth(balStr)) / 2,
             cy + (headerH - textRenderer.fontHeight) / 2,
             balance < 0 ? C_RED : C_GOLD, false);
+
+        // Bouton "Retirer en Shards" (monnaie physique)
+        String wLbl = "Retirer en Shards ◆";
+        wBtnW = textRenderer.getWidth(wLbl) + 16;
+        wBtnX = px + pw - wBtnW - 10;
+        wBtnY = cy + (headerH - 22) / 2;
+        boolean wHov = mx >= wBtnX && mx < wBtnX + wBtnW && my >= wBtnY && my < wBtnY + 22;
+        ctx.fill(wBtnX, wBtnY, wBtnX + wBtnW, wBtnY + 22, wHov ? C_HOVER : C_SURFACE);
+        ctx.fill(wBtnX, wBtnY, wBtnX + wBtnW, wBtnY + 1, C_GOLD);
+        ctx.drawText(textRenderer, wLbl, wBtnX + 8, wBtnY + 7, C_GOLD, false);
+
         cy += headerH + GAP;
 
         // Carte récompense
@@ -713,6 +750,54 @@ public class BankScreen extends Screen {
         }
     }
 
+    // ── Modal retrait en Shards physiques ───────────────────────────────────────
+
+    private void renderWithdrawModal(DrawContext ctx, int mx, int my) {
+        int mw = 300, mh = 148;
+        int mx0 = winX + (winW - mw) / 2;
+        int my0 = winY + (winH - mh) / 2;
+        wModalX = mx0; wModalY = my0; wModalW = mw; wModalH = mh;
+
+        ctx.fill(mx0, my0, mx0 + mw, my0 + mh, C_SURFACE);
+        ctx.fill(mx0, my0, mx0 + mw, my0 + 1, C_GOLD);
+        ctx.fill(mx0, my0 + mh - 1, mx0 + mw, my0 + mh, C_BORDER);
+        ctx.fill(mx0, my0, mx0 + 1, my0 + mh, C_GOLD);
+        ctx.fill(mx0 + mw - 1, my0, mx0 + mw, my0 + mh, C_BORDER);
+
+        ctx.drawText(textRenderer, "RETIRER EN SHARDS ◆", mx0 + PAD, my0 + 10, C_GOLD, false);
+        ctx.fill(mx0, my0 + 28, mx0 + mw, my0 + 29, C_BORDER);
+
+        ctx.drawText(textRenderer, "Montant a retirer", mx0 + PAD, my0 + 36, C_DIM, false);
+        // Champ positionné par render() à my0 + 48
+
+        int fy = my0 + 74;
+        ctx.drawText(textRenderer, "1 Shard ◆ = 1 shard du compte", mx0 + PAD, fy, C_DIM, false);
+        fy += textRenderer.fontHeight + 3;
+        ctx.drawText(textRenderer, "Clic droit sur l'item pour le redeposer", mx0 + PAD, fy, C_DIM, false);
+        fy += textRenderer.fontHeight + 8;
+
+        int amount = parseWithdrawAmount();
+        boolean canWithdraw = amount > 0 && amount <= balance;
+        boolean hov = canWithdraw && mx >= mx0 + PAD && mx < mx0 + mw - PAD && my >= fy && my < fy + 26;
+        ctx.fill(mx0 + PAD, fy, mx0 + mw - PAD, fy + 26, canWithdraw ? (hov ? 0xFF1A8050 : C_GREEN) : C_DARK);
+        String lbl = amount > balance ? "Solde insuffisant" : "Retirer" + (amount > 0 ? " " + fmt(amount) + " ◆" : "");
+        ctx.drawCenteredTextWithShadow(textRenderer, lbl, mx0 + mw / 2, fy + 9, canWithdraw ? C_WHITE : C_DIM);
+        wConfirmBtnY = fy;
+    }
+
+    private int parseWithdrawAmount() {
+        if (withdrawAmountField == null) return 0;
+        try { return Math.max(0, Integer.parseInt(withdrawAmountField.getText().trim())); }
+        catch (NumberFormatException e) { return 0; }
+    }
+
+    private void sendWithdrawShards(int amount) {
+        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        buf.writeInt(BankNetworking.ACTION_WITHDRAW_SHARDS);
+        buf.writeInt(amount);
+        ClientPlayNetworking.send(BankNetworking.BANK_ACTION, buf);
+    }
+
     // ── Toast ──────────────────────────────────────────────────────────────────
 
     private void renderToast(DrawContext ctx) {
@@ -784,6 +869,21 @@ public class BankScreen extends Screen {
             return super.mouseClicked(mx0, my0, btn);
         }
 
+        // ── Modal retrait en Shards ──
+        if (wModalOpen) {
+            if (x < wModalX || x > wModalX + wModalW || y < wModalY || y > wModalY + wModalH) {
+                wModalOpen = false;
+                return true;
+            }
+            if (super.mouseClicked(mx0, my0, btn)) return true; // focus du champ montant
+            if (y >= wConfirmBtnY && y < wConfirmBtnY + 26
+                    && x >= wModalX + PAD && x < wModalX + wModalW - PAD) {
+                int amount = parseWithdrawAmount();
+                if (amount > 0 && amount <= balance) sendWithdrawShards(amount);
+            }
+            return true;
+        }
+
         // ── Dropdowns virements (intercept avant onglets) ──
         if (activeTab == Tab.TRANSFERS && trfDropOpen && trfDropX >= 0) {
             int maxVis = Math.min(8, knownPlayers.size());
@@ -821,6 +921,14 @@ public class BankScreen extends Screen {
                 if (x >= tx && x < tx + tw) { activeTab = tab; txScroll = 0; return true; }
                 tx += tw + 4;
             }
+        }
+
+        // ── Onglet Compte : bouton "Retirer en Shards" ──
+        if (activeTab == Tab.ACCOUNT && wBtnX >= 0
+                && x >= wBtnX && x < wBtnX + wBtnW && y >= wBtnY && y < wBtnY + 22) {
+            wModalOpen = true;
+            if (withdrawAmountField != null) withdrawAmountField.setText("");
+            return true;
         }
 
         // ── Onglet Crédits ──

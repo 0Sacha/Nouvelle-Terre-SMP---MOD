@@ -479,7 +479,8 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
         QuestWidget.activeGroups.clear();
         for (QuetesScreen.ActiveQuestData aq : active) {
             if (aq.snapshot() != null) {
-                QuestWidget.activeLabels.add(aq.snapshot().label());
+                QuestWidget.activeLabels.add(
+                    QuetesScreen.targetName(aq.snapshot().type(), aq.snapshot().target()));
                 QuestWidget.activeProgresses.add(aq.progress() + "/" + aq.snapshot().quantity());
                 QuestWidget.activeGroups.add(aq.snapshot().maxPlayers() > 1);
             }

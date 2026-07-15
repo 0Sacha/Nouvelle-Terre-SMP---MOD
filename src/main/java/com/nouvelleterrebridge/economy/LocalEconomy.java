@@ -75,6 +75,17 @@ public class LocalEconomy {
         EventDispatcher.envoyer("ECONOMY_REWARD", data);
     }
 
+    /** Dépose des Shards physiques sur le compte (clic droit sur l'item — conversion item → solde). */
+    public synchronized void depositShards(String pseudo, int montant) {
+        soldes.merge(pseudo.toLowerCase(), montant, Integer::sum);
+        save();
+        TransactionLog.log(pseudo, TransactionLog.TYPE_TRANSFER_IN, "Dépôt de Shards physiques", montant);
+        Map<String, Object> data = new HashMap<>();
+        data.put("player", pseudo);
+        data.put("amount", montant);
+        EventDispatcher.envoyer("ECONOMY_REWARD", data);
+    }
+
     /** Retourne true si le joueur a déjà eu un solde enregistré. */
     public synchronized boolean estConnu(String pseudo) {
         return soldes.containsKey(pseudo.toLowerCase());

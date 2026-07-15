@@ -26,7 +26,7 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `1.1.0` (GUI /conflit — plus aucune commande à arguments dans le chat)
+- Version actuelle : `1.2.0` (item Shard ◆ monnaie physique + objectifs de quêtes explicites)
 - À chaque rebuild : mettre à jour `mod_version` dans `gradle.properties`, puis `git commit` + `git push`
 
 ---
@@ -37,6 +37,11 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 - Après chaque op, événement async vers le bot pour sync DB Discord
 - `ECONOMY_SALARY` = notification only côté bot (ne pas appeler `db.addShards`, déjà fait via `ECONOMY_REWARD`)
 - `PLAYER_JOIN` inclut `balance` → bot fait `UPDATE joueurs SET shards=? WHERE uuid=?` pour resync au login
+- **Monnaie physique (`ShardItem`)** : item custom `nouvelle-terre-bridge:shard` ("Shard ◆", 1 item = 1 ◆).
+  Retrait : `/bank` → Compte → bouton "Retirer en Shards ◆" → modal montant (`ACTION_WITHDRAW_SHARDS`,
+  `removeShards` + items donnés/drop). Dépôt : clic droit avec le stack en main → `depositShards`
+  (tout le stack, log TRANSFER_IN, event ECONOMY_REWARD au bot, actionbar + NT_BALANCE).
+  Texture custom or (assets/…/textures/item/shard.png), enregistré dans ItemGroups.INGREDIENTS.
 - **Robinets (argent créé par le serveur via `addShards`)** : récompenses de quêtes SHARDS,
   quête communautaire (◆ par contributeur), bonus quotidien de connexion (+25 ◆/jour réel),
   kills de mobs (`KillRewards`), temps de jeu (+5 ◆/30 min), conversion des récompenses items
@@ -163,6 +168,11 @@ economy/
   DailyBonusTracker.java   → Bonus quotidien +25 ◆ créés à la première connexion de chaque jour réel
                              Persistance nouvelle-terre-bonus.json (pseudo → date), hook dans PlayerEvents.JOIN
 
+item/
+  ShardItem.java           → Item monnaie physique "Shard ◆" (1 = 1 ◆). use() côté serveur :
+                             depositShards(tout le stack) + actionbar + sendBalanceToPlayer.
+                             Enregistré dans NouvelleTerreBridge (SHARD, id "shard", Rarity.UNCOMMON)
+
 events/
   PlayerEvents.java        → JOIN / LEAVE — dispatch bot, nom RP, chat RP, balance sync
                              - PLAYER_JOIN inclut balance (resync shards bot)
@@ -193,7 +203,7 @@ network/
   BankNetworking.java      → Canaux : BANK_OPEN / BANK_ACTION / BANK_RESULT / BANK_REQUEST
                              Actions : LOAN_REQUEST(0) / LOAN_REPAY(1) / LOAN_FORGIVE(2) /
                                        TRANSFER(3) / RECURRING_CREATE(4) / RECURRING_CANCEL(5) /
-                                       LOAN_ACCEPT(6) / LOAN_DECLINE(7)
+                                       LOAN_ACCEPT(6) / LOAN_DECLINE(7) / WITHDRAW_SHARDS(8)
   QuestNetworking.java     → Canaux : QUEST_OPEN (S→C, ouvre GUI) / QUEST_ACTION (C→S) / QUEST_RESULT (S→C)
                              Actions : ACTION_ACCEPT(0) / ACTION_CLAIM(1)
   RegistreNetworking.java  → Canal : REGISTRE_OPEN (S→C, ouvre RegistreScreen)
@@ -208,7 +218,9 @@ client/                    ← @Environment(CLIENT) uniquement
                              Catégorie "Médical" : items cottonmod (coton, bandage, medkit, plantes...)
   BankScreen.java          → Screen banque : 5 onglets (Compte / Economie / Classement / Credits / Virements)
   QuetesScreen.java        → Screen quêtes : 2 onglets (Disponibles / Mes Quêtes), PW=420 PH=300,
-                             cards avec barre de progression, boutons Accepter/Réclamer
+                             cards avec barre de progression, boutons Accepter/Réclamer.
+                             Objectifs affichés avec le nom localisé de la cible (targetName(type,target) :
+                             ENTITY_TYPE pour KILL, ITEM sinon) — plus de labels poétiques côté UI
   ProductionScreen.java    → Screen production : liste scrollable (icône + nom FR + barre + count/seuil + statut),
                              tri : en vente d'abord puis progression desc. Boutons admin (Recheck/Recharger/Reset)
                              rendus uniquement si isOp (revalidé serveur). Reset = double-clic ("Confirmer ?" 3 s)

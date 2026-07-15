@@ -8,6 +8,7 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.registry.Registries;
 import net.minecraft.text.Text;
@@ -210,8 +211,14 @@ public class QuetesScreen extends Screen {
         ctx.fill(x, y, x + 3, y + BANNER_H, violet);
         ctx.fill(x, y + BANNER_H - 1, x + w, y + BANNER_H, C_BORDER);
 
-        ctx.drawText(textRenderer, "QUÊTE DU SERVEUR — " + community.label() + " ×" + community.quantity(),
-            x + 8, y + 6, violet, false);
+        String verbe = switch (community.type()) {
+            case "KILL"     -> "Tuer";
+            case "DELIVERY" -> "Livrer";
+            default         -> "Récolter";
+        };
+        String objectif = verbe + " " + community.quantity() + " × "
+            + targetName(community.type(), community.target());
+        ctx.drawText(textRenderer, "QUÊTE DU SERVEUR — " + objectif, x + 8, y + 6, violet, false);
         String rw = "+" + community.reward() + " ◆ par participant";
         ctx.drawText(textRenderer, rw, x + w - textRenderer.getWidth(rw) - 8, y + 6, C_GOLD, false);
 
@@ -244,9 +251,9 @@ public class QuetesScreen extends Screen {
             .toList();
         int cy = renderTagsCompact(ctx, filteredTags, x + 6, y + 8);
 
-        ctx.drawText(textRenderer, q.label(), x + 6, cy, C_WHITE, false);
-        int labelW = textRenderer.getWidth(q.label());
-        ctx.drawText(textRenderer, " ×" + q.quantity(), x + 6 + labelW, cy, C_MID, false);
+        String objectif = truncate(targetName(q.type(), q.target()), cardW - 50);
+        ctx.drawText(textRenderer, objectif, x + 6, cy, C_WHITE, false);
+        ctx.drawText(textRenderer, " ×" + q.quantity(), x + 6 + textRenderer.getWidth(objectif), cy, C_MID, false);
         cy += 11;
 
         renderReward(ctx, q, x + 6, cy);
@@ -310,9 +317,9 @@ public class QuetesScreen extends Screen {
                       || "KILL".equals(t) || "HARVEST".equals(t) || "DELIVERY".equals(t))
             .toList();
         int cy = renderTagsCompact(ctx, filteredTags, x + 6, y + 8);
-        ctx.drawText(textRenderer, q.label(), x + 6, cy, C_WHITE, false);
-        int lw = textRenderer.getWidth(q.label());
-        ctx.drawText(textRenderer, " ×" + q.quantity(), x + 6 + lw, cy, C_MID, false);
+        String objectif = truncate(targetName(q.type(), q.target()), cardW - 50);
+        ctx.drawText(textRenderer, objectif, x + 6, cy, C_WHITE, false);
+        ctx.drawText(textRenderer, " ×" + q.quantity(), x + 6 + textRenderer.getWidth(objectif), cy, C_MID, false);
         cy += 11;
 
         int cancelBtnY = y + CARD_H - BTN_H - 4;
@@ -387,9 +394,9 @@ public class QuetesScreen extends Screen {
 
         renderItemIcon(ctx, q.target(), x + cardW - 22, y + 7);
         ctx.drawText(textRenderer, "✅ Terminée", x + 6, y + 8, C_GREEN, false);
-        ctx.drawText(textRenderer, q.label(), x + 6, y + 20, C_WHITE, false);
-        int lw = textRenderer.getWidth(q.label());
-        ctx.drawText(textRenderer, " ×" + q.quantity(), x + 6 + lw, y + 20, C_MID, false);
+        String objectif = truncate(targetName(q.type(), q.target()), cardW - 50);
+        ctx.drawText(textRenderer, objectif, x + 6, y + 20, C_WHITE, false);
+        ctx.drawText(textRenderer, " ×" + q.quantity(), x + 6 + textRenderer.getWidth(objectif), y + 20, C_MID, false);
         renderReward(ctx, q, x + 6, y + 32);
 
         int cancelBtnY = y + CARD_H - BTN_H - 4;
@@ -630,8 +637,33 @@ public class QuetesScreen extends Screen {
 
     private String fmtItem(String id) {
         if (id == null || id.isEmpty()) return "?";
+        try {
+            Item item = Registries.ITEM.get(new Identifier(id));
+            if (item != Items.AIR) return item.getName().getString();
+        } catch (Exception ignored) {}
         String raw = id.contains(":") ? id.split(":")[1] : id;
         return raw.replace("_", " ");
+    }
+
+    /** Nom localisé de la cible d'une quête (mob pour KILL, item sinon). */
+    public static String targetName(String type, String target) {
+        try {
+            Identifier id = Identifier.tryParse(target);
+            if (id == null) return target;
+            if ("KILL".equals(type))
+                return Registries.ENTITY_TYPE.get(id).getName().getString();
+            Item item = Registries.ITEM.get(id);
+            if (item != Items.AIR) return item.getName().getString();
+        } catch (Exception ignored) {}
+        String raw = target.contains(":") ? target.split(":")[1] : target;
+        return raw.replace("_", " ");
+    }
+
+    private String truncate(String s, int maxPx) {
+        if (textRenderer.getWidth(s) <= maxPx) return s;
+        while (s.length() > 1 && textRenderer.getWidth(s + "…") > maxPx)
+            s = s.substring(0, s.length() - 1);
+        return s + "…";
     }
 
     private List<ActiveQuestData> getInProgress() {
