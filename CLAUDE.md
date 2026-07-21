@@ -26,7 +26,9 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `1.2.0` (item Shard ◆ monnaie physique + objectifs de quêtes explicites)
+- Version actuelle : `1.2.2` (Admin Shop avec prix dynamique + rééquilibrage économie)
+  - 1.2.1 : quêtes complétées disparaissent et ne peuvent être refaites
+  - 1.2.0 : item Shard ◆ monnaie physique + objectifs de quêtes explicites
 - À chaque rebuild : mettre à jour `mod_version` dans `gradle.properties`, puis `git commit` + `git push`
 
 ---
@@ -53,12 +55,26 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 - `MARKET_SYNC` envoyé au bot 3s après `SERVER_START` et à chaque reconnexion
 - Achat au meilleur prix automatique, peut fractionner sur plusieurs vendeurs
 - `FrenchItemNames.toDisplay()` strip n'importe quel namespace (pas seulement `minecraft:`)
+- **HDV Onglets** : Marché (joueurs), Vendre, Mon Shop, Shop Serveur, Boutiques
 - Catégories HDV : Tout, Blocs, Matériaux, Outils, Nourriture, Potions, **Médical**, Divers
 - **Shop auto (`$Serveur`)** : seuils créés dynamiquement au premier contact avec un item
   (`ShopThresholds.getOrCreate()`, calculés par `Rarity` vanilla). **Stock illimité** :
   l'achat ne décrémente pas la quantité, pas de SALE_COMPLETED envoyé au bot.
   L'argent des achats va sur le compte `$Serveur` (préfixe `$` = compte système,
   **exclu** du classement, des stats économie, du total shards et des dropdowns joueurs)
+- **Prix dynamiques (`ServerShopPriceManager`)** : persiste dans `server-shop-prices.json`
+  Prix augmente avec le volume de ventes (`recordSale()` appelé lors de chaque achat au shop):
+  - < 64 vendues : prix de base
+  - 64-256 : +10%
+  - 256-512 : +25%
+  - 512-1024 : +50%
+  - 1024-2048 : +75%
+  - 2048+ : +100%
+- **Seuils de prix rééquilibrés** (1.2.2) :
+  - COMMON: 1 → 2 ◆
+  - UNCOMMON: 5 → 12 ◆
+  - RARE: 15 → 35 ◆
+  - EPIC: 40 → 100 ◆
 
 ## Architecture crédits
 - Crédits + propositions : `nouvelle-terre-credits.json` sur le serveur (`LoanManager.java`, clés `loans` + `requests`)
@@ -167,6 +183,14 @@ economy/
                                map name→contribution, à l'objectif : +reward ◆ créés pour CHAQUE contributeur
   DailyBonusTracker.java   → Bonus quotidien +25 ◆ créés à la première connexion de chaque jour réel
                              Persistance nouvelle-terre-bonus.json (pseudo → date), hook dans PlayerEvents.JOIN
+  ShopThresholds.java      → Singleton seuils-shop.json — seuils de déblocage du shop auto + prix de base
+                             Entry : seuil (longeur avant vente), prix (◆/unité), quantité (par lot)
+                             Créés dynamiquement par rareté vanilla (COMMON/UNCOMMON/RARE/EPIC)
+                             Admins peuvent éditer JSON pour surcharger — rééquilibré en 1.2.2
+  ServerShopPriceManager.java → Singleton server-shop-prices.json — prix dynamiques du shop serveur
+                             Appelé lors de chaque achat (`recordSale(itemId, qty)`)
+                             Prix augmente avec volume vendu : +10% tous les 64 items, jusqu'à +100%
+                             API : getPrice(itemId), recordSale(), all(), reset()
 
 item/
   ShardItem.java           → Item monnaie physique "Shard ◆" (1 = 1 ◆). use() côté serveur :
@@ -213,7 +237,12 @@ network/
                              / CONFLIT_RESULT (S→C, ok+msg → toast NotificationHud, ferme le screen si ok)
 
 client/                    ← @Environment(CLIENT) uniquement
-  HdvScreen.java           → Screen marché : 4 onglets (Marché / Vendre / Mon Shop / Boutiques)
+  HdvScreen.java           → Screen marché : 5 onglets (Marché / Vendre / Mon Shop / Shop Serveur / Boutiques)
+                             - **Marché** : annonces des joueurs (filtrées, sans $Serveur)
+                             - **Vendre** : créer une annonce personnelle
+                             - **Mon Shop** : gérer ses annonces (bouton retirer)
+                             - **Shop Serveur** (🏛️) : items production auto ($Serveur), prix dynamiques
+                             - **Boutiques** : tri par vendeur
                              Chip solde haut-droit → BANK_REQUEST → ouvre BankScreen
                              Catégorie "Médical" : items cottonmod (coton, bandage, medkit, plantes...)
   BankScreen.java          → Screen banque : 5 onglets (Compte / Economie / Classement / Credits / Virements)
@@ -366,6 +395,9 @@ CONFLIT_RESULT: bool ok | string msg
 - Toast bottom-right avec accent coloré sur la bordure gauche (vert succès, rouge erreur)
 - **Chip solde** haut-droit : cliquable → envoie `BANK_REQUEST` → ouvre `BankScreen`
 - **Modal achat z-order** : `renderBuyModal()` dans `ctx.getMatrices().push() / translate(0,0,300) / pop()` — sinon texte des cards passe devant (batching Minecraft)
+- **Shop Serveur (🏛️)** : utilise `serverShopListings()` — filtre les annonces où seller = "$Serveur"
+  Même logique que Market tab, affichage identique (cards + achat). Prix dynamiques mis à jour via `ServerShopPriceManager.recordSale()`
+  appelé dans `MarketActions.buy()` quand isAuto = true. Voir aussi `filteredListings()` qui exclut maintenant $Serveur.
 
 ## GUI Bank — décisions techniques
 
