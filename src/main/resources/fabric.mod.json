@@ -15,9 +15,6 @@
     ],
     "client": [
       "com.nouvelleterrebridge.NouvelleTerreBridgeClient"
-    ],
-    "modmenu": [
-      "com.nouvelleterrebridge.client.ModMenuIntegration"
     ]
   },
   "depends": {
