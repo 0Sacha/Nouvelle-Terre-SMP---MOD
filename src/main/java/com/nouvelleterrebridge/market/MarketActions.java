@@ -3,6 +3,7 @@ package com.nouvelleterrebridge.market;
 import com.nouvelleterrebridge.commands.EconomieCommand;
 import com.nouvelleterrebridge.economy.LocalEconomy;
 import com.nouvelleterrebridge.economy.ProductionShopManager;
+import com.nouvelleterrebridge.economy.ServerShopPriceManager;
 import com.nouvelleterrebridge.economy.TransactionLog;
 import com.nouvelleterrebridge.http.EventDispatcher;
 import net.minecraft.item.Item;
@@ -75,6 +76,10 @@ public final class MarketActions {
                 ItemStack stack = new ItemStack(itemObj, sz);
                 if (!player.getInventory().insertStack(stack)) player.dropItem(stack, false);
                 aDistrib -= sz;
+            }
+
+            if (isAuto) {
+                ServerShopPriceManager.recordSale(itemId, pris);
             }
 
             if (!isAuto) {

@@ -35,6 +35,7 @@ public class HdvScreen extends Screen {
         MARKET("🏪  Marché"),
         SELL("💰  Vendre"),
         MY_SHOP("🛒  Mon Shop"),
+        SERVER_SHOP("🏛️  Shop Serveur"),
         SHOPS("👥  Boutiques");
 
         final String label;
@@ -234,10 +235,11 @@ public class HdvScreen extends Screen {
         ctx.fill(winX, winY, winX + winW, winY + winH, 0xCC14161A);
         renderTopBar(ctx, mx, my);
         switch (activeTab) {
-            case MARKET  -> { renderSidebar(ctx, mx, my); renderMarket(ctx, mx, my); }
-            case SELL    -> renderSell(ctx, mx, my);
-            case MY_SHOP -> renderMyShop(ctx, mx, my);
-            case SHOPS   -> renderShops(ctx, mx, my);
+            case MARKET     -> { renderSidebar(ctx, mx, my); renderMarket(ctx, mx, my); }
+            case SELL       -> renderSell(ctx, mx, my);
+            case MY_SHOP    -> renderMyShop(ctx, mx, my);
+            case SERVER_SHOP -> renderServerShop(ctx, mx, my);
+            case SHOPS      -> renderShops(ctx, mx, my);
         }
         if (buyingListing != null) renderBuyModal(ctx, mx, my);
         renderToast(ctx);
@@ -351,10 +353,30 @@ public class HdvScreen extends Screen {
 
         return listings.stream()
             .filter(l -> !l.seller().equalsIgnoreCase(me))
+            .filter(l -> !l.seller().equals("$Serveur"))
             .filter(l -> matchCat(l.itemId(), activeCategory))
             .filter(l -> q.isEmpty()
                 || FrenchItemNames.toDisplay(l.itemId()).toLowerCase().contains(q)
                 || l.seller().toLowerCase().contains(q)
+                || l.itemId().toLowerCase().contains(q))
+            .sorted(comp)
+            .toList();
+    }
+
+    private List<ListingData> serverShopListings() {
+        String q = searchField != null ? searchField.getText().trim().toLowerCase() : "";
+
+        Comparator<ListingData> comp = switch (sortMode) {
+            case PRICE_ASC  -> Comparator.comparingInt(ListingData::pricePerUnit);
+            case PRICE_DESC -> Comparator.comparingInt(ListingData::pricePerUnit).reversed();
+            case NAME       -> Comparator.comparing(l -> FrenchItemNames.toDisplay(l.itemId()));
+        };
+
+        return listings.stream()
+            .filter(l -> l.seller().equals("$Serveur"))
+            .filter(l -> matchCat(l.itemId(), activeCategory))
+            .filter(l -> q.isEmpty()
+                || FrenchItemNames.toDisplay(l.itemId()).toLowerCase().contains(q)
                 || l.itemId().toLowerCase().contains(q))
             .sorted(comp)
             .toList();
@@ -710,6 +732,31 @@ public class HdvScreen extends Screen {
         }
     }
 
+    private void renderServerShop(DrawContext ctx, int mx, int my) {
+        List<ListingData> server = serverShopListings();
+
+        int py = winY + TOP_H + PAD;
+        ctx.drawText(textRenderer, "SHOP SERVEUR — " + server.size(), winX + PAD, py, C_DIM, false);
+        py += textRenderer.fontHeight + 10;
+
+        if (server.isEmpty()) {
+            ctx.drawCenteredTextWithShadow(textRenderer, "Aucun item disponible à la vente.", winX + winW / 2, py + 50, C_DIM);
+            return;
+        }
+
+        int cardW = (winW - PAD * 2 - (COLS - 1) * GAP) / COLS;
+        for (int i = 0; i < server.size(); i++) {
+            ListingData l = server.get(i);
+            int col = i % COLS;
+            int row = i / COLS;
+            int cx  = winX + PAD + col * (cardW + GAP);
+            int cy  = py + row * (CARD_H + GAP);
+            boolean hov = mx >= cx && mx < cx + cardW && my >= cy && my < cy + CARD_H;
+            if (hov) hoveredCard = l;
+            renderCard(ctx, cx, cy, cardW, CARD_H, l, hov, false);
+        }
+    }
+
     private void renderOwnCard(DrawContext ctx, int x, int y, int w, int h, ListingData l, boolean hov) {
         ctx.fill(x, y, x + w, y + h, hov ? C_HOVER : C_PANEL);
 
@@ -858,9 +905,13 @@ public class HdvScreen extends Screen {
                 if (checkSortButtonClick(x, y)) return true;
                 if (hoveredCard != null) { buyingListing = hoveredCard; buyQty = 1; }
             }
-            case SELL    -> handleSellClick(x, y);
-            case MY_SHOP -> handleMyShopClick(x, y);
-            case SHOPS   -> handleShopsClick(x, y);
+            case SELL       -> handleSellClick(x, y);
+            case MY_SHOP    -> handleMyShopClick(x, y);
+            case SERVER_SHOP -> {
+                if (checkSortButtonClick(x, y)) return true;
+                if (hoveredCard != null) { buyingListing = hoveredCard; buyQty = 1; }
+            }
+            case SHOPS      -> handleShopsClick(x, y);
         }
 
         return super.mouseClicked(mx, my, btn);

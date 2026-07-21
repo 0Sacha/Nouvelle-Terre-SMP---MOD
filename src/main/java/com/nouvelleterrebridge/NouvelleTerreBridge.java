@@ -27,6 +27,7 @@ import com.nouvelleterrebridge.economy.ProductionTracker;
 import com.nouvelleterrebridge.economy.RecurringTransfer;
 import com.nouvelleterrebridge.economy.RecurringTransferManager;
 import com.nouvelleterrebridge.economy.ShopThresholds;
+import com.nouvelleterrebridge.economy.ServerShopPriceManager;
 import com.nouvelleterrebridge.economy.TransactionLog;
 import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
 import net.minecraft.block.Block;
@@ -100,6 +101,7 @@ public class NouvelleTerreBridge implements ModInitializer {
         LoanManager.register();
 
         ShopThresholds.load();
+        ServerShopPriceManager.load();
         ProductionTracker.load();
         ProductionShopManager.checkAll();
         PlayerLevelManager.load();

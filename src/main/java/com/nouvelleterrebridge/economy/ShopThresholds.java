@@ -80,10 +80,10 @@ public class ShopThresholds {
     private static Entry fromRarity(Rarity rarity) {
         Entry e = new Entry();
         switch (rarity) {
-            case UNCOMMON -> { e.seuil = 32;  e.prix = 5;  e.quantite = 16; }
-            case RARE     -> { e.seuil = 8;   e.prix = 15; e.quantite = 8;  }
-            case EPIC     -> { e.seuil = 2;   e.prix = 40; e.quantite = 2;  }
-            default       -> { e.seuil = 512; e.prix = 1;  e.quantite = 64; } // COMMON
+            case UNCOMMON -> { e.seuil = 32;  e.prix = 12; e.quantite = 16; }
+            case RARE     -> { e.seuil = 8;   e.prix = 35; e.quantite = 8;  }
+            case EPIC     -> { e.seuil = 2;   e.prix = 100; e.quantite = 2;  }
+            default       -> { e.seuil = 512; e.prix = 2;  e.quantite = 64; } // COMMON
         }
         return e;
     }
