@@ -52,6 +52,7 @@ public class QuestManager {
         List<Quest>         available      = new ArrayList<>();
         List<ActiveQuest>   active         = new ArrayList<>();
         List<PendingReward> pendingRewards = new ArrayList<>();
+        Set<Integer>        completedIds   = new HashSet<>();
     }
 
     /** Quête communautaire : objectif global auquel tous les joueurs contribuent sans accepter. */
@@ -186,10 +187,14 @@ public class QuestManager {
         // 1. Livre automatiquement toutes les récompenses en attente
         deliverAllPending(server);
 
-        // 2. Retire les journalières expirées des quêtes actives de tous les joueurs
-        Set<Integer> oldIds = new HashSet<>();
-        for (Quest q : dailySolo) oldIds.add(q.id);
-        for (PlayerData pd : players.values()) pd.active.removeIf(a -> oldIds.contains(a.questId));
+        // 2. Retire les journalières expirées des quêtes actives de tous les joueurs + reset their completedIds
+        Set<Integer> oldDailyIds = new HashSet<>();
+        for (Quest q : dailySolo) oldDailyIds.add(q.id);
+        int oldCommunityId = community.quest != null ? community.quest.id : -1;
+        for (PlayerData pd : players.values()) {
+            pd.active.removeIf(a -> oldDailyIds.contains(a.questId));
+            pd.completedIds.removeIf(id -> oldDailyIds.contains(id) || id == oldCommunityId);
+        }
 
         // 3. Régénère les journalières + la quête communautaire
         dailySolo = QuestGenerator.generateDailies();
@@ -269,12 +274,15 @@ public class QuestManager {
     // ── API publique ──────────────────────────────────────────────────────────
 
     public static synchronized List<Quest> getAvailable(String player) {
-        List<Quest> list = new ArrayList<>(data(player).available);
+        PlayerData d = data(player);
+        List<Quest> list = new ArrayList<>(d.available);
         long now = System.currentTimeMillis();
         list.removeIf(q -> q.expiresAt > 0 && q.expiresAt < now);
+        list.removeIf(q -> d.completedIds.contains(q.id));
         // Quêtes journalières (accessibles à tous, expirent à minuit)
         for (Quest dq : dailySolo) {
             if (dq.expiresAt > 0 && dq.expiresAt < now) continue;
+            if (d.completedIds.contains(dq.id)) continue;
             list.add(0, dq);
         }
         // Ajouter les quêtes groupe globales éligibles
@@ -282,6 +290,7 @@ public class QuestManager {
         for (Quest gq : globalGroup) {
             if (gq.expiresAt > 0 && gq.expiresAt < now) continue;
             if (gq.levelRequired > level) continue;
+            if (d.completedIds.contains(gq.id)) continue;
             list.add(gq);
         }
         return list;
@@ -407,6 +416,7 @@ public class QuestManager {
                 d.active.remove(aq);
             }
             d.totalCompleted++;
+            d.completedIds.add(questId);
             PlayerLevelManager.addXp(player, q.rewardXp, server);
             save();
             return null;
@@ -423,6 +433,7 @@ public class QuestManager {
             d.active.remove(aq);
         }
         d.totalCompleted++;
+        d.completedIds.add(questId);
         PlayerLevelManager.addXp(player, q.rewardXp, server);
         save();
         return null;
@@ -504,6 +515,7 @@ public class QuestManager {
         PlayerData d = data(player);
         d.active.remove(aq);
         d.totalCompleted++;
+        d.completedIds.add(aq.questId);
         PlayerLevelManager.addXp(player, q.rewardXp, server);
         final String msg;
         if ("SHARDS".equals(q.rewardType)) {
@@ -594,7 +606,9 @@ public class QuestManager {
     }
 
     public static synchronized void reset() {
-        players.clear();
+        for (PlayerData pd : players.values()) {
+            pd.completedIds.clear();
+        }
         globalGroup.clear();
         dailySolo.clear();
         community = new CommunityState();
