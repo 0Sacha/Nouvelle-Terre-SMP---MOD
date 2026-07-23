@@ -100,9 +100,6 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 - **Tab list** : **scoreboard team** côté serveur — `"nt_" + uuid[0..8]`, prefix=`"§fNomRP §8(§7"`, suffix=`"§8)"`.
   Minecraft affiche nativement `NomRP (pseudo)`. Créée après `fetchNomRP`, supprimée à la déconnexion.
   `PlayerListEntry.displayName` reste null → Minecraft utilise le team prefix/suffix. ✓
-- **Nameplate** (au-dessus de la tête) : **NON FONCTIONNEL — abandonné**. Ne pas retenter :
-  `AbstractClientPlayerEntityMixin` cible `Entity.getDisplayName()` avec garde instanceof + cache NT_NOM_RP,
-  mais un mod client tiers rend son propre nameplate par-dessus.
 - **Chat** : `ServerMessageEvents.ALLOW_CHAT_MESSAGE` — annule le message signé, rebroadcast
   `§8<§fNomRP§8> §fcontenu` comme message système
 - **Registre** : `EventDispatcher.fetchPersonnages()` → `GET {base}/personnages?secret=...`
@@ -436,8 +433,6 @@ CONFLIT_RESULT: bool ok | string msg
 - **Signed chat 1.20.1** : `GameProfile.getName()` ne peut pas être changé → seule solution = `ALLOW_CHAT_MESSAGE` cancel + rebroadcast system message
 - **Tab list** : `ServerPlayerEntityMixin.getPlayerListName()` lit le cache `nomsRP` côté serveur
   → `PlayerListS2CPacket(UPDATE_DISPLAY_NAME)` broadcast immédiat après fetchNomRP pour que tous les clients voient le nom RP
-- **Nameplate** : `entity.getDisplayName()` est appelé côté client (pas via tab list) → `AbstractClientPlayerEntityMixin` nécessaire pour intercepter et retourner `PlayerListEntry.getDisplayName()`
-- **Compatibilité "Styled Player List"** : ce mod client lit `GameProfile.getName()` directement — incompatible avec le renommage tab list. Avec le mixin client `AbstractClientPlayerEntityMixin`, le nameplate fonctionne indépendamment.
 - `URLEncoder.encode(secret, UTF_8)` dans les query params GET — les chars spéciaux (`=`, `+`, etc.) cassent `URI.create()` sinon
 
 ## Couleurs communes (HdvScreen / BankScreen)
@@ -468,14 +463,3 @@ EconomieCommand.fmt(int)    // formatte un nombre avec espaces (1 250)
 Style général : blocs visuels avec `▬` en couleur, `§8»` comme séparateur label/valeur,
 éléments cliquables via `MutableText` + `ClickEvent` + `HoverEvent`.
 
----
-
-## Dead code supprimé — NE PAS RECRÉER
-- `VenteCommand`, `AchatCommand`, `MarcheCommand` → remplacées par `HdvScreen` + `MarketActions`
-- `EconomyManager` → remplacé par `LocalEconomy`
-- `shop/` → renommé en `market/`
-- `TerritoryEvents` → stub Cadmus non implémenté, supprimé
-- `HdvGui`, `HdvState`, `HdvScreenHandler`, `HdvSearchHandler`, `HdvSellPriceHandler` → ancien GUI coffre vanilla
-- `CadmusIntegration`, `HdvCategory`, `EconomyEvents`, `VenteScreenHandler/Factory` → supprimés
-- `ResourcePackManager` → resource pack supprimé (plus nécessaire avec screen client)
-- `activerEvenementEconomie`, `activerEvenementTerritoire` → flags supprimés de `ModConfig`
