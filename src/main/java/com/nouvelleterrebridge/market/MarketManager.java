@@ -45,8 +45,12 @@ public class MarketManager {
      * Ajoute une nouvelle annonce au marché.
      */
     public synchronized MarketListing addListing(String seller, String item, int quantity, int pricePerUnit) {
+        return addListing(seller, item, quantity, pricePerUnit, null);
+    }
+
+    public synchronized MarketListing addListing(String seller, String item, int quantity, int pricePerUnit, String itemNBT) {
         int id = nextId.getAndIncrement();
-        MarketListing listing = new MarketListing(id, seller, item, quantity, pricePerUnit);
+        MarketListing listing = new MarketListing(id, seller, item, quantity, pricePerUnit, itemNBT);
         annonces.add(listing);
         save();
         NouvelleTerreBridge.LOGGER.info("[MarketManager] Nouvelle annonce #{} : {} vend {}x {} à {}/u",

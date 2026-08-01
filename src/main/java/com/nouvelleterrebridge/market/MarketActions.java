@@ -1,5 +1,6 @@
 package com.nouvelleterrebridge.market;
 
+import com.nouvelleterrebridge.NouvelleTerreBridge;
 import com.nouvelleterrebridge.commands.EconomieCommand;
 import com.nouvelleterrebridge.economy.LocalEconomy;
 import com.nouvelleterrebridge.economy.ProductionShopManager;
@@ -8,6 +9,7 @@ import com.nouvelleterrebridge.economy.TransactionLog;
 import com.nouvelleterrebridge.http.EventDispatcher;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.StringNbtReader;
 import net.minecraft.registry.Registries;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
@@ -74,6 +76,14 @@ public final class MarketActions {
             while (aDistrib > 0) {
                 int sz = Math.min(aDistrib, itemObj.getMaxCount());
                 ItemStack stack = new ItemStack(itemObj, sz);
+                // Restaurer les données NBT (enchantements, etc.) si présentes
+                if (ann.itemNBT != null && !ann.itemNBT.isEmpty()) {
+                    try {
+                        stack.setNbt(StringNbtReader.parse(ann.itemNBT));
+                    } catch (Exception e) {
+                        NouvelleTerreBridge.LOGGER.warn("[MarketActions] Erreur restauration NBT : {}", e.getMessage());
+                    }
+                }
                 if (!player.getInventory().insertStack(stack)) player.dropItem(stack, false);
                 aDistrib -= sz;
             }
@@ -154,11 +164,16 @@ public final class MarketActions {
         String pseudo  = player.getName().getString();
         String nomItem = FrenchItemNames.toDisplay(itemId);
 
-        // Compter la quantité disponible dans l'inventaire
+        // Compter la quantité disponible dans l'inventaire + capturer NBT du premier stack
         int available = 0;
+        String itemNBT = null;
         for (ItemStack stack : player.getInventory().main) {
-            if (!stack.isEmpty() && Registries.ITEM.getId(stack.getItem()).toString().equals(itemId))
+            if (!stack.isEmpty() && Registries.ITEM.getId(stack.getItem()).toString().equals(itemId)) {
                 available += stack.getCount();
+                if (itemNBT == null && stack.hasNbt()) {
+                    itemNBT = stack.getNbt().asString();
+                }
+            }
         }
         if (available < qty)
             return String.format("§cTu n'as que §f%d§c exemplaire(s) de §f%s§c.", available, nomItem);
@@ -174,7 +189,7 @@ public final class MarketActions {
             }
         }
 
-        MarketListing annonce = MarketManager.getInstance().addListing(pseudo, itemId, qty, pricePerUnit);
+        MarketListing annonce = MarketManager.getInstance().addListing(pseudo, itemId, qty, pricePerUnit, itemNBT);
 
         player.getServer().getPlayerManager().broadcast(net.minecraft.text.Text.literal(String.format(
             "§6[Marché] §e%s §7vend §f%dx %s §7· §f%d💎/u — §f/hdv",
@@ -210,6 +225,14 @@ public final class MarketActions {
         while (restant > 0) {
             int sz = Math.min(restant, item.getMaxCount());
             ItemStack stack = new ItemStack(item, sz);
+            // Restaurer les données NBT (enchantements, etc.) si présentes
+            if (ann.itemNBT != null && !ann.itemNBT.isEmpty()) {
+                try {
+                    stack.setNbt(StringNbtReader.parse(ann.itemNBT));
+                } catch (Exception e) {
+                    NouvelleTerreBridge.LOGGER.warn("[MarketActions] Erreur restauration NBT retrait : {}", e.getMessage());
+                }
+            }
             if (!player.getInventory().insertStack(stack)) player.dropItem(stack, false);
             restant -= sz;
         }
