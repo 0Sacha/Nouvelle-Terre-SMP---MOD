@@ -165,6 +165,11 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             });
         });
 
+        ClientPlayNetworking.registerGlobalReceiver(
+            com.nouvelleterrebridge.network.HubNetworking.HUB_OPEN,
+            (client, handler, buf, responseSender) ->
+                client.execute(() -> client.setScreen(new com.nouvelleterrebridge.client.HubScreen())));
+
         ClientPlayNetworking.registerGlobalReceiver(HdvNetworking.NT_VERSION, (client, handler, buf, responseSender) -> {
             String serverVer = buf.readString();
             String clientVer = FabricLoader.getInstance()

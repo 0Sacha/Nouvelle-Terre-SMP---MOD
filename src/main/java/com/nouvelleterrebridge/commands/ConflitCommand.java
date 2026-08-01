@@ -26,19 +26,24 @@ public class ConflitCommand {
                     src.sendError(Text.literal("Cette commande est réservée aux joueurs."));
                     return 0;
                 }
-                String moi = player.getName().getString();
-                List<String> enLigne = src.getServer().getPlayerManager().getPlayerList().stream()
-                    .map(p -> p.getName().getString())
-                    .filter(name -> !name.equalsIgnoreCase(moi))
-                    .sorted(String.CASE_INSENSITIVE_ORDER)
-                    .toList();
-
-                PacketByteBuf buf = PacketByteBufs.create();
-                buf.writeInt(enLigne.size());
-                for (String name : enLigne) buf.writeString(name);
-                ServerPlayNetworking.send(player, ConflitNetworking.CONFLIT_OPEN, buf);
+                open(player);
                 return 1;
             })
         );
+    }
+
+    /** Envoie CONFLIT_OPEN avec la liste des joueurs en ligne (hors soi-même). */
+    public static void open(ServerPlayerEntity player) {
+        String moi = player.getName().getString();
+        List<String> enLigne = player.getServer().getPlayerManager().getPlayerList().stream()
+            .map(p -> p.getName().getString())
+            .filter(name -> !name.equalsIgnoreCase(moi))
+            .sorted(String.CASE_INSENSITIVE_ORDER)
+            .toList();
+
+        PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeInt(enLigne.size());
+        for (String name : enLigne) buf.writeString(name);
+        ServerPlayNetworking.send(player, ConflitNetworking.CONFLIT_OPEN, buf);
     }
 }

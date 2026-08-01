@@ -41,6 +41,7 @@ import com.nouvelleterrebridge.http.EventQueue;
 import com.nouvelleterrebridge.network.BankNetworking;
 import com.nouvelleterrebridge.network.ConflitNetworking;
 import com.nouvelleterrebridge.network.HdvNetworking;
+import com.nouvelleterrebridge.network.HubNetworking;
 import com.nouvelleterrebridge.network.ProductionNetworking;
 import com.nouvelleterrebridge.market.MarketActions;
 import com.nouvelleterrebridge.market.MarketListing;
@@ -77,15 +78,27 @@ public class NouvelleTerreBridge implements ModInitializer {
     public static final net.minecraft.item.Item SHARD = new com.nouvelleterrebridge.item.ShardItem(
         new net.minecraft.item.Item.Settings().rarity(net.minecraft.util.Rarity.UNCOMMON));
 
+    /** Parchemin — terminal portatif ouvrant le hub des fenêtres du mod. */
+    public static final net.minecraft.item.Item PARCHEMIN = new com.nouvelleterrebridge.item.ParcheminItem(
+        new net.minecraft.item.Item.Settings()
+            .maxCount(1)
+            .fireproof()
+            .rarity(net.minecraft.util.Rarity.RARE));
+
     @Override
     public void onInitialize() {
         LOGGER.info("[NouvelleTerreBridge] Initialisation du mod...");
 
         net.minecraft.registry.Registry.register(net.minecraft.registry.Registries.ITEM,
             new net.minecraft.util.Identifier(MOD_ID, "shard"), SHARD);
+        net.minecraft.registry.Registry.register(net.minecraft.registry.Registries.ITEM,
+            new net.minecraft.util.Identifier(MOD_ID, "parchemin"), PARCHEMIN);
         net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents
             .modifyEntriesEvent(net.minecraft.item.ItemGroups.INGREDIENTS)
             .register(entries -> entries.add(SHARD));
+        net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents
+            .modifyEntriesEvent(net.minecraft.item.ItemGroups.TOOLS)
+            .register(entries -> entries.add(PARCHEMIN));
 
         config = ModConfig.charger();
         LOGGER.info("[NouvelleTerreBridge] Configuration chargée : url={}", config.getBotUrl());
@@ -151,13 +164,20 @@ public class NouvelleTerreBridge implements ModInitializer {
         registerRegistreNetworking();
         registerProductionNetworking();
         registerConflitNetworking();
+        registerHubNetworking();
 
         // Envoie le solde au joueur dès qu'il est en jeu + refresh pool quêtes
+        // + garantit qu'il possède son Parchemin
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
             server.execute(() -> {
                 sendBalanceToPlayer(handler.getPlayer());
                 QuestManager.refreshPlayerPool(handler.getPlayer().getName().getString(), server);
+                donnerParcheminSiAbsent(handler.getPlayer());
             }));
+
+        // Le Parchemin est rendu après une mort, même sans keepInventory
+        net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents.AFTER_RESPAWN.register(
+            (oldPlayer, newPlayer, alive) -> donnerParcheminSiAbsent(newPlayer));
 
         LOGGER.info("[NouvelleTerreBridge] Mod initialisé avec succès.");
     }
@@ -279,6 +299,41 @@ public class NouvelleTerreBridge implements ModInitializer {
             buf.writeInt(l.pricePerUnit);
             buf.writeString(l.itemNBT != null ? l.itemNBT : "");
         }
+    }
+
+    // ── Hub (Parchemin) ──────────────────────────────────────────────────────
+
+    /** Donne le Parchemin au joueur s'il ne l'a pas déjà (connexion, respawn). */
+    public static void donnerParcheminSiAbsent(ServerPlayerEntity player) {
+        if (player == null) return;
+        for (net.minecraft.item.ItemStack s : player.getInventory().main)
+            if (s.isOf(PARCHEMIN)) return;
+        if (player.getInventory().offHand.stream().anyMatch(s -> s.isOf(PARCHEMIN))) return;
+
+        net.minecraft.item.ItemStack stack = new net.minecraft.item.ItemStack(PARCHEMIN);
+        if (!player.getInventory().insertStack(stack)) player.dropItem(stack, false);
+    }
+
+    private void registerHubNetworking() {
+        ServerPlayNetworking.registerGlobalReceiver(HubNetworking.HUB_ACTION, (server, player, handler, buf, responseSender) -> {
+            int action = buf.readInt();
+            server.execute(() -> {
+                switch (action) {
+                    case HubNetworking.ACTION_HDV ->
+                        ServerPlayNetworking.send(player, HdvNetworking.HDV_OPEN, buildHdvOpenPacket(player, server));
+                    case HubNetworking.ACTION_BANK ->
+                        ServerPlayNetworking.send(player, BankNetworking.BANK_OPEN, buildBankOpenPacket(player, server));
+                    case HubNetworking.ACTION_QUETES     -> sendQuestOpen(player);
+                    case HubNetworking.ACTION_PRODUCTION -> sendProductionOpen(player);
+                    case HubNetworking.ACTION_REGISTRE   -> RegistreCommand.open(player);
+                    case HubNetworking.ACTION_CONFLIT    -> ConflitCommand.open(player);
+                    case HubNetworking.ACTION_WIKI ->
+                        ServerPlayNetworking.send(player, com.nouvelleterrebridge.network.WikiNetworking.WIKI_OPEN,
+                                                  PacketByteBufs.empty());
+                    default -> LOGGER.warn("[Hub] Action inconnue : {}", action);
+                }
+            });
+        });
     }
 
     // ── Bank networking ──────────────────────────────────────────────────────
