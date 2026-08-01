@@ -11,6 +11,7 @@ import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
+import net.minecraft.nbt.StringNbtReader;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.registry.Registries;
 import net.minecraft.text.Text;
@@ -25,10 +26,17 @@ public class HdvScreen extends Screen {
 
     // ── Data ──────────────────────────────────────────────────────────────────
 
-    public record ListingData(int id, String seller, String itemId, int quantity, int pricePerUnit) {}
+    public record ListingData(int id, String seller, String itemId, int quantity, int pricePerUnit, String itemNBT) {
+        public ListingData(int id, String seller, String itemId, int quantity, int pricePerUnit) {
+            this(id, seller, itemId, quantity, pricePerUnit, "");
+        }
+        public boolean hasNBT() { return itemNBT != null && !itemNBT.isEmpty(); }
+    }
     public record TransactionData(int type, String label, int amount, long timestamp) {}
     public record RecurringData(int id, String to, int amount, int intervalTicks, int ticksUntilNext) {}
-    private record SellItem(Item item, String itemId, int qty) {}
+    private record SellItem(Item item, String itemId, int qty, String nbt) {
+        boolean hasNBT() { return nbt != null && !nbt.isEmpty(); }
+    }
 
 
     private enum Tab {
@@ -137,6 +145,7 @@ public class HdvScreen extends Screen {
 
     private List<SellItem> sellInv = new ArrayList<>();
     private SellItem selectedSellItem = null;
+    private SellItem hoveredSellItem = null;
     private int sellQty = 1;
     private int sellPrice = 0;
     private TextFieldWidget sellQtyField;
@@ -194,12 +203,15 @@ public class HdvScreen extends Screen {
 
     private void refreshSellInv() {
         if (client == null || client.player == null) return;
+        // Clé = id + NBT : les variantes enchantées restent des entrées distinctes,
+        // sinon on risquerait de vendre une pile pour une autre.
         Map<String, SellItem> byId = new LinkedHashMap<>();
         for (ItemStack stack : client.player.getInventory().main) {
             if (stack.isEmpty()) continue;
-            String id = Registries.ITEM.getId(stack.getItem()).toString();
-            byId.merge(id, new SellItem(stack.getItem(), id, stack.getCount()),
-                (a, b) -> new SellItem(a.item(), a.itemId(), a.qty() + b.qty()));
+            String id  = Registries.ITEM.getId(stack.getItem()).toString();
+            String nbt = stack.hasNbt() ? stack.getNbt().asString() : "";
+            byId.merge(id + "|" + nbt, new SellItem(stack.getItem(), id, stack.getCount(), nbt),
+                (a, b) -> new SellItem(a.item(), a.itemId(), a.qty() + b.qty(), a.nbt()));
         }
         sellInv = new ArrayList<>(byId.values());
     }
@@ -236,6 +248,8 @@ public class HdvScreen extends Screen {
         // Window bg — semi-transparent to show game world
         ctx.fill(winX, winY, winX + winW, winY + winH, 0xCC14161A);
         renderTopBar(ctx, mx, my);
+        hoveredCard     = null;   // réarmés par le rendu de l'onglet courant
+        hoveredSellItem = null;
         switch (activeTab) {
             case MARKET     -> { renderSidebar(ctx, mx, my); renderMarket(ctx, mx, my); }
             case SELL       -> renderSell(ctx, mx, my);
@@ -244,8 +258,24 @@ public class HdvScreen extends Screen {
             case SHOPS      -> renderShops(ctx, mx, my);
         }
         if (buyingListing != null) renderBuyModal(ctx, mx, my);
+        else if (hoveredCard != null) renderListingTooltip(ctx, hoveredCard, mx, my);
+        else if (hoveredSellItem != null)
+            ctx.drawTooltip(textRenderer, Screen.getTooltipFromItem(client, sellStack(hoveredSellItem)), mx, my);
         renderToast(ctx);
         super.render(ctx, mx, my, delta);
+    }
+
+    /**
+     * Tooltip vanilla de l'annonce survolée : nom de l'item et, s'il en a,
+     * ses enchantements — plus une ligne vendeur/prix.
+     */
+    private void renderListingTooltip(DrawContext ctx, ListingData l, int mx, int my) {
+        ItemStack stack = itemStack(l);
+        List<Text> lines = new ArrayList<>(Screen.getTooltipFromItem(client, stack));
+        lines.add(Text.literal("§8" + "─".repeat(12)));
+        lines.add(Text.literal("§7Vendeur : §f" + l.seller()));
+        lines.add(Text.literal("§7Prix : §6" + l.pricePerUnit() + " ◆§7/u  ·  Stock : §f" + l.quantity()));
+        ctx.drawTooltip(textRenderer, lines, mx, my);
     }
 
     // ── Top bar ───────────────────────────────────────────────────────────────
@@ -501,7 +531,7 @@ public class HdvScreen extends Screen {
         // Icon area
         int iconH = 48;
         ctx.fill(x + 1, y + 1, x + w - 1, y + iconH, C_BG);
-        drawItemScaled(ctx, itemStack(l.itemId()), x + w / 2, y + iconH / 2, 2.0f);
+        drawItemScaled(ctx, itemStack(l), x + w / 2, y + iconH / 2, 2.0f);
 
         // Qty badge — top right
         String qtyStr = "x" + l.quantity();
@@ -552,7 +582,7 @@ public class HdvScreen extends Screen {
 
         // Header — item info
         int fy = y + 14;
-        drawItemScaled(ctx, itemStack(l.itemId()), x + 24, fy + 14, 2.0f);
+        drawItemScaled(ctx, itemStack(l), x + 24, fy + 14, 2.0f);
         ctx.drawText(textRenderer, FrenchItemNames.toDisplay(l.itemId()), x + 52, fy + 5, C_WHITE, false);
         ctx.drawText(textRenderer, "Vendu par " + l.seller(), x + 52, fy + 17, C_DIM, false);
         fy += 40;
@@ -636,8 +666,11 @@ public class HdvScreen extends Screen {
             int row = i / cellCols;
             int cx  = winX + PAD + col * (cellW + GAP);
             int cy  = py + row * (cellH + GAP);
-            boolean sel = selectedSellItem != null && selectedSellItem.itemId().equals(si.itemId());
+            boolean sel = selectedSellItem != null
+                       && selectedSellItem.itemId().equals(si.itemId())
+                       && selectedSellItem.nbt().equals(si.nbt());
             boolean hov = mx >= cx && mx < cx + cellW && my >= cy && my < cy + cellH;
+            if (hov) hoveredSellItem = si;
 
             ctx.fill(cx, cy, cx + cellW, cy + cellH, sel ? C_HOVER : (hov ? 0xFF1F2128 : C_PANEL));
             if (sel) {
@@ -649,7 +682,7 @@ public class HdvScreen extends Screen {
 
             int iconAreaH = 44;
             ctx.fill(cx + 1, cy + 1, cx + cellW - 1, cy + iconAreaH, C_BG);
-            drawItemScaled(ctx, new ItemStack(si.item()), cx + cellW / 2, cy + iconAreaH / 2, 2.0f);
+            drawItemScaled(ctx, sellStack(si), cx + cellW / 2, cy + iconAreaH / 2, 2.0f);
 
             String badge = "x" + si.qty();
             int bw = textRenderer.getWidth(badge) + 4;
@@ -672,9 +705,11 @@ public class HdvScreen extends Screen {
 
         if (selectedSellItem != null) {
             ctx.fill(formX + 8, fy, formX + formW - 8, fy + 36, C_STRIP);
-            drawItemScaled(ctx, new ItemStack(selectedSellItem.item()), formX + 26, fy + 18, 2.0f);
+            drawItemScaled(ctx, sellStack(selectedSellItem), formX + 26, fy + 18, 2.0f);
             ctx.drawText(textRenderer, truncate(FrenchItemNames.toDisplay(selectedSellItem.itemId()), formW - 60), formX + 44, fy + 8, C_WHITE, false);
-            ctx.drawText(textRenderer, "En stock : " + selectedSellItem.qty(), formX + 44, fy + 20, C_DIM, false);
+            String stockLine = "En stock : " + selectedSellItem.qty();
+            if (selectedSellItem.hasNBT()) stockLine += "  §b✦ enchanté";
+            ctx.drawText(textRenderer, stockLine, formX + 44, fy + 20, C_DIM, false);
         } else {
             ctx.fill(formX + 8, fy, formX + formW - 8, fy + 36, C_STRIP);
             ctx.drawCenteredTextWithShadow(textRenderer, "<- Choisissez un item", formX + formW / 2, fy + 14, C_DARK);
@@ -774,7 +809,7 @@ public class HdvScreen extends Screen {
 
         int iconH = 48;
         ctx.fill(x + 1, y + 1, x + w - 1, y + iconH, C_BG);
-        drawItemScaled(ctx, itemStack(l.itemId()), x + w / 2, y + iconH / 2, 2.0f);
+        drawItemScaled(ctx, itemStack(l), x + w / 2, y + iconH / 2, 2.0f);
 
         String qtyStr = "x" + l.quantity();
         int qw = textRenderer.getWidth(qtyStr) + 4;
@@ -1010,7 +1045,7 @@ public class HdvScreen extends Screen {
             return;
         }
         if (mx >= ox + MODAL_W - 10 - half && mx < ox + MODAL_W - 10 && my >= btnY && my < btnY + 24) {
-            if (balance >= l.pricePerUnit() * buyQty) sendBuy(l.itemId(), buyQty);
+            if (balance >= l.pricePerUnit() * buyQty) sendBuy(l.itemId(), buyQty, l.itemNBT());
         }
     }
 
@@ -1040,7 +1075,7 @@ public class HdvScreen extends Screen {
         boolean canSell = selectedSellItem != null && sellPrice > 0 && sellQty > 0 && sellQty <= selectedSellItem.qty();
         int btnY = winY + winH - PAD - 28;
         if (canSell && mx >= formX + 8 && mx < formX + formW - 8 && my >= btnY && my < btnY + 22) {
-            sendSell(selectedSellItem.itemId(), sellQty, sellPrice);
+            sendSell(selectedSellItem.itemId(), sellQty, sellPrice, selectedSellItem.nbt());
         }
     }
 
@@ -1106,20 +1141,22 @@ public class HdvScreen extends Screen {
 
     // ── Envoi paquets ─────────────────────────────────────────────────────────
 
-    private void sendBuy(String itemId, int qty) {
+    private void sendBuy(String itemId, int qty, String nbt) {
         PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
         buf.writeInt(HdvNetworking.ACTION_BUY);
         buf.writeString(itemId);
         buf.writeInt(qty);
+        buf.writeString(nbt != null ? nbt : "");
         ClientPlayNetworking.send(HdvNetworking.HDV_ACTION, buf);
     }
 
-    private void sendSell(String itemId, int qty, int price) {
+    private void sendSell(String itemId, int qty, int price, String nbt) {
         PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
         buf.writeInt(HdvNetworking.ACTION_SELL);
         buf.writeString(itemId);
         buf.writeInt(qty);
         buf.writeInt(price);
+        buf.writeString(nbt != null ? nbt : "");
         ClientPlayNetworking.send(HdvNetworking.HDV_ACTION, buf);
     }
 
@@ -1148,6 +1185,28 @@ public class HdvScreen extends Screen {
         } catch (Exception e) {
             return new ItemStack(Items.BARRIER);
         }
+    }
+
+    /** ItemStack d'une annonce, NBT appliqué (enchantements, nom custom) si présent. */
+    private ItemStack itemStack(ListingData l) {
+        ItemStack stack = itemStack(l.itemId());
+        if (l.hasNBT()) {
+            try {
+                stack.setNbt(StringNbtReader.parse(l.itemNBT()));
+            } catch (Exception ignored) {}
+        }
+        return stack;
+    }
+
+    /** ItemStack d'une entrée de l'inventaire de vente, NBT appliqué si présent. */
+    private ItemStack sellStack(SellItem si) {
+        ItemStack stack = new ItemStack(si.item());
+        if (si.hasNBT()) {
+            try {
+                stack.setNbt(StringNbtReader.parse(si.nbt()));
+            } catch (Exception ignored) {}
+        }
+        return stack;
     }
 
     private String truncate(String s, int maxPx) {

@@ -33,12 +33,23 @@ public final class MarketActions {
      * @return message de résultat à afficher au joueur
      */
     public static String buy(ServerPlayerEntity player, String itemId, int qty) {
+        return buy(player, itemId, qty, "");
+    }
+
+    /**
+     * Achète {@code qty} unités de la variante {@code itemNBT} de {@code itemId}
+     * ("" = variante sans NBT). Seules les annonces de la même variante sont
+     * agrégées, pour ne pas livrer un mélange d'items enchantés et vierges.
+     */
+    public static String buy(ServerPlayerEntity player, String itemId, int qty, String itemNBT) {
         String pseudo  = player.getName().getString();
         String nomItem = FrenchItemNames.toDisplay(itemId);
         LocalEconomy eco = LocalEconomy.getInstance();
+        String wanted  = itemNBT == null ? "" : itemNBT;
 
         List<MarketListing> annonces = MarketManager.getInstance().getAll().stream()
             .filter(l -> l.item.equalsIgnoreCase(itemId) && !l.seller.equalsIgnoreCase(pseudo))
+            .filter(l -> (l.itemNBT == null ? "" : l.itemNBT).equals(wanted))
             .sorted(Comparator.comparingInt(l -> l.pricePerUnit))
             .collect(Collectors.toList());
 
@@ -136,10 +147,11 @@ public final class MarketActions {
 
         String itemId  = Registries.ITEM.getId(main.getItem()).toString();
         String nomItem = FrenchItemNames.toDisplay(itemId);
+        String itemNBT = main.hasNbt() ? main.getNbt().asString() : null;
 
         main.decrement(qty);
         MarketListing annonce = MarketManager.getInstance().addListing(
-            player.getName().getString(), itemId, qty, pricePerUnit);
+            player.getName().getString(), itemId, qty, pricePerUnit, itemNBT);
 
         player.getServer().getPlayerManager().broadcast(Text.literal(String.format(
             "§6[Marché] §e%s §7vend §f%dx %s §7· §f%d💎/u — §f/hdv",
@@ -161,35 +173,40 @@ public final class MarketActions {
      * Contrairement à {@link #sell}, ne requiert pas l'item en main.
      */
     public static String sellByItemId(ServerPlayerEntity player, String itemId, int qty, int pricePerUnit) {
+        return sellByItemId(player, itemId, qty, pricePerUnit, "");
+    }
+
+    /**
+     * Vend {@code qty} unités de {@code itemId} dont le NBT correspond à {@code itemNBT}
+     * (chaîne vide = uniquement les piles sans NBT). Garantit qu'une pile enchantée
+     * n'est jamais consommée à la place d'une pile vierge, et inversement.
+     */
+    public static String sellByItemId(ServerPlayerEntity player, String itemId, int qty, int pricePerUnit, String itemNBT) {
         String pseudo  = player.getName().getString();
         String nomItem = FrenchItemNames.toDisplay(itemId);
+        String wanted  = itemNBT == null ? "" : itemNBT;
 
-        // Compter la quantité disponible dans l'inventaire + capturer NBT du premier stack
+        // Compter la quantité disponible dont le NBT correspond exactement
         int available = 0;
-        String itemNBT = null;
         for (ItemStack stack : player.getInventory().main) {
-            if (!stack.isEmpty() && Registries.ITEM.getId(stack.getItem()).toString().equals(itemId)) {
-                available += stack.getCount();
-                if (itemNBT == null && stack.hasNbt()) {
-                    itemNBT = stack.getNbt().asString();
-                }
-            }
+            if (matchesListing(stack, itemId, wanted)) available += stack.getCount();
         }
         if (available < qty)
             return String.format("§cTu n'as que §f%d§c exemplaire(s) de §f%s§c.", available, nomItem);
 
-        // Retirer les items de l'inventaire
+        // Retirer les items de l'inventaire (mêmes critères de correspondance)
         int toRemove = qty;
         for (int i = 0; i < player.getInventory().main.size() && toRemove > 0; i++) {
             ItemStack stack = player.getInventory().main.get(i);
-            if (!stack.isEmpty() && Registries.ITEM.getId(stack.getItem()).toString().equals(itemId)) {
+            if (matchesListing(stack, itemId, wanted)) {
                 int take = Math.min(toRemove, stack.getCount());
                 stack.decrement(take);
                 toRemove -= take;
             }
         }
 
-        MarketListing annonce = MarketManager.getInstance().addListing(pseudo, itemId, qty, pricePerUnit, itemNBT);
+        MarketListing annonce = MarketManager.getInstance()
+            .addListing(pseudo, itemId, qty, pricePerUnit, wanted.isEmpty() ? null : wanted);
 
         player.getServer().getPlayerManager().broadcast(net.minecraft.text.Text.literal(String.format(
             "§6[Marché] §e%s §7vend §f%dx %s §7· §f%d💎/u — §f/hdv",
@@ -201,6 +218,14 @@ public final class MarketActions {
         EventDispatcher.envoyer("SALE_POSTED", data);
 
         return null; // succès
+    }
+
+    /** Vrai si la pile est du bon item ET porte exactement le NBT attendu ("" = aucun NBT). */
+    private static boolean matchesListing(ItemStack stack, String itemId, String wantedNBT) {
+        if (stack.isEmpty()) return false;
+        if (!Registries.ITEM.getId(stack.getItem()).toString().equals(itemId)) return false;
+        String actual = stack.hasNbt() ? stack.getNbt().asString() : "";
+        return actual.equals(wantedNBT);
     }
 
     // ── Retrait ───────────────────────────────────────────────────────────────

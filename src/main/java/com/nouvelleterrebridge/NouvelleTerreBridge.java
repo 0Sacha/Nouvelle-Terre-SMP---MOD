@@ -171,13 +171,15 @@ public class NouvelleTerreBridge implements ModInitializer {
                 case HdvNetworking.ACTION_BUY -> {
                     String itemId = buf.readString();
                     int qty = buf.readInt();
-                    result = MarketActions.buy(player, itemId, qty);
+                    String nbt = buf.readString();
+                    result = MarketActions.buy(player, itemId, qty, nbt);
                 }
                 case HdvNetworking.ACTION_SELL -> {
                     String itemId = buf.readString();
                     int qty = buf.readInt();
                     int price = buf.readInt();
-                    String err = MarketActions.sellByItemId(player, itemId, qty, price);
+                    String nbt = buf.readString();
+                    String err = MarketActions.sellByItemId(player, itemId, qty, price, nbt);
                     result = err != null ? err : "§a✅ Annonce publiée avec succès !";
                 }
                 case HdvNetworking.ACTION_WITHDRAW -> {
@@ -275,6 +277,7 @@ public class NouvelleTerreBridge implements ModInitializer {
             buf.writeString(l.item);
             buf.writeInt(l.quantity);
             buf.writeInt(l.pricePerUnit);
+            buf.writeString(l.itemNBT != null ? l.itemNBT : "");
         }
     }
 

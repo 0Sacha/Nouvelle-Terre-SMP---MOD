@@ -328,7 +328,8 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
         int count = buf.readInt();
         List<HdvScreen.ListingData> list = new ArrayList<>(count);
         for (int i = 0; i < count; i++)
-            list.add(new HdvScreen.ListingData(buf.readInt(), buf.readString(), buf.readString(), buf.readInt(), buf.readInt()));
+            list.add(new HdvScreen.ListingData(buf.readInt(), buf.readString(), buf.readString(),
+                                               buf.readInt(), buf.readInt(), buf.readString()));
         return list;
     }
 
