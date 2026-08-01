@@ -122,10 +122,12 @@ public class ProductionScreen extends Screen {
         // Header
         ctx.fill(px, py, px + pw, py + TOP_H, C_PANEL);
         ctx.fill(px, py + TOP_H, px + pw, py + TOP_H + 1, C_BORDER);
-        ctx.drawText(textRenderer, "⛏  Production naturelle", px + PAD, py + 9, C_GOLD, false);
+        HubBackButton.render(ctx, textRenderer, px + PAD, py + (TOP_H - HubBackButton.H) / 2, mx, my);
+        int titleX = px + PAD + HubBackButton.W + 8;
+        ctx.drawText(textRenderer, "⛏  Production naturelle", titleX, py + 9, C_GOLD, false);
         long enVente = entries.stream().filter(ProdEntry::enVente).count();
         ctx.drawText(textRenderer, "§a" + enVente + " en vente§7 / " + entries.size(),
-            px + PAD, py + 23, C_DIM, false);
+            titleX, py + 23, C_DIM, false);
 
         adminBtnBounds.clear();
         if (isOp) renderAdminButtons(ctx, mx, my);
@@ -241,6 +243,8 @@ public class ProductionScreen extends Screen {
     public boolean mouseClicked(double mx0, double my0, int btn) {
         int x = (int) mx0, y = (int) my0;
         if (x < px || x > px + pw || y < py || y > py + ph) { close(); return true; }
+
+        if (HubBackButton.clicked(px + PAD, py + (TOP_H - HubBackButton.H) / 2, x, y)) return true;
 
         for (int[] b : adminBtnBounds) {
             if (x >= b[0] && x < b[0] + b[2] && y >= b[1] && y < b[1] + b[3]) {

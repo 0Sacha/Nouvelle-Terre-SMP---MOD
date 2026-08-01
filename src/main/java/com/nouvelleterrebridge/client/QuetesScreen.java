@@ -125,12 +125,14 @@ public class QuetesScreen extends Screen {
         // Header — TOP_H=64 : titre+niveau+XP above tabY=py+46
         ctx.fill(px, py, px + pw, py + TOP_H, C_PANEL);
         ctx.fill(px, py + TOP_H, px + pw, py + TOP_H + 1, C_BORDER);
-        ctx.drawText(textRenderer, "⚔  Quêtes", px + PAD, py + 10, C_GOLD, false);
+        HubBackButton.render(ctx, textRenderer, px + PAD, py + 8, mx, my);
+        int titleX = px + PAD + HubBackButton.W + 8;
+        ctx.drawText(textRenderer, "⚔  Quêtes", titleX, py + 10, C_GOLD, false);
 
         String lvlText = "Niv. " + playerLevel;
         String xpText  = " · §8" + playerXp + "/" + xpToNext + " XP";
-        ctx.drawText(textRenderer, lvlText, px + PAD, py + 24, C_MID, false);
-        ctx.drawText(textRenderer, xpText,  px + PAD + textRenderer.getWidth(lvlText), py + 24, C_DIM, false);
+        ctx.drawText(textRenderer, lvlText, titleX, py + 24, C_MID, false);
+        ctx.drawText(textRenderer, xpText,  titleX + textRenderer.getWidth(lvlText), py + 24, C_DIM, false);
 
         int barX = px + PAD, barY = py + 36, barW2 = pw * 3 / 8;
         ctx.fill(barX, barY, barX + barW2, barY + 4, C_BORDER);
@@ -506,6 +508,8 @@ public class QuetesScreen extends Screen {
     public boolean mouseClicked(double mx, double my, int button) {
         if (button != 0) return super.mouseClicked(mx, my, button);
         int imx = (int) mx, imy = (int) my;
+
+        if (HubBackButton.clicked(px + PAD, py + 8, imx, imy)) return true;
 
         Tab[] tabs = {Tab.DISPONIBLES, Tab.EN_COURS, Tab.A_RECLAMER, Tab.CLASSEMENTS};
         int tabW2 = (pw - PAD * 2) / 4;

@@ -107,10 +107,12 @@ public class RegistreScreen extends Screen {
     private void renderList(DrawContext ctx, int mouseX, int mouseY) {
         ctx.fill(px, py, px + pw, py + HEADER, C_PANEL);
         ctx.fill(px, py + HEADER, px + pw, py + HEADER + 1, C_BORDER);
-        ctx.drawText(textRenderer, "§lRegistre des personnages", px + PAD, py + 10, C_GOLD, false);
+        HubBackButton.render(ctx, textRenderer, px + PAD, py + (HEADER - HubBackButton.H) / 2, mouseX, mouseY);
+        int titleX = px + PAD + HubBackButton.W + 8;
+        ctx.drawText(textRenderer, "§lRegistre des personnages", titleX, py + 10, C_GOLD, false);
         long online = personnages.stream().filter(PersonnageData::enLigne).count();
         ctx.drawText(textRenderer, online + " en ligne · " + personnages.size() + " personnages",
-            px + PAD, py + 24, C_DIM, false);
+            titleX, py + 24, C_DIM, false);
 
         boolean hClose = inBounds(mouseX, mouseY, px + pw - 20, py + 8, 14, 16);
         ctx.drawText(textRenderer, hClose ? "§c✕" : "§7✕", px + pw - 16, py + 12, C_WHITE, false);
@@ -342,6 +344,9 @@ public class RegistreScreen extends Screen {
 
         // Bouton ✕ (toujours)
         if (inBounds(mx, my, px + pw - 20, py + 8, 14, 16)) { this.close(); return true; }
+
+        if (viewState == ViewState.LIST
+            && HubBackButton.clicked(px + PAD, py + (HEADER - HubBackButton.H) / 2, mx, my)) return true;
 
         if (viewState == ViewState.LIST) {
             int listTop = py + HEADER + 1;

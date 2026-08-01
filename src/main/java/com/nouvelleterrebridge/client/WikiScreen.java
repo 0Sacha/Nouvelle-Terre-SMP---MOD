@@ -58,7 +58,17 @@ public class WikiScreen extends Screen {
                 l(""),
                 l("§7Tu commences avec §e500 ◆ §7de départ."),
                 l("Gagne des §e◆ Shards §7en jouant, en"),
-                l("échangeant et en réalisant des quêtes.")
+                l("échangeant et en réalisant des quêtes."),
+                l(""),
+                l("§6§lLe Parchemin"),
+                l("§7Tu reçois un §6Parchemin §7à ta première"),
+                l("§7connexion. §6Clic droit §7: il ouvre un menu"),
+                l("§7donnant accès à toutes les fenêtres du mod,"),
+                l("§7sans avoir à taper la moindre commande."),
+                l("  §f· §7La flèche §6← §7en haut de chaque écran"),
+                l("    §7te ramène au Parchemin"),
+                l("  §f· §7Perdu ? Il t'est rendu à la reconnexion,"),
+                l("    §7ou gratuitement dans §e/shop")
             )),
             new Section("L'or — Shards ◆", "◆", List.of(
                 l("§e◆ Shards§f — la monnaie du serveur."),
@@ -96,25 +106,53 @@ public class WikiScreen extends Screen {
                 l("§fOuvrir le marché :"),
                 cmd("/hdv"),
                 l(""),
-                l("§7Achète et vends des objets entre joueurs."),
+                l("§7Achète et vends des objets §fentre joueurs§7."),
+                l("§8La boutique du serveur est séparée : §e/shop"),
                 l(""),
                 l("§7§lOnglets :"),
-                l("  §f· §e Marché       §7— annonces des joueurs"),
-                l("  §f· §e Vendre       §7— créer une annonce"),
-                l("  §f· §e Mon Shop     §7— gérer tes annonces"),
-                l("  §f· §e Shop Serveur §7— achète la production"),
-                l("  §f· §e Boutiques    §7— tri par vendeur"),
+                l("  §f· §e Marché    §7— annonces des autres joueurs"),
+                l("  §f· §e Vendre    §7— créer une annonce"),
+                l("  §f· §e Mon Shop  §7— gérer tes annonces"),
+                l("  §f· §e Boutiques §7— tri par vendeur"),
                 l(""),
                 l("§7Achat au meilleur prix automatique."),
                 l("§7La quantité peut être fractionnée."),
                 l(""),
-                l("§7§lShop Serveur (🏛️) :"),
-                l("  §f· §7Items de la production automatique"),
-                l("  §f· §7Prix augmente avec les ventes (+10% par 64 ventes)"),
-                l("  §f· §7Stock illimité, progression : §e/production"),
+                l("§7§lObjets enchantés :"),
+                l("  §f· §7Survole une annonce pour voir le nom"),
+                l("    §7de l'objet et ses enchantements"),
+                l("  §f· §7Une version enchantée et une version"),
+                l("    §7vierge sont deux annonces distinctes"),
                 l(""),
                 l("§7Clique §e◆ Solde §7en haut à droite"),
                 l("§7pour ouvrir la Banque rapidement.")
+            )),
+            new Section("Shop du serveur", "🏛", List.of(
+                l("§fOuvrir la boutique du serveur :"),
+                cmd("/shop"),
+                l(""),
+                l("§7Le serveur achète et vend en continu,"),
+                l("§7avec un §fstock illimité§7."),
+                l(""),
+                l("§7§lOnglet Acheter :"),
+                l("  §f· §7Seuls les objets assez produits sur le"),
+                l("    §7serveur sont au catalogue §e(/production)"),
+                l("  §f· §7Le §6Parchemin §7y est offert, en haut"),
+                l(""),
+                l("§7§lOnglet Vendre :"),
+                l("  §f· §7Le serveur te rachète tes objets"),
+                l("  §f· §c Uniquement les objets vierges §7:"),
+                l("    §7ni enchantés, ni renommés, ni abîmés"),
+                l(""),
+                l("§7§lPrix vivants :"),
+                l("  §f· §7Plus le serveur vend un objet, §cplus"),
+                l("    §cil devient cher §7(▲)"),
+                l("  §f· §7Plus il en rachète, §aplus il baisse §7(▼)"),
+                l("  §f· §7Le rachat se fait à §f55% §7du prix de"),
+                l("    §7vente : revendre aussitôt fait §cperdre§7."),
+                l(""),
+                l("§8Acheter pour revendre n'est pas rentable —"),
+                l("§8produis ou négocie au §e/hdv §8pour gagner.")
             )),
             new Section("Banque (/bank)", "🏦", List.of(
                 l("§fOuvrir la banque :"),
@@ -199,14 +237,18 @@ public class WikiScreen extends Screen {
             new Section("Commandes", "⌨", List.of(
                 l("§7§lToutes les commandes disponibles :"),
                 l(""),
+                l("§8(ou §6clic droit §8sur ton Parchemin)"),
+                l(""),
                 cmd("/hdv"),
                 l("  §7Marché — acheter et vendre entre joueurs"),
+                cmd("/shop"),
+                l("  §7Boutique du serveur — achat et rachat"),
                 cmd("/bank"),
                 l("  §7Banque — compte, crédits, virements"),
                 cmd("/quetes"),
                 l("  §7Quêtes — journalières, groupe, classements"),
                 cmd("/production"),
-                l("  §7Production naturelle et shop $Serveur"),
+                l("  §7Production naturelle du serveur"),
                 cmd("/registre"),
                 l("  §7Registre des personnages RP"),
                 cmd("/conflit"),
@@ -289,8 +331,10 @@ public class WikiScreen extends Screen {
         // Header
         ctx.fill(px, py, px + pw, py + 36, C_PANEL);
         ctx.fill(px, py + 36, px + pw, py + 37, C_BORDER);
-        ctx.drawText(textRenderer, "📖  Wiki — Nouvelle Terre", px + PAD, py + 8, C_GOLD, false);
-        ctx.drawText(textRenderer, "Guide du serveur SMP RP", px + PAD, py + 22, C_MID, false);
+        HubBackButton.render(ctx, textRenderer, px + PAD, py + (36 - HubBackButton.H) / 2, mx, my);
+        int titleX = px + PAD + HubBackButton.W + 8;
+        ctx.drawText(textRenderer, "📖  Wiki — Nouvelle Terre", titleX, py + 8, C_GOLD, false);
+        ctx.drawText(textRenderer, "Guide du serveur SMP RP", titleX, py + 22, C_MID, false);
 
         // Séparateur nav | contenu
         ctx.fill(px + NAV_W, py + 37, px + NAV_W + 1, py + ph - 1, C_BORDER);
@@ -381,6 +425,8 @@ public class WikiScreen extends Screen {
     public boolean mouseClicked(double mx, double my, int button) {
         if (button != 0) return super.mouseClicked(mx, my, button);
         int imx = (int) mx, imy = (int) my;
+
+        if (HubBackButton.clicked(px + PAD, py + (36 - HubBackButton.H) / 2, imx, imy)) return true;
 
         // Bouton Discord → copier le pseudo dans le presse-papier + toast
         if (imx >= discordBtnX && imx < discordBtnX + discordBtnW

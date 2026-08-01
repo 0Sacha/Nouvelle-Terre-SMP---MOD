@@ -41,6 +41,6 @@ public class ParcheminItem extends Item {
     public void appendTooltip(ItemStack stack, World world, List<Text> tooltip, TooltipContext context) {
         tooltip.add(Text.literal("§7Terminal portatif de Nouvelle Terre"));
         tooltip.add(Text.literal("§6Clic droit §7pour ouvrir le menu"));
-        tooltip.add(Text.literal("§8Ne peut pas être jeté ni perdu"));
+        tooltip.add(Text.literal("§8Rendu automatiquement s'il vient à manquer"));
     }
 }

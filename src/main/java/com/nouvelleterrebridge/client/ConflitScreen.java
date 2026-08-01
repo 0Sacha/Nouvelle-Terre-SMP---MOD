@@ -88,8 +88,10 @@ public class ConflitScreen extends Screen {
         // Header
         ctx.fill(px, py, px + pw, py + TOP_H, C_PANEL);
         ctx.fill(px, py + TOP_H, px + pw, py + TOP_H + 1, C_BORDER);
-        ctx.drawText(textRenderer, "⚔  Déclarer un conflit RP", px + PAD, py + 9, C_RED, false);
-        ctx.drawText(textRenderer, "Le Conseil des Fondateurs sera alerté", px + PAD, py + 23, C_DIM, false);
+        HubBackButton.render(ctx, textRenderer, px + PAD, py + (TOP_H - HubBackButton.H) / 2, mx, my);
+        int titleX = px + PAD + HubBackButton.W + 8;
+        ctx.drawText(textRenderer, "⚔  Déclarer un conflit RP", titleX, py + 9, C_RED, false);
+        ctx.drawText(textRenderer, "Le Conseil des Fondateurs sera alerté", titleX, py + 23, C_DIM, false);
 
         // Zone basse : label + champ raison + bouton
         int bottomH = 14 + 22 + 26 + PAD;
@@ -159,6 +161,8 @@ public class ConflitScreen extends Screen {
     public boolean mouseClicked(double mx0, double my0, int btn) {
         int x = (int) mx0, y = (int) my0;
         if (x < px || x > px + pw || y < py || y > py + ph) { close(); return true; }
+
+        if (HubBackButton.clicked(px + PAD, py + (TOP_H - HubBackButton.H) / 2, x, y)) return true;
 
         // D'abord le champ raison (focus clavier)
         if (super.mouseClicked(mx0, my0, btn)) return true;

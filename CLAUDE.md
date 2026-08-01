@@ -26,7 +26,8 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `1.3.0` (Parchemin + Shop Serveur autonome + prix de référence)
+- Version actuelle : `1.3.1` (flèche retour hub, /shop, Parchemin offert au shop)
+  - 1.3.0 : Parchemin + Shop Serveur autonome + prix de référence
   - 1.2.2 : Admin Shop avec prix dynamique + rééquilibrage économie
   - 1.2.1 : quêtes complétées disparaissent et ne peuvent être refaites
   - 1.2.0 : item Shard ◆ monnaie physique + objectifs de quêtes explicites
@@ -88,13 +89,22 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 
 ## Parchemin (1.3.0)
 - Item `nouvelle-terre-bridge:parchemin` — terminal portatif, clic droit → `HubScreen`.
+  Nom identique en fr_fr et en_us : « Parchemin » (traduire par « Scroll » cassait la DA RP).
 - `HubScreen` : DA carte électronique (substrat vert, bus et pistes cuivre, puces à broches),
   8 entrées → Marché, Shop, Banque, Quêtes, Production, Registre, Conflit, Guide.
-- Donné à la connexion et après un respawn (`donnerParcheminSiAbsent`), **non jetable**
-  (`ParcheminDropMixin` cible `ServerPlayerEntity.dropSelectedItem` et **non** `dropItem` :
-  à ce stade la pile est déjà retirée de l'inventaire, l'annuler la supprimerait).
+- Donné à la connexion et après un respawn (`donnerParcheminSiAbsent`), et récupérable
+  gratuitement via le bandeau épinglé du Shop (`ACTION_CLAIM_PARCHEMIN`). **Non vendable.**
+- `ParcheminDropMixin` bloque la touche « lâcher » (cible `ServerPlayerEntity.dropSelectedItem`
+  et **non** `dropItem` : à ce stade la pile est déjà retirée, l'annuler la supprimerait).
+  ⚠ Ne bloque **pas** le glisser hors de l'inventaire — le tooltip ne promet donc que
+  la restitution automatique, pas l'impossibilité de le jeter.
 - Occupe un slot normal — un vrai slot supplémentaire exigerait de mixiner `PlayerInventory`
   et `PlayerScreenHandler` (sérialisation NBT comprise), risque de perte d'items jugé trop élevé.
+- **`HubBackButton`** : flèche « ← » partagée, en tête de chaque écran, qui rouvre le hub
+  côté client (aucune donnée serveur requise). Présente dans Hdv, Shop, Bank, Quetes,
+  Production, Registre, Conflit et Wiki.
+  Les écrans à onglets mémorisent `tabsStartX` au rendu au lieu de recalculer l'offset dans
+  `mouseClicked` — le HDV avait déjà 4 px de dérive avant l'ajout de la flèche.
 
 ## Architecture crédits
 - Crédits + propositions : `nouvelle-terre-credits.json` sur le serveur (`LoanManager.java`, clés `loans` + `requests`)
@@ -143,6 +153,7 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 | `/quetes reset` | Réinitialise toute la progression (op 2) |
 | `/registre` | Ouvre le GUI Registre des personnages (screen client Fabric) |
 | `/production` | Ouvre le GUI Production naturelle (tous les joueurs ; boutons admin si op 2, pas de sous-commandes) |
+| `/shop` | Ouvre le GUI Shop Serveur (achat / revente) |
 
 > Toutes les opérations marché (vendre, acheter, retirer) se font **uniquement via `/hdv`**.
 > Virements, crédits et historique se gèrent via `/bank`.
@@ -169,6 +180,7 @@ commands/
   RegistreCommand.java     → /registre : appelle fetchPersonnages, envoie REGISTRE_OPEN au client
                              en_ligne recalculé depuis server.getPlayerManager() (la DB bot peut être désync)
   ProductionCommand.java   → /production (ouvre GUI via PROD_OPEN, tous joueurs — GUI only, pas de sous-commandes)
+  ShopCommand.java         → /shop : envoie SHOP_OPEN au client (Shop Serveur)
 
 economy/
   LocalEconomy.java        → Singleton shards.json
@@ -263,7 +275,7 @@ network/
                              Actions : HDV(0) BANK(1) QUETES(2) PRODUCTION(3) REGISTRE(4)
                                        CONFLIT(5) WIKI(6) SHOP(7)
   ShopNetworking.java      → Canaux : SHOP_OPEN (S→C) / SHOP_ACTION (C→S) / SHOP_RESULT (S→C)
-                             Actions : ACTION_BUY(0) / ACTION_SELL(1)
+                             Actions : ACTION_BUY(0) / ACTION_SELL(1) / ACTION_CLAIM_PARCHEMIN(2)
 
 client/                    ← @Environment(CLIENT) uniquement
   HdvScreen.java           → Screen marché : 4 onglets (Marché / Vendre / Mon Shop / Boutiques)
@@ -281,6 +293,8 @@ client/                    ← @Environment(CLIENT) uniquement
                              Catégorie "Médical" : items cottonmod (coton, bandage, medkit, plantes...)
   ServerShopScreen.java    → Shop Serveur autonome : onglets Acheter / Vendre, grille scrollable,
                              modal quantité (−/+/max), tendance de prix (▲ ▼ =)
+                             Bandeau Parchemin épinglé en tête de l'onglet Acheter (offert) —
+                             la grille est décalée de BANNER_H pour ne pas passer dessous
   HubScreen.java           → Hub du Parchemin, DA carte électronique, 8 puces cliquables
   BankScreen.java          → Screen banque : 5 onglets (Compte / Economie / Classement / Credits / Virements)
   QuetesScreen.java        → Screen quêtes : 2 onglets (Disponibles / Mes Quêtes), PW=420 PH=300,

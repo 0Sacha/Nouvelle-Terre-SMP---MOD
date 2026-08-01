@@ -64,6 +64,10 @@ public final class ServerShopActions {
 
     public static String sell(ServerPlayerEntity player, String itemId, int qty) {
         if (qty <= 0) return "§cQuantité invalide.";
+        // Le Parchemin est un outil d'interface distribué gratuitement : le revendre
+        // reviendrait à imprimer des shards à volonté.
+        if (itemId.equals("nouvelle-terre-bridge:parchemin"))
+            return "§cLe Parchemin ne peut pas être vendu.";
 
         Item item = resolve(itemId);
         if (item == null) return "§cItem inconnu.";
@@ -106,6 +110,17 @@ public final class ServerShopActions {
 
         return String.format("§a✅ §f%dx %s §avendu pour §f%s ◆§a. Solde : §f%s ◆§a.",
             qty, nomItem, EconomieCommand.fmt(total), EconomieCommand.fmt(eco.getBalance(pseudo)));
+    }
+
+    /** Remet un Parchemin au joueur s'il n'en a plus. Toujours gratuit. */
+    public static String claimParchemin(ServerPlayerEntity player) {
+        for (ItemStack s : player.getInventory().main)
+            if (s.isOf(com.nouvelleterrebridge.NouvelleTerreBridge.PARCHEMIN))
+                return "§eTu as déjà ton Parchemin.";
+
+        ItemStack stack = new ItemStack(com.nouvelleterrebridge.NouvelleTerreBridge.PARCHEMIN);
+        if (!player.getInventory().insertStack(stack)) player.dropItem(stack, false);
+        return "§a✅ Parchemin récupéré — clic droit pour ouvrir le menu.";
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

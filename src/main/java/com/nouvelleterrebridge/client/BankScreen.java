@@ -87,6 +87,7 @@ public class BankScreen extends Screen {
 
     private Tab activeTab = Tab.ACCOUNT;
     private int txScroll = 0;
+    private int tabsStartX = 0;
     private long screenOpenTime;
 
     private String toastMsg;
@@ -318,6 +319,9 @@ public class BankScreen extends Screen {
         int ty = winY + (TOP_H - textRenderer.fontHeight) / 2;
         int tx = winX + PAD;
 
+        HubBackButton.render(ctx, textRenderer, tx, winY + (TOP_H - HubBackButton.H) / 2, mx, my);
+        tx += HubBackButton.W + 8;
+
         ctx.drawText(textRenderer, "◆", tx, ty, C_GOLD, false);
         tx += textRenderer.getWidth("◆") + 6;
         ctx.drawText(textRenderer, "Banque", tx, ty, C_WHITE, false);
@@ -326,6 +330,8 @@ public class BankScreen extends Screen {
         tx += 9;
         ctx.drawText(textRenderer, "Nouvelle Terre", tx, ty, C_MID, false);
         tx += textRenderer.getWidth("Nouvelle Terre") + 20;
+
+        tabsStartX = tx;
 
         for (Tab tab : Tab.values()) {
             boolean active = activeTab == tab;
@@ -912,10 +918,8 @@ public class BankScreen extends Screen {
 
         // ── Barre onglets ──
         if (y >= winY && y <= winY + TOP_H) {
-            int tx = winX + PAD
-                + textRenderer.getWidth("◆") + 6
-                + textRenderer.getWidth("Banque") + 8 + 1 + 9
-                + textRenderer.getWidth("Nouvelle Terre") + 20;
+            if (HubBackButton.clicked(winX + PAD, winY + (TOP_H - HubBackButton.H) / 2, x, y)) return true;
+            int tx = tabsStartX;
             for (Tab tab : Tab.values()) {
                 int tw = textRenderer.getWidth(tab.label) + 18;
                 if (x >= tx && x < tx + tw) { activeTab = tab; txScroll = 0; return true; }

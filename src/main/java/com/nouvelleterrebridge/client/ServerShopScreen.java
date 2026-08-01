@@ -59,6 +59,7 @@ public class ServerShopScreen extends Screen {
     private static final int CARD_H    = 104;
     private static final int GAP       = 8;
     private static final int SCROLL_W  = 4;
+    private static final int BANNER_H  = 46;
 
     private int winX, winY, winW, winH;
 
@@ -68,6 +69,10 @@ public class ServerShopScreen extends Screen {
     private Tab tab = Tab.ACHETER;
     private int scroll = 0;
     private int maxScroll = 0;
+    private int tabsStartX = 0;
+
+    // Position du bouton du bandeau, calculée au rendu et relue par mouseClicked
+    private int parcheminBtnX = 0, parcheminBtnY = 0, parcheminBtnW = 0;
 
     private TextFieldWidget searchField;
 
@@ -161,12 +166,18 @@ public class ServerShopScreen extends Screen {
 
         int ty = winY + (TOP_H - textRenderer.fontHeight) / 2;
         int tx = winX + PAD;
+
+        HubBackButton.render(ctx, textRenderer, tx, winY + (TOP_H - HubBackButton.H) / 2, mx, my);
+        tx += HubBackButton.W + 8;
+
         ctx.drawText(textRenderer, "SHOP", tx, ty, C_GOLD, false);
         tx += textRenderer.getWidth("SHOP") + 8;
         ctx.fill(tx, winY + (TOP_H - 16) / 2, tx + 1, winY + (TOP_H + 16) / 2, C_BORDER);
         tx += 9;
         ctx.drawText(textRenderer, "Serveur", tx, ty, C_MID, false);
         tx += textRenderer.getWidth("Serveur") + 20;
+
+        tabsStartX = tx;
 
         for (Tab t : Tab.values()) {
             String label = t == Tab.ACHETER ? "Acheter" : "Vendre";
@@ -227,11 +238,49 @@ public class ServerShopScreen extends Screen {
 
     private void renderBuyGrid(DrawContext ctx, int mx, int my) {
         renderSearch(ctx, mx, my);
+        renderParcheminBanner(ctx, mx, my);
         List<ShopEntry> list = buyList();
         renderGrid(ctx, mx, my, list, true);
         if (list.isEmpty())
             ctx.drawCenteredTextWithShadow(textRenderer, "Aucun article au catalogue.",
-                winX + winW / 2, winY + winH / 2, C_DIM);
+                winX + winW / 2, winY + winH / 2 + BANNER_H / 2, C_DIM);
+    }
+
+    /** Bandeau épinglé : le Parchemin, offert. Toujours visible, jamais vendable. */
+    private void renderParcheminBanner(DrawContext ctx, int mx, int my) {
+        int bx = winX + PAD;
+        int by = winY + TOP_H + PAD + 26;
+        int bw = winW - PAD * 2;
+
+        ctx.fill(bx, by, bx + bw, by + BANNER_H, 0xFF1A2A22);
+        ctx.fill(bx, by, bx + 3, by + BANNER_H, C_GREEN);
+        ctx.fill(bx, by, bx + bw, by + 1, C_BORDER);
+        ctx.fill(bx, by + BANNER_H - 1, bx + bw, by + BANNER_H, C_BORDER);
+
+        drawItemScaled(ctx, parcheminStack(), bx + 30, by + BANNER_H / 2, 2.0f);
+
+        ctx.drawText(textRenderer, "§fParchemin §7— votre terminal portatif",
+            bx + 52, by + 10, C_WHITE, false);
+        ctx.drawText(textRenderer, "§8Accès au marché, à la banque, aux quêtes… sans commande",
+            bx + 52, by + 24, C_DIM, false);
+
+        String label = "Obtenir — gratuit";
+        int btnW = textRenderer.getWidth(label) + 20;
+        parcheminBtnX = bx + bw - btnW - 10;
+        parcheminBtnY = by + (BANNER_H - 20) / 2;
+        boolean hov = mx >= parcheminBtnX && mx < parcheminBtnX + btnW
+                   && my >= parcheminBtnY && my < parcheminBtnY + 20;
+        parcheminBtnW = btnW;
+
+        ctx.fill(parcheminBtnX, parcheminBtnY, parcheminBtnX + btnW, parcheminBtnY + 20,
+                 hov ? C_GREEN : C_STRIP);
+        ctx.fill(parcheminBtnX, parcheminBtnY, parcheminBtnX + btnW, parcheminBtnY + 1, C_GREEN);
+        ctx.drawCenteredTextWithShadow(textRenderer, label,
+            parcheminBtnX + btnW / 2, parcheminBtnY + 6, hov ? C_BG : C_GREEN);
+    }
+
+    private ItemStack parcheminStack() {
+        return stackOf("nouvelle-terre-bridge:parchemin");
     }
 
     private void renderSellGrid(DrawContext ctx, int mx, int my) {
@@ -255,7 +304,8 @@ public class ServerShopScreen extends Screen {
 
     private void renderGrid(DrawContext ctx, int mx, int my, List<ShopEntry> list, boolean buying) {
         int gx = winX + PAD;
-        int gy = winY + TOP_H + PAD + 26;
+        // L'onglet Acheter réserve la place du bandeau Parchemin épinglé en haut
+        int gy = winY + TOP_H + PAD + 26 + (buying ? BANNER_H + GAP : 0);
         int gw = winW - PAD * 2 - SCROLL_W - 4;
         int gh = winY + winH - PAD - gy;
 
@@ -425,6 +475,13 @@ public class ServerShopScreen extends Screen {
 
         if (y <= winY + TOP_H - 1) { handleTabClick(x, y); return true; }
 
+        if (tab == Tab.ACHETER
+            && x >= parcheminBtnX && x < parcheminBtnX + parcheminBtnW
+            && y >= parcheminBtnY && y < parcheminBtnY + 20) {
+            send(ShopNetworking.ACTION_CLAIM_PARCHEMIN, "nouvelle-terre-bridge:parchemin", 1);
+            return true;
+        }
+
         super.mouseClicked(mx0, my0, btn);
 
         if (hovered != null) { selected = hovered; qty = 1; return true; }
@@ -432,8 +489,8 @@ public class ServerShopScreen extends Screen {
     }
 
     private void handleTabClick(int mx, int my) {
-        int tx = winX + PAD + textRenderer.getWidth("SHOP") + 17
-               + textRenderer.getWidth("Serveur") + 20;
+        if (HubBackButton.clicked(winX + PAD, winY + (TOP_H - HubBackButton.H) / 2, mx, my)) return;
+        int tx = tabsStartX;
         for (Tab t : Tab.values()) {
             String label = t == Tab.ACHETER ? "Acheter" : "Vendre";
             int tw = textRenderer.getWidth(label) + 18;

@@ -139,6 +139,7 @@ public class HdvScreen extends Screen {
     private ListingData hoveredCard = null;
     private int hoveredCardY = 0;
     private int gridMaxScroll = 0;
+    private int tabsStartX = 0;
     private ListingData buyingListing = null;
     private int buyQty = 1;
 
@@ -287,6 +288,10 @@ public class HdvScreen extends Screen {
         int ty = winY + (TOP_H - textRenderer.fontHeight) / 2;
         int tx = winX + PAD;
 
+        // Retour au Parchemin
+        HubBackButton.render(ctx, textRenderer, tx, winY + (TOP_H - HubBackButton.H) / 2, mx, my);
+        tx += HubBackButton.W + 8;
+
         // Logo
         ctx.drawText(textRenderer, "HDV", tx, ty, C_GOLD, false);
         tx += textRenderer.getWidth("HDV") + 8;
@@ -294,6 +299,10 @@ public class HdvScreen extends Screen {
         tx += 9;
         ctx.drawText(textRenderer, "Nouvelle Terre", tx, ty, C_MID, false);
         tx += textRenderer.getWidth("Nouvelle Terre") + 20;
+
+        // Position réelle des onglets, relue par handleTabClick (évite toute dérive
+        // entre le calcul du rendu et celui du clic)
+        tabsStartX = tx;
 
         // Tabs — pill style: active = gold bg dark text, hover = subtle, normal = muted
         for (Tab tab : Tab.values()) {
@@ -926,7 +935,8 @@ public class HdvScreen extends Screen {
     }
 
     private void handleTabClick(int mx, int my) {
-        int tx =winX + PAD + textRenderer.getWidth("HDV") + 13 + textRenderer.getWidth("Nouvelle Terre") + 20;
+        if (HubBackButton.clicked(winX + PAD, winY + (TOP_H - HubBackButton.H) / 2, mx, my)) return;
+        int tx = tabsStartX;
         for (Tab tab : Tab.values()) {
             int tw = textRenderer.getWidth(tab.label) + 18;
             if (mx >= tx && mx <= tx + tw) {

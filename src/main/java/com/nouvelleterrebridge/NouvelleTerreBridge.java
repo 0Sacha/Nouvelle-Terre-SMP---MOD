@@ -10,6 +10,7 @@ import com.nouvelleterrebridge.commands.PayCommand;
 import com.nouvelleterrebridge.commands.ProductionCommand;
 import com.nouvelleterrebridge.commands.QuetesCommand;
 import com.nouvelleterrebridge.commands.RegistreCommand;
+import com.nouvelleterrebridge.commands.ShopCommand;
 import com.nouvelleterrebridge.network.RegistreNetworking;
 import com.nouvelleterrebridge.commands.WikiCommand;
 import com.nouvelleterrebridge.economy.FirstJoinTracker;
@@ -148,6 +149,7 @@ public class NouvelleTerreBridge implements ModInitializer {
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             HdvCommand.register(dispatcher);
+            ShopCommand.register(dispatcher);
             BankCommand.register(dispatcher);
             EconomieCommand.register(dispatcher);
             PayCommand.register(dispatcher);
@@ -354,6 +356,7 @@ public class NouvelleTerreBridge implements ModInitializer {
                 String result = switch (action) {
                     case ShopNetworking.ACTION_BUY  -> ServerShopActions.buy(player, itemId, quantity);
                     case ShopNetworking.ACTION_SELL -> ServerShopActions.sell(player, itemId, quantity);
+                    case ShopNetworking.ACTION_CLAIM_PARCHEMIN -> ServerShopActions.claimParchemin(player);
                     default -> "§cAction inconnue.";
                 };
 
