@@ -59,6 +59,7 @@ public class ProductionScreen extends Screen {
     private boolean isOp;
     private List<ProdEntry> entries;
     private int scroll = 0;
+    private boolean draggingScroll = false;
 
     private String  toastMsg;
     private boolean toastOk;
@@ -256,16 +257,51 @@ public class ProductionScreen extends Screen {
                 return true;
             }
         }
+
+        int listY = py + TOP_H + 1 + 4;
+        int visRows = visibleRows();
+        if (entries.size() > visRows && x >= px + pw - 10 && x <= px + pw - 2
+                && y >= listY && y <= listY + visRows * ROW_H) {
+            draggingScroll = true;
+            applyScrollFromMouse(y, listY, visRows);
+            return true;
+        }
         return super.mouseClicked(mx0, my0, btn);
     }
 
     @Override
+    public boolean mouseDragged(double mx0, double my0, int btn, double dx, double dy) {
+        if (draggingScroll) {
+            applyScrollFromMouse((int) my0, py + TOP_H + 1 + 4, visibleRows());
+            return true;
+        }
+        return super.mouseDragged(mx0, my0, btn, dx, dy);
+    }
+
+    @Override
+    public boolean mouseReleased(double mx0, double my0, int btn) {
+        draggingScroll = false;
+        return super.mouseReleased(mx0, my0, btn);
+    }
+
+    @Override
     public boolean mouseScrolled(double mx, double my, double amount) {
-        int listH = ph - TOP_H - 1 - 8;
-        int visRows = Math.max(1, listH / ROW_H);
-        int maxScroll = Math.max(0, entries.size() - visRows);
+        int maxScroll = Math.max(0, entries.size() - visibleRows());
         scroll = Math.max(0, Math.min(scroll - (int) Math.signum(amount), maxScroll));
         return true;
+    }
+
+    private int visibleRows() {
+        return Math.max(1, (ph - TOP_H - 1 - 8) / ROW_H);
+    }
+
+    /** Positionne le scroll d'après la position verticale de la souris sur la piste. */
+    private void applyScrollFromMouse(int mouseY, int listY, int visRows) {
+        int maxScroll = Math.max(0, entries.size() - visRows);
+        if (maxScroll == 0) { scroll = 0; return; }
+        int trackH = visRows * ROW_H - 4;
+        float ratio = (float) (mouseY - listY) / Math.max(1, trackH);
+        scroll = Math.max(0, Math.min(Math.round(ratio * maxScroll), maxScroll));
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────────

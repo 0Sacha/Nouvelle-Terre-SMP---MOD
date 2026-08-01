@@ -130,6 +130,8 @@ public class HdvScreen extends Screen {
 
     private TextFieldWidget searchField;
     private ListingData hoveredCard = null;
+    private int hoveredCardY = 0;
+    private int gridMaxScroll = 0;
     private ListingData buyingListing = null;
     private int buyQty = 1;
 
@@ -266,7 +268,7 @@ public class HdvScreen extends Screen {
         tx += textRenderer.getWidth("Nouvelle Terre") + 20;
 
         // Tabs — pill style: active = gold bg dark text, hover = subtle, normal = muted
-        for (Tab tab : new Tab[]{Tab.MARKET, Tab.SELL, Tab.MY_SHOP, Tab.SHOPS}) {
+        for (Tab tab : Tab.values()) {
             boolean active = activeTab == tab;
             int tw = textRenderer.getWidth(tab.label) + 18;
             boolean hov = mx >= tx && mx <= tx + tw && my >= winY && my <= winY + TOP_H - 1;
@@ -418,39 +420,12 @@ public class HdvScreen extends Screen {
         ctx.fill(sortX + sortW - 1, sortY, sortX + sortW, sortY + 18, C_BORDER);
         ctx.drawText(textRenderer, sortLabel, sortX + 8, sortY + 5, sortHov ? C_GOLD : C_MID, false);
 
-        int gridY    = winY + TOP_H + PAD + 26;
-        int gridH    = winH - (TOP_H + PAD + 26) - 28;
-        int scrollBarX = cx + cw - SCROLL_W - 2;
-        int gridW    = cw - SCROLL_W - 6;
-        int cardW    = (gridW - (COLS - 1) * GAP) / COLS;
+        int gridY = winY + TOP_H + PAD + 26;
+        int gridH = winH - (TOP_H + PAD + 26) - 28;
+        int gridW = cw - SCROLL_W - 6;
 
         List<ListingData> items = filteredListings();
-        int visRows   = Math.max(1, gridH / (CARD_H + GAP));
-        int totalRows = (int) Math.ceil((double) items.size() / COLS);
-        int maxScroll = Math.max(0, totalRows - visRows);
-        scrollOffset  = Math.min(scrollOffset, maxScroll);
-        int start = scrollOffset * COLS;
-
-        if (totalRows > visRows) {
-            ctx.fill(scrollBarX, gridY, scrollBarX + SCROLL_W, gridY + gridH, C_BORDER);
-            int thumbH = Math.max(20, gridH * visRows / totalRows);
-            int thumbY = gridY + (maxScroll > 0 ? (gridH - thumbH) * scrollOffset / maxScroll : 0);
-            ctx.fill(scrollBarX, thumbY, scrollBarX + SCROLL_W, thumbY + thumbH, 0x60FFFFFF);
-        }
-
-        ctx.enableScissor(cx, gridY, cx + gridW, gridY + gridH);
-        hoveredCard = null;
-        for (int i = start; i < items.size(); i++) {
-            int col = (i - start) % COLS;
-            int row = (i - start) / COLS;
-            if (row >= visRows + 1) break;
-            int x = cx + col * (cardW + GAP);
-            int y = gridY + row * (CARD_H + GAP);
-            boolean hov = mx >= x && mx < x + cardW && my >= y && my < y + CARD_H;
-            if (hov) hoveredCard = items.get(i);
-            renderCard(ctx, x, y, cardW, CARD_H, items.get(i), hov, false);
-        }
-        ctx.disableScissor();
+        renderCardGrid(ctx, mx, my, items, cx, gridY, gridW, gridH, false);
 
         if (items.isEmpty()) {
             String me = client != null && client.player != null ? client.player.getName().getString() : "";
@@ -462,8 +437,48 @@ public class HdvScreen extends Screen {
         }
 
         String pg = items.size() + " article" + (items.size() > 1 ? "s" : "");
-        if (maxScroll > 0) pg += "  •  Page " + (scrollOffset + 1) + "/" + (maxScroll + 1);
+        if (gridMaxScroll > 0) pg += "  •  Page " + (scrollOffset + 1) + "/" + (gridMaxScroll + 1);
         ctx.drawCenteredTextWithShadow(textRenderer, pg, cx + cw / 2, winY + winH - 20, C_DIM);
+    }
+
+    /**
+     * Grille de cartes scrollable partagée par tous les onglets.
+     * Clippe le contenu, dessine la scrollbar et mémorise la carte survolée
+     * (`hoveredCard` / `hoveredCardY`) pour la détection de clic.
+     */
+    private void renderCardGrid(DrawContext ctx, int mx, int my, List<ListingData> items,
+                                int gx, int gy, int gw, int gh, boolean ownCards) {
+        int cardW     = (gw - (COLS - 1) * GAP) / COLS;
+        int visRows   = Math.max(1, (gh + GAP) / (CARD_H + GAP));
+        int totalRows = (int) Math.ceil((double) items.size() / COLS);
+
+        gridMaxScroll = Math.max(0, totalRows - visRows);
+        scrollOffset  = Math.max(0, Math.min(scrollOffset, gridMaxScroll));
+        int start     = scrollOffset * COLS;
+
+        if (gridMaxScroll > 0) {
+            int sbX = gx + gw + 2;
+            ctx.fill(sbX, gy, sbX + SCROLL_W, gy + gh, C_BORDER);
+            int thumbH = Math.max(20, gh * visRows / totalRows);
+            int thumbY = gy + (gh - thumbH) * scrollOffset / gridMaxScroll;
+            ctx.fill(sbX, thumbY, sbX + SCROLL_W, thumbY + thumbH, 0x60FFFFFF);
+        }
+
+        hoveredCard = null;
+        ctx.enableScissor(gx, gy, gx + gw, gy + gh);
+        for (int i = start; i < items.size(); i++) {
+            int col = (i - start) % COLS;
+            int row = (i - start) / COLS;
+            if (row > visRows) break;
+            int x = gx + col * (cardW + GAP);
+            int y = gy + row * (CARD_H + GAP);
+            boolean hov = mx >= x && mx < x + cardW && my >= y && my < y + CARD_H
+                       && my >= gy && my < gy + gh;
+            if (hov) { hoveredCard = items.get(i); hoveredCardY = y; }
+            if (ownCards) renderOwnCard(ctx, x, y, cardW, CARD_H, items.get(i), hov);
+            else          renderCard(ctx, x, y, cardW, CARD_H, items.get(i), hov, false);
+        }
+        ctx.disableScissor();
     }
 
     private void renderCard(DrawContext ctx, int x, int y, int w, int h, ListingData l, boolean hov, boolean isOwn) {
@@ -720,16 +735,9 @@ public class HdvScreen extends Screen {
             return;
         }
 
-        int cardW = (winW - PAD * 2 - (COLS - 1) * GAP) / COLS;
-        for (int i = 0; i < mine.size(); i++) {
-            ListingData l = mine.get(i);
-            int col = i % COLS;
-            int row = i / COLS;
-            int cx  = winX + PAD + col * (cardW + GAP);
-            int cy  = py + row * (CARD_H + GAP);
-            boolean hov = mx >= cx && mx < cx + cardW && my >= cy && my < cy + CARD_H;
-            renderOwnCard(ctx, cx, cy, cardW, CARD_H, l, hov);
-        }
+        int gridW = winW - PAD * 2 - SCROLL_W - 4;
+        int gridH = winY + winH - PAD - py;
+        renderCardGrid(ctx, mx, my, mine, winX + PAD, py, gridW, gridH, true);
     }
 
     private void renderServerShop(DrawContext ctx, int mx, int my) {
@@ -744,17 +752,9 @@ public class HdvScreen extends Screen {
             return;
         }
 
-        int cardW = (winW - PAD * 2 - (COLS - 1) * GAP) / COLS;
-        for (int i = 0; i < server.size(); i++) {
-            ListingData l = server.get(i);
-            int col = i % COLS;
-            int row = i / COLS;
-            int cx  = winX + PAD + col * (cardW + GAP);
-            int cy  = py + row * (CARD_H + GAP);
-            boolean hov = mx >= cx && mx < cx + cardW && my >= cy && my < cy + CARD_H;
-            if (hov) hoveredCard = l;
-            renderCard(ctx, cx, cy, cardW, CARD_H, l, hov, false);
-        }
+        int gridW = winW - PAD * 2 - SCROLL_W - 4;
+        int gridH = winY + winH - PAD - py;
+        renderCardGrid(ctx, mx, my, server, winX + PAD, py, gridW, gridH, false);
     }
 
     private void renderOwnCard(DrawContext ctx, int x, int y, int w, int h, ListingData l, boolean hov) {
@@ -821,14 +821,9 @@ public class HdvScreen extends Screen {
             py += textRenderer.fontHeight + 10;
 
             List<ListingData> items = listings.stream().filter(l -> l.seller().equals(selectedShop)).toList();
-            int cardW = (winW - PAD * 2 - (COLS - 1) * GAP) / COLS;
-            for (int i = 0; i < items.size(); i++) {
-                int col = i % COLS, row = i / COLS;
-                int cx  = winX + PAD + col * (cardW + GAP);
-                int cy  = py + row * (CARD_H + GAP);
-                boolean hov = mx >= cx && mx < cx + cardW && my >= cy && my < cy + CARD_H;
-                renderCard(ctx, cx, cy, cardW, CARD_H, items.get(i), hov, false);
-            }
+            int gridW = winW - PAD * 2 - SCROLL_W - 4;
+            int gridH = winY + winH - PAD - py;
+            renderCardGrid(ctx, mx, my, items, winX + PAD, py, gridW, gridH, false);
         } else {
             ctx.drawText(textRenderer, "BOUTIQUES DES JOUEURS", winX + PAD, py, C_DIM, false);
             py += textRenderer.fontHeight + 10;
@@ -836,23 +831,43 @@ public class HdvScreen extends Screen {
             Map<String, Long> sellers = listings.stream()
                 .collect(Collectors.groupingBy(ListingData::seller, LinkedHashMap::new, Collectors.counting()));
 
-            int rowH = 48, idx = 0;
+            int rowH    = 48, step = rowH + 6;
+            int listH   = winY + winH - PAD - py;
+            int visRows = Math.max(1, (listH + 6) / step);
+            gridMaxScroll = Math.max(0, sellers.size() - visRows);
+            scrollOffset  = Math.max(0, Math.min(scrollOffset, gridMaxScroll));
+
+            int listW = winW - PAD * 2 - SCROLL_W - 4;
+            if (gridMaxScroll > 0) {
+                int sbX = winX + PAD + listW + 2;
+                ctx.fill(sbX, py, sbX + SCROLL_W, py + listH, C_BORDER);
+                int thumbH = Math.max(20, listH * visRows / sellers.size());
+                int thumbY = py + (listH - thumbH) * scrollOffset / gridMaxScroll;
+                ctx.fill(sbX, thumbY, sbX + SCROLL_W, thumbY + thumbH, 0x60FFFFFF);
+            }
+
+            ctx.enableScissor(winX + PAD, py, winX + PAD + listW, py + listH);
+            int idx = 0;
             for (Map.Entry<String, Long> e : sellers.entrySet()) {
-                int ry = py + idx * (rowH + 6);
-                boolean hov = mx >= winX + PAD && mx < winX + winW - PAD && my >= ry && my < ry + rowH;
-                ctx.fill(winX + PAD, ry, winX + winW - PAD, ry + rowH, hov ? C_HOVER : C_PANEL);
+                if (idx < scrollOffset) { idx++; continue; }
+                int ry = py + (idx - scrollOffset) * step;
+                if (ry > py + listH) break;
+                boolean hov = mx >= winX + PAD && mx < winX + PAD + listW
+                           && my >= ry && my < ry + rowH && my >= py && my < py + listH;
+                ctx.fill(winX + PAD, ry, winX + PAD + listW, ry + rowH, hov ? C_HOVER : C_PANEL);
                 if (hov) {
-                    ctx.fill(winX + PAD, ry, winX + winW - PAD, ry + 1, C_GOLD);
-                    ctx.fill(winX + PAD, ry + rowH - 1, winX + winW - PAD, ry + rowH, C_GOLD);
+                    ctx.fill(winX + PAD, ry, winX + PAD + listW, ry + 1, C_GOLD);
+                    ctx.fill(winX + PAD, ry + rowH - 1, winX + PAD + listW, ry + rowH, C_GOLD);
                     ctx.fill(winX + PAD, ry, winX + PAD + 1, ry + rowH, C_GOLD);
-                    ctx.fill(winX + winW - PAD - 1, ry, winX + winW - PAD, ry + rowH, C_GOLD);
+                    ctx.fill(winX + PAD + listW - 1, ry, winX + PAD + listW, ry + rowH, C_GOLD);
                 }
                 ctx.drawText(textRenderer, e.getKey(), winX + PAD + 12, ry + 10, C_WHITE, false);
                 long cnt = e.getValue();
                 ctx.drawText(textRenderer, cnt + " article" + (cnt > 1 ? "s" : ""), winX + PAD + 12, ry + 24, C_DIM, false);
-                ctx.drawText(textRenderer, "›", winX + winW - PAD - 16, ry + rowH / 2 - textRenderer.fontHeight / 2, C_DARK, false);
+                ctx.drawText(textRenderer, "›", winX + PAD + listW - 16, ry + rowH / 2 - textRenderer.fontHeight / 2, C_DARK, false);
                 idx++;
             }
+            ctx.disableScissor();
         }
     }
 
@@ -919,7 +934,7 @@ public class HdvScreen extends Screen {
 
     private void handleTabClick(int mx, int my) {
         int tx =winX + PAD + textRenderer.getWidth("HDV") + 13 + textRenderer.getWidth("Nouvelle Terre") + 20;
-        for (Tab tab : new Tab[]{Tab.MARKET, Tab.SELL, Tab.MY_SHOP, Tab.SHOPS}) {
+        for (Tab tab : Tab.values()) {
             int tw = textRenderer.getWidth(tab.label) + 18;
             if (mx >= tx && mx <= tx + tw) {
                 activeTab    = tab;
@@ -1030,20 +1045,9 @@ public class HdvScreen extends Screen {
     }
 
     private void handleMyShopClick(int mx, int my) {
-        String me = client != null && client.player != null ? client.player.getName().getString() : "";
-        List<ListingData> mine = listings.stream().filter(l -> l.seller().equalsIgnoreCase(me)).toList();
-        int py    = winY + TOP_H + PAD + textRenderer.fontHeight + 10;
-        int cardW = (winW - PAD * 2 - (COLS - 1) * GAP) / COLS;
-        for (int i = 0; i < mine.size(); i++) {
-            int col = i % COLS, row = i / COLS;
-            int cx  = winX + PAD + col * (cardW + GAP);
-            int cy  = py + row * (CARD_H + GAP);
-            if (mx >= cx && mx < cx + cardW && my >= cy && my < cy + CARD_H) {
-                if (my >= cy + CARD_H - 24 && my < cy + CARD_H) {
-                    sendWithdraw(mine.get(i).id());
-                }
-                return;
-            }
+        if (hoveredCard == null) return;
+        if (my >= hoveredCardY + CARD_H - 24 && my < hoveredCardY + CARD_H) {
+            sendWithdraw(hoveredCard.id());
         }
     }
 
@@ -1052,30 +1056,26 @@ public class HdvScreen extends Screen {
         if (selectedShop != null) {
             if (mx >= winX + PAD && mx < winX + PAD + 72 && my >= py && my < py + 18) {
                 selectedShop = null;
+                scrollOffset = 0;
                 return;
             }
-            py += 26 + textRenderer.fontHeight + 10;
-            List<ListingData> items = listings.stream().filter(l -> l.seller().equals(selectedShop)).toList();
-            int cardW = (winW - PAD * 2 - (COLS - 1) * GAP) / COLS;
-            for (int i = 0; i < items.size(); i++) {
-                int col = i % COLS, row = i / COLS;
-                int cx  = winX + PAD + col * (cardW + GAP);
-                int cy  = py + row * (CARD_H + GAP);
-                if (mx >= cx && mx < cx + cardW && my >= cy && my < cy + CARD_H) {
-                    buyingListing = items.get(i);
-                    buyQty = 1;
-                    return;
-                }
-            }
+            if (hoveredCard != null) { buyingListing = hoveredCard; buyQty = 1; }
         } else {
             py += textRenderer.fontHeight + 10;
             Map<String, Long> sellers = listings.stream()
                 .collect(Collectors.groupingBy(ListingData::seller, LinkedHashMap::new, Collectors.counting()));
-            int rowH = 48, idx = 0;
+            int rowH = 48, step = rowH + 6;
+            int listH = winY + winH - PAD - py;
+            int listW = winW - PAD * 2 - SCROLL_W - 4;
+            int idx = 0;
             for (String seller : sellers.keySet()) {
-                int ry = py + idx * (rowH + 6);
-                if (mx >= winX + PAD && mx < winX + winW - PAD && my >= ry && my < ry + rowH) {
+                if (idx < scrollOffset) { idx++; continue; }
+                int ry = py + (idx - scrollOffset) * step;
+                if (ry > py + listH) break;
+                if (mx >= winX + PAD && mx < winX + PAD + listW
+                    && my >= ry && my < ry + rowH && my < py + listH) {
                     selectedShop = seller;
+                    scrollOffset = 0;
                     return;
                 }
                 idx++;
@@ -1087,9 +1087,9 @@ public class HdvScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mx, double my, double delta) {
-        if (activeTab == Tab.MARKET && buyingListing == null) {
-            scrollOffset = Math.max(0, scrollOffset - (int) Math.signum(delta));
-        }
+        if (buyingListing != null || activeTab == Tab.SELL) return true;
+        int next = scrollOffset - (int) Math.signum(delta);
+        scrollOffset = Math.max(0, Math.min(next, gridMaxScroll));
         return true;
     }
 
