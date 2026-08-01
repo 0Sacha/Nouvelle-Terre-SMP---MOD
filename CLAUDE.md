@@ -26,7 +26,8 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `1.2.2` (Admin Shop avec prix dynamique + rééquilibrage économie)
+- Version actuelle : `1.3.0` (Parchemin + Shop Serveur autonome + prix de référence)
+  - 1.2.2 : Admin Shop avec prix dynamique + rééquilibrage économie
   - 1.2.1 : quêtes complétées disparaissent et ne peuvent être refaites
   - 1.2.0 : item Shard ◆ monnaie physique + objectifs de quêtes explicites
 - À chaque rebuild : mettre à jour `mod_version` dans `gradle.properties`, puis `git commit` + `git push`
@@ -55,26 +56,45 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 - `MARKET_SYNC` envoyé au bot 3s après `SERVER_START` et à chaque reconnexion
 - Achat au meilleur prix automatique, peut fractionner sur plusieurs vendeurs
 - `FrenchItemNames.toDisplay()` strip n'importe quel namespace (pas seulement `minecraft:`)
-- **HDV Onglets** : Marché (joueurs), Vendre, Mon Shop, Shop Serveur, Boutiques
+- **HDV Onglets** : Marché (joueurs), Vendre, Mon Shop, Boutiques
+  Le HDV ne contient **que** les annonces entre joueurs — le Shop Serveur est un écran séparé.
 - Catégories HDV : Tout, Blocs, Matériaux, Outils, Nourriture, Potions, **Médical**, Divers
-- **Shop auto (`$Serveur`)** : seuils créés dynamiquement au premier contact avec un item
-  (`ShopThresholds.getOrCreate()`, calculés par `Rarity` vanilla). **Stock illimité** :
-  l'achat ne décrémente pas la quantité, pas de SALE_COMPLETED envoyé au bot.
-  L'argent des achats va sur le compte `$Serveur` (préfixe `$` = compte système,
-  **exclu** du classement, des stats économie, du total shards et des dropdowns joueurs)
-- **Prix dynamiques (`ServerShopPriceManager`)** : persiste dans `server-shop-prices.json`
-  Prix augmente avec le volume de ventes (`recordSale()` appelé lors de chaque achat au shop):
-  - < 64 vendues : prix de base
-  - 64-256 : +10%
-  - 256-512 : +25%
-  - 512-1024 : +50%
-  - 1024-2048 : +75%
-  - 2048+ : +100%
-- **Seuils de prix rééquilibrés** (1.2.2) :
-  - COMMON: 1 → 2 ◆
-  - UNCOMMON: 5 → 12 ◆
-  - RARE: 15 → 35 ◆
-  - EPIC: 40 → 100 ◆
+- **Enchantements** : `MarketListing.itemNBT` (SNBT) stocke les données NBT.
+  `sellByItemId`/`buy`/`withdraw` le capturent et le restaurent, sinon les annonces
+  livraient des items vierges. Les variantes (enchantée / vierge) d'un même item sont
+  **distinctes** partout : inventaire de vente, correspondance serveur et agrégation d'achat.
+  Le client reçoit le NBT dans HDV_OPEN/HDV_RESULT → tooltip vanilla au survol.
+
+## Architecture Shop Serveur (écran autonome, 1.3.0)
+- Écran `ServerShopScreen` — 2 onglets **Acheter / Vendre**, ouvert depuis le Parchemin.
+  Ce n'est plus un onglet du HDV et il ne passe plus par `marche.json`.
+- Catalogue = items de `ShopThresholds` **dont la production a atteint le seuil**
+  (`ServerShopActions.estDebloque()`, revalidé serveur — le client ne fait pas autorité).
+- `ProductionShopManager` ne crée plus d'annonces `$Serveur` ; `checkAll()` purge les anciennes.
+- **Prix de référence (`ShopThresholds.PRIX_REFERENCE`)** : table explicite ◆/unité.
+  Indispensable — la rareté vanilla ne reflète pas la valeur : diamant et lingot de
+  netherite sont `Rarity.COMMON`, d'où le diamant à 1-2 ◆. La rareté n'est plus qu'un repli.
+  Exemples : netherite 900, diamant 120, émeraude 45, or 25, fer 12, charbon 3.
+- **Prix dynamiques (`ServerShopPriceManager`)** — `server-shop-prices.json`, sur le **flux net**
+  (`unitsSold - unitsBought`) : le serveur vend → l'item se raréfie et monte ; il rachète → il baisse.
+  +100% à +2048 net, jusqu'à −40% à −1024 net.
+- **Marge de rachat** : `RATIO_RACHAT = 0.55` — le serveur rachète à 55% de son prix de vente.
+  Sans cette marge, acheter puis revendre serait neutre et toute variation de prix
+  transformerait le shop en machine à shards.
+- Le serveur ne rachète **que les piles vierges** (ni NBT, ni dégâts) : impossible d'évaluer
+  équitablement un objet enchanté ou abîmé.
+- L'argent d'achat va sur `$Serveur` ; le rachat le déduit via `forceDeduct` (compte système
+  exclu des totaux, il peut passer négatif — c'est un puits comptable, pas une trésorerie).
+
+## Parchemin (1.3.0)
+- Item `nouvelle-terre-bridge:parchemin` — terminal portatif, clic droit → `HubScreen`.
+- `HubScreen` : DA carte électronique (substrat vert, bus et pistes cuivre, puces à broches),
+  8 entrées → Marché, Shop, Banque, Quêtes, Production, Registre, Conflit, Guide.
+- Donné à la connexion et après un respawn (`donnerParcheminSiAbsent`), **non jetable**
+  (`ParcheminDropMixin` cible `ServerPlayerEntity.dropSelectedItem` et **non** `dropItem` :
+  à ce stade la pile est déjà retirée de l'inventaire, l'annuler la supprimerait).
+- Occupe un slot normal — un vrai slot supplémentaire exigerait de mixiner `PlayerInventory`
+  et `PlayerScreenHandler` (sérialisation NBT comprise), risque de perte d'items jugé trop élevé.
 
 ## Architecture crédits
 - Crédits + propositions : `nouvelle-terre-credits.json` sur le serveur (`LoanManager.java`, clés `loans` + `requests`)
@@ -180,18 +200,25 @@ economy/
                                map name→contribution, à l'objectif : +reward ◆ créés pour CHAQUE contributeur
   DailyBonusTracker.java   → Bonus quotidien +25 ◆ créés à la première connexion de chaque jour réel
                              Persistance nouvelle-terre-bonus.json (pseudo → date), hook dans PlayerEvents.JOIN
-  ShopThresholds.java      → Singleton seuils-shop.json — seuils de déblocage du shop auto + prix de base
-                             Entry : seuil (longeur avant vente), prix (◆/unité), quantité (par lot)
-                             Créés dynamiquement par rareté vanilla (COMMON/UNCOMMON/RARE/EPIC)
-                             Admins peuvent éditer JSON pour surcharger — rééquilibré en 1.2.2
-  ServerShopPriceManager.java → Singleton server-shop-prices.json — prix dynamiques du shop serveur
-                             Appelé lors de chaque achat (`recordSale(itemId, qty)`)
-                             Prix augmente avec volume vendu : +10% tous les 64 items, jusqu'à +100%
-                             API : getPrice(itemId), recordSale(), all(), reset()
+  ShopThresholds.java      → Singleton seuils-shop.json — seuils de déblocage + prix de base
+                             Entry : seuil (production avant mise en vente), prix (◆/unité), quantité (lot)
+                             PRIX_REFERENCE : table explicite ◆/unité, fait autorité (la rareté
+                             vanilla ne reflète pas la valeur — diamant/netherite sont COMMON).
+                             Rareté = repli seulement. Admins peuvent surcharger via le JSON.
+                             ⚠ getOrCreate ne recalcule pas une entrée existante : après une mise à
+                             jour des prix, supprimer seuils-shop.json ou faire /production → Reset.
+  ServerShopPriceManager.java → Singleton server-shop-prices.json — prix dynamiques du shop
+                             Flux net = unitsSold − unitsBought ; vendre fait monter, racheter baisser
+                             API : getPrice(), getBuybackPrice(), recordSale(), recordPurchase(), reset()
+  ServerShopActions.java   → Achat/revente auprès de $Serveur, marge de rachat 55 %
+                             estDebloque() : verrou de seuil de production, revalidé serveur
+                             Ne rachète que les piles vierges (ni NBT, ni dégâts)
 
 item/
   ShardItem.java           → Item monnaie physique "Shard ◆" (1 = 1 ◆). use() côté serveur :
                              depositShards(tout le stack) + actionbar + sendBalanceToPlayer.
+  ParcheminItem.java       → Terminal portatif. use() → HUB_OPEN (ouvre HubScreen).
+                             maxCount(1), fireproof, non jetable, redonné à la connexion/respawn.
                              Enregistré dans NouvelleTerreBridge (SHARD, id "shard", Rarity.UNCOMMON)
 
 events/
@@ -232,16 +259,29 @@ network/
                              Actions (op only, revalidées serveur) : RESET(0) / RECHECK(1) / RELOAD(2)
   ConflitNetworking.java   → Canaux : CONFLIT_OPEN (S→C, liste joueurs) / CONFLIT_ACTION (C→S, cible+raison)
                              / CONFLIT_RESULT (S→C, ok+msg → toast NotificationHud, ferme le screen si ok)
+  HubNetworking.java       → Canaux : HUB_OPEN (S→C, ouvre HubScreen) / HUB_ACTION (C→S)
+                             Actions : HDV(0) BANK(1) QUETES(2) PRODUCTION(3) REGISTRE(4)
+                                       CONFLIT(5) WIKI(6) SHOP(7)
+  ShopNetworking.java      → Canaux : SHOP_OPEN (S→C) / SHOP_ACTION (C→S) / SHOP_RESULT (S→C)
+                             Actions : ACTION_BUY(0) / ACTION_SELL(1)
 
 client/                    ← @Environment(CLIENT) uniquement
-  HdvScreen.java           → Screen marché : 5 onglets (Marché / Vendre / Mon Shop / Shop Serveur / Boutiques)
-                             - **Marché** : annonces des joueurs (filtrées, sans $Serveur)
-                             - **Vendre** : créer une annonce personnelle
+  HdvScreen.java           → Screen marché : 4 onglets (Marché / Vendre / Mon Shop / Boutiques)
+                             - **Marché** : annonces des joueurs uniquement
+                             - **Vendre** : créer une annonce (variantes NBT distinctes)
                              - **Mon Shop** : gérer ses annonces (bouton retirer)
-                             - **Shop Serveur** (🏛️) : items production auto ($Serveur), prix dynamiques
                              - **Boutiques** : tri par vendeur
+                             `renderCardGrid()` : grille scrollable partagée par les 4 onglets
+                             (scissor + scrollbar + molette bornée). Les onglets autres que Marché
+                             rendaient auparavant toutes les cartes sans clipping → débordement.
+                             Les boucles d'onglets itèrent sur `Tab.values()` : un tableau codé en
+                             dur avait rendu un onglet ni dessiné ni cliquable.
+                             Tooltip vanilla au survol (nom + enchantements) + ligne vendeur/prix
                              Chip solde haut-droit → BANK_REQUEST → ouvre BankScreen
                              Catégorie "Médical" : items cottonmod (coton, bandage, medkit, plantes...)
+  ServerShopScreen.java    → Shop Serveur autonome : onglets Acheter / Vendre, grille scrollable,
+                             modal quantité (−/+/max), tendance de prix (▲ ▼ =)
+  HubScreen.java           → Hub du Parchemin, DA carte électronique, 8 puces cliquables
   BankScreen.java          → Screen banque : 5 onglets (Compte / Economie / Classement / Credits / Virements)
   QuetesScreen.java        → Screen quêtes : 2 onglets (Disponibles / Mes Quêtes), PW=420 PH=300,
                              cards avec barre de progression, boutons Accepter/Réclamer.
@@ -315,7 +355,19 @@ market/
 HDV_OPEN  : int balance | listings[]
 HDV_RESULT: bool ok | string msg | int balance | listings[]
 NT_BALANCE: int balance   — sync solde hors HDV (join, kill, playtime, virement récurrent)
-listings[]: int count → (int id, string seller, string itemId, int qty, int price) × count
+listings[]: int count → (int id, string seller, string itemId, int qty, int price, string nbt) × count
+            nbt = SNBT ou "" — sans lui le client ne peut ni afficher les enchantements
+            ni distinguer une variante enchantée d'une variante vierge
+
+### Shop Serveur
+SHOP_OPEN  : int balance | entries[]
+SHOP_ACTION: int action | string itemId | int qty
+SHOP_RESULT: bool ok | string msg | int balance | entries[]
+entries[]  : int count → (string itemId, int buyPrice, int sellPrice, long netFlow) × count
+
+### Hub (Parchemin)
+HUB_OPEN   : (vide)
+HUB_ACTION : int action
 ```
 
 ### Bank

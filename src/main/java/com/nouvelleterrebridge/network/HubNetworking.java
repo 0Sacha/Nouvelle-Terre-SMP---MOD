@@ -18,6 +18,7 @@ public final class HubNetworking {
     public static final int ACTION_REGISTRE   = 4;
     public static final int ACTION_CONFLIT    = 5;
     public static final int ACTION_WIKI       = 6;
+    public static final int ACTION_SHOP       = 7;
 
     private HubNetworking() {}
 }

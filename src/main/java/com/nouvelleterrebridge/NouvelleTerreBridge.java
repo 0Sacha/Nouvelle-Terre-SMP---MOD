@@ -27,6 +27,7 @@ import com.nouvelleterrebridge.economy.ProductionTracker;
 import com.nouvelleterrebridge.economy.RecurringTransfer;
 import com.nouvelleterrebridge.economy.RecurringTransferManager;
 import com.nouvelleterrebridge.economy.ShopThresholds;
+import com.nouvelleterrebridge.economy.ServerShopActions;
 import com.nouvelleterrebridge.economy.ServerShopPriceManager;
 import com.nouvelleterrebridge.economy.TransactionLog;
 import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
@@ -42,6 +43,7 @@ import com.nouvelleterrebridge.network.BankNetworking;
 import com.nouvelleterrebridge.network.ConflitNetworking;
 import com.nouvelleterrebridge.network.HdvNetworking;
 import com.nouvelleterrebridge.network.HubNetworking;
+import com.nouvelleterrebridge.network.ShopNetworking;
 import com.nouvelleterrebridge.network.ProductionNetworking;
 import com.nouvelleterrebridge.market.MarketActions;
 import com.nouvelleterrebridge.market.MarketListing;
@@ -165,6 +167,7 @@ public class NouvelleTerreBridge implements ModInitializer {
         registerProductionNetworking();
         registerConflitNetworking();
         registerHubNetworking();
+        registerShopNetworking();
 
         // Envoie le solde au joueur dès qu'il est en jeu + refresh pool quêtes
         // + garantit qu'il possède son Parchemin
@@ -314,6 +317,57 @@ public class NouvelleTerreBridge implements ModInitializer {
         if (!player.getInventory().insertStack(stack)) player.dropItem(stack, false);
     }
 
+    /** Catalogue du Shop Serveur : tous les items connus des seuils, avec prix d'achat et de rachat. */
+    public static PacketByteBuf buildShopOpenPacket(ServerPlayerEntity player) {
+        PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeInt(LocalEconomy.getInstance().getBalance(player.getName().getString()));
+        writeShopEntries(buf);
+        return buf;
+    }
+
+    private static void writeShopEntries(PacketByteBuf buf) {
+        // Seuls les items dont la production naturelle a atteint le seuil sont
+        // au catalogue : c'est ce qui rend le shop dépendant de l'activité du serveur.
+        var debloques = ShopThresholds.all().entrySet().stream()
+            .filter(e -> ServerShopActions.estDebloque(e.getKey()))
+            .map(java.util.Map.Entry::getKey)
+            .sorted()
+            .toList();
+
+        buf.writeInt(debloques.size());
+        for (String itemId : debloques) {
+            var pe = ServerShopPriceManager.getOrCreate(itemId);
+            buf.writeString(itemId);
+            buf.writeInt(ServerShopPriceManager.getPrice(itemId));
+            buf.writeInt(ServerShopPriceManager.getBuybackPrice(itemId));
+            buf.writeLong(pe.unitsSold - pe.unitsBought);
+        }
+    }
+
+    private void registerShopNetworking() {
+        ServerPlayNetworking.registerGlobalReceiver(ShopNetworking.SHOP_ACTION, (server, player, handler, buf, responseSender) -> {
+            int action    = buf.readInt();
+            String itemId = buf.readString();
+            int quantity  = buf.readInt();
+
+            server.execute(() -> {
+                String result = switch (action) {
+                    case ShopNetworking.ACTION_BUY  -> ServerShopActions.buy(player, itemId, quantity);
+                    case ShopNetworking.ACTION_SELL -> ServerShopActions.sell(player, itemId, quantity);
+                    default -> "§cAction inconnue.";
+                };
+
+                PacketByteBuf resp = PacketByteBufs.create();
+                resp.writeBoolean(!result.contains("§c"));
+                resp.writeString(result);
+                resp.writeInt(LocalEconomy.getInstance().getBalance(player.getName().getString()));
+                writeShopEntries(resp);
+                ServerPlayNetworking.send(player, ShopNetworking.SHOP_RESULT, resp);
+                sendBalanceToPlayer(player);
+            });
+        });
+    }
+
     private void registerHubNetworking() {
         ServerPlayNetworking.registerGlobalReceiver(HubNetworking.HUB_ACTION, (server, player, handler, buf, responseSender) -> {
             int action = buf.readInt();
@@ -323,6 +377,8 @@ public class NouvelleTerreBridge implements ModInitializer {
                         ServerPlayNetworking.send(player, HdvNetworking.HDV_OPEN, buildHdvOpenPacket(player, server));
                     case HubNetworking.ACTION_BANK ->
                         ServerPlayNetworking.send(player, BankNetworking.BANK_OPEN, buildBankOpenPacket(player, server));
+                    case HubNetworking.ACTION_SHOP ->
+                        ServerPlayNetworking.send(player, ShopNetworking.SHOP_OPEN, buildShopOpenPacket(player));
                     case HubNetworking.ACTION_QUETES     -> sendQuestOpen(player);
                     case HubNetworking.ACTION_PRODUCTION -> sendProductionOpen(player);
                     case HubNetworking.ACTION_REGISTRE   -> RegistreCommand.open(player);

@@ -48,7 +48,8 @@ public class HubScreen extends Screen {
     private record Entry(int action, String label, String hint, String glyph) {}
 
     private static final List<Entry> ENTRIES = List.of(
-        new Entry(HubNetworking.ACTION_HDV,        "Marché",     "Acheter / vendre", "⇄"),
+        new Entry(HubNetworking.ACTION_HDV,        "Marché",     "Entre joueurs", "⇄"),
+        new Entry(HubNetworking.ACTION_SHOP,       "Shop",       "Boutique du serveur", "🏛"),
         new Entry(HubNetworking.ACTION_BANK,       "Banque",     "Solde, virements", "◆"),
         new Entry(HubNetworking.ACTION_QUETES,     "Quêtes",     "Objectifs du jour", "⚔"),
         new Entry(HubNetworking.ACTION_PRODUCTION, "Production", "Ressources du serveur", "⛏"),

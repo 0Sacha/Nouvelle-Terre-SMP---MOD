@@ -170,6 +170,32 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             (client, handler, buf, responseSender) ->
                 client.execute(() -> client.setScreen(new com.nouvelleterrebridge.client.HubScreen())));
 
+        ClientPlayNetworking.registerGlobalReceiver(
+            com.nouvelleterrebridge.network.ShopNetworking.SHOP_OPEN,
+            (client, handler, buf, responseSender) -> {
+                int balance = buf.readInt();
+                var shopEntries = readShopEntries(buf);
+                client.execute(() -> {
+                    BalanceHudOverlay.cachedBalance = balance;
+                    client.setScreen(new com.nouvelleterrebridge.client.ServerShopScreen(balance, shopEntries));
+                });
+            });
+
+        ClientPlayNetworking.registerGlobalReceiver(
+            com.nouvelleterrebridge.network.ShopNetworking.SHOP_RESULT,
+            (client, handler, buf, responseSender) -> {
+                boolean ok  = buf.readBoolean();
+                String  msg = buf.readString();
+                int balance = buf.readInt();
+                var shopEntries = readShopEntries(buf);
+                client.execute(() -> {
+                    BalanceHudOverlay.cachedBalance = balance;
+                    if (client.currentScreen instanceof com.nouvelleterrebridge.client.ServerShopScreen s) {
+                        s.handleResult(ok, msg, balance, shopEntries);
+                    }
+                });
+            });
+
         ClientPlayNetworking.registerGlobalReceiver(HdvNetworking.NT_VERSION, (client, handler, buf, responseSender) -> {
             String serverVer = buf.readString();
             String clientVer = FabricLoader.getInstance()
@@ -335,6 +361,15 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
         for (int i = 0; i < count; i++)
             list.add(new HdvScreen.ListingData(buf.readInt(), buf.readString(), buf.readString(),
                                                buf.readInt(), buf.readInt(), buf.readString()));
+        return list;
+    }
+
+    private static List<com.nouvelleterrebridge.client.ServerShopScreen.ShopEntry> readShopEntries(PacketByteBuf buf) {
+        int count = buf.readInt();
+        List<com.nouvelleterrebridge.client.ServerShopScreen.ShopEntry> list = new ArrayList<>(count);
+        for (int i = 0; i < count; i++)
+            list.add(new com.nouvelleterrebridge.client.ServerShopScreen.ShopEntry(
+                buf.readString(), buf.readInt(), buf.readInt(), buf.readLong()));
         return list;
     }
 

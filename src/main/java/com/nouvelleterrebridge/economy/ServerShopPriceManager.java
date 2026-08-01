@@ -20,10 +20,19 @@ import java.util.Map;
  */
 public class ServerShopPriceManager {
 
+    /**
+     * Part du prix de vente que le serveur consent à payer quand c'est lui qui
+     * achète. La marge est indispensable : sans elle, revendre immédiatement ce
+     * qu'on vient d'acheter serait neutre, et la moindre variation de prix
+     * transformerait le shop en machine à shards.
+     */
+    private static final float RATIO_RACHAT = 0.55f;
+
     public static class PriceEntry {
-        public int basePrice = 1;
-        public long unitsSold = 0;
-        public int dynamicPrice = 1;
+        public int  basePrice    = 1;
+        public long unitsSold    = 0;   // vendues par le serveur aux joueurs
+        public long unitsBought  = 0;   // rachetées par le serveur aux joueurs
+        public int  dynamicPrice = 1;
     }
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -67,7 +76,7 @@ public class ServerShopPriceManager {
         });
     }
 
-    /** Enregistre une vente et met à jour le prix dynamique. */
+    /** Le serveur a vendu des unités au joueur : l'item se raréfie, le prix monte. */
     public static synchronized void recordSale(String itemId, int quantity) {
         PriceEntry e = getOrCreate(itemId);
         e.unitsSold += quantity;
@@ -75,21 +84,45 @@ public class ServerShopPriceManager {
         save();
     }
 
-    /** Calcule le prix dynamique basé sur le volume de ventes. */
-    private static int calculatePrice(PriceEntry entry) {
-        int base = entry.basePrice;
-        long sold = entry.unitsSold;
-
-        if (sold < 64)    return base;
-        if (sold < 256)   return (int)(base * 1.1f);
-        if (sold < 512)   return (int)(base * 1.25f);
-        if (sold < 1024)  return (int)(base * 1.5f);
-        if (sold < 2048)  return (int)(base * 1.75f);
-        return (int)(base * 2.0f);
+    /** Le serveur a racheté des unités au joueur : l'item devient abondant, le prix baisse. */
+    public static synchronized void recordPurchase(String itemId, int quantity) {
+        PriceEntry e = getOrCreate(itemId);
+        e.unitsBought += quantity;
+        e.dynamicPrice = calculatePrice(e);
+        save();
     }
 
+    /**
+     * Prix d'achat (ce que paie le joueur), calculé sur le flux net.
+     * Plus le serveur a vendu, plus c'est cher ; plus il a racheté, moins ça l'est.
+     */
+    private static int calculatePrice(PriceEntry entry) {
+        int  base = entry.basePrice;
+        long net  = entry.unitsSold - entry.unitsBought;
+
+        float mult;
+        if      (net >= 2048) mult = 2.00f;
+        else if (net >= 1024) mult = 1.75f;
+        else if (net >=  512) mult = 1.50f;
+        else if (net >=  256) mult = 1.25f;
+        else if (net >=   64) mult = 1.10f;
+        else if (net >   -64) mult = 1.00f;
+        else if (net >  -256) mult = 0.90f;
+        else if (net >  -512) mult = 0.80f;
+        else if (net > -1024) mult = 0.70f;
+        else                  mult = 0.60f;
+
+        return Math.max(1, Math.round(base * mult));
+    }
+
+    /** Prix auquel le joueur achète l'item au serveur. */
     public static synchronized int getPrice(String itemId) {
         return getOrCreate(itemId).dynamicPrice;
+    }
+
+    /** Prix auquel le serveur rachète l'item au joueur (prix d'achat diminué de la marge). */
+    public static synchronized int getBuybackPrice(String itemId) {
+        return Math.max(1, Math.round(getOrCreate(itemId).dynamicPrice * RATIO_RACHAT));
     }
 
     public static synchronized Map<String, PriceEntry> all() {

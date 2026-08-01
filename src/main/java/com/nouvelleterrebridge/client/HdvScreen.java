@@ -43,7 +43,6 @@ public class HdvScreen extends Screen {
         MARKET("🏪  Marché"),
         SELL("💰  Vendre"),
         MY_SHOP("🛒  Mon Shop"),
-        SERVER_SHOP("🏛️  Shop Serveur"),
         SHOPS("👥  Boutiques");
 
         final String label;
@@ -251,11 +250,10 @@ public class HdvScreen extends Screen {
         hoveredCard     = null;   // réarmés par le rendu de l'onglet courant
         hoveredSellItem = null;
         switch (activeTab) {
-            case MARKET     -> { renderSidebar(ctx, mx, my); renderMarket(ctx, mx, my); }
-            case SELL       -> renderSell(ctx, mx, my);
-            case MY_SHOP    -> renderMyShop(ctx, mx, my);
-            case SERVER_SHOP -> renderServerShop(ctx, mx, my);
-            case SHOPS      -> renderShops(ctx, mx, my);
+            case MARKET  -> { renderSidebar(ctx, mx, my); renderMarket(ctx, mx, my); }
+            case SELL    -> renderSell(ctx, mx, my);
+            case MY_SHOP -> renderMyShop(ctx, mx, my);
+            case SHOPS   -> renderShops(ctx, mx, my);
         }
         if (buyingListing != null) renderBuyModal(ctx, mx, my);
         else if (hoveredCard != null) renderListingTooltip(ctx, hoveredCard, mx, my);
@@ -390,25 +388,6 @@ public class HdvScreen extends Screen {
             .filter(l -> q.isEmpty()
                 || FrenchItemNames.toDisplay(l.itemId()).toLowerCase().contains(q)
                 || l.seller().toLowerCase().contains(q)
-                || l.itemId().toLowerCase().contains(q))
-            .sorted(comp)
-            .toList();
-    }
-
-    private List<ListingData> serverShopListings() {
-        String q = searchField != null ? searchField.getText().trim().toLowerCase() : "";
-
-        Comparator<ListingData> comp = switch (sortMode) {
-            case PRICE_ASC  -> Comparator.comparingInt(ListingData::pricePerUnit);
-            case PRICE_DESC -> Comparator.comparingInt(ListingData::pricePerUnit).reversed();
-            case NAME       -> Comparator.comparing(l -> FrenchItemNames.toDisplay(l.itemId()));
-        };
-
-        return listings.stream()
-            .filter(l -> l.seller().equals("$Serveur"))
-            .filter(l -> matchCat(l.itemId(), activeCategory))
-            .filter(l -> q.isEmpty()
-                || FrenchItemNames.toDisplay(l.itemId()).toLowerCase().contains(q)
                 || l.itemId().toLowerCase().contains(q))
             .sorted(comp)
             .toList();
@@ -775,23 +754,6 @@ public class HdvScreen extends Screen {
         renderCardGrid(ctx, mx, my, mine, winX + PAD, py, gridW, gridH, true);
     }
 
-    private void renderServerShop(DrawContext ctx, int mx, int my) {
-        List<ListingData> server = serverShopListings();
-
-        int py = winY + TOP_H + PAD;
-        ctx.drawText(textRenderer, "SHOP SERVEUR — " + server.size(), winX + PAD, py, C_DIM, false);
-        py += textRenderer.fontHeight + 10;
-
-        if (server.isEmpty()) {
-            ctx.drawCenteredTextWithShadow(textRenderer, "Aucun item disponible à la vente.", winX + winW / 2, py + 50, C_DIM);
-            return;
-        }
-
-        int gridW = winW - PAD * 2 - SCROLL_W - 4;
-        int gridH = winY + winH - PAD - py;
-        renderCardGrid(ctx, mx, my, server, winX + PAD, py, gridW, gridH, false);
-    }
-
     private void renderOwnCard(DrawContext ctx, int x, int y, int w, int h, ListingData l, boolean hov) {
         ctx.fill(x, y, x + w, y + h, hov ? C_HOVER : C_PANEL);
 
@@ -955,13 +917,9 @@ public class HdvScreen extends Screen {
                 if (checkSortButtonClick(x, y)) return true;
                 if (hoveredCard != null) { buyingListing = hoveredCard; buyQty = 1; }
             }
-            case SELL       -> handleSellClick(x, y);
-            case MY_SHOP    -> handleMyShopClick(x, y);
-            case SERVER_SHOP -> {
-                if (checkSortButtonClick(x, y)) return true;
-                if (hoveredCard != null) { buyingListing = hoveredCard; buyQty = 1; }
-            }
-            case SHOPS      -> handleShopsClick(x, y);
+            case SELL    -> handleSellClick(x, y);
+            case MY_SHOP -> handleMyShopClick(x, y);
+            case SHOPS   -> handleShopsClick(x, y);
         }
 
         return super.mouseClicked(mx, my, btn);
