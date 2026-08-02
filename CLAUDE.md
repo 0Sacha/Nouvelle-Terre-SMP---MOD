@@ -77,9 +77,18 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
   Indispensable — la rareté vanilla ne reflète pas la valeur : diamant et lingot de
   netherite sont `Rarity.COMMON`, d'où le diamant à 1-2 ◆. La rareté n'est plus qu'un repli.
   Exemples : netherite 900, diamant 120, émeraude 45, or 25, fer 12, charbon 3.
-- **Prix dynamiques (`ServerShopPriceManager`)** — `server-shop-prices.json`, sur le **flux net**
-  (`unitsSold - unitsBought`) : le serveur vend → l'item se raréfie et monte ; il rachète → il baisse.
-  +100% à +2048 net, jusqu'à −40% à −1024 net.
+- **Prix dynamiques (`ServerShopPriceManager`)** — `server-shop-prices.json`. Deux facteurs :
+  1. **Flux net du shop** (`unitsSold - unitsBought`) : le serveur vend → l'item se raréfie
+     et monte ; il rachète → il baisse. +100% à +2048 net, jusqu'à −40% à −1024 net.
+  2. **Abondance produite** (`ProductionTracker`, 1.3.2) : décote logarithmique
+     `0.10 × log10(production / max(seuil, 64))`, **plafonnée à −30 %** (`DECOTE_MAX`).
+     - Rapportée au seuil de l'item, sinon minerai rare et bloc courant seraient incomparables.
+     - Plancher de 64 au dénominateur : les items chers ont un seuil de 1 à 4 et
+       toucheraient le prix plancher bien trop vite.
+     - Plafond nécessaire : le compteur de production ne fait que **monter** (il ignore
+       ce qui est consommé, posé ou perdu), donc sans lui tout finirait au prix plancher.
+  `getPrice()` recalcule **à la lecture** : la production évolue en continu, un cache
+  mis à jour à la dernière transaction serait périmé.
 - **Marge de rachat** : `RATIO_RACHAT = 0.55` — le serveur rachète à 55% de son prix de vente.
   Sans cette marge, acheter puis revendre serait neutre et toute variation de prix
   transformerait le shop en machine à shards.

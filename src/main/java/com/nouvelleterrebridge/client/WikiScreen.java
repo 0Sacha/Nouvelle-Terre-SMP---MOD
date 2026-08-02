@@ -148,6 +148,8 @@ public class WikiScreen extends Screen {
                 l("  §f· §7Plus le serveur vend un objet, §cplus"),
                 l("    §cil devient cher §7(▲)"),
                 l("  §f· §7Plus il en rachète, §aplus il baisse §7(▼)"),
+                l("  §f· §7Plus le serveur en §fproduit §7(mines,"),
+                l("    §7fermes), §aplus il baisse §7— jusqu'à −30%"),
                 l("  §f· §7Le rachat se fait à §f55% §7du prix de"),
                 l("    §7vente : revendre aussitôt fait §cperdre§7."),
                 l(""),

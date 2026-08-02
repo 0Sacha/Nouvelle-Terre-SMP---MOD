@@ -28,6 +28,12 @@ public class ServerShopPriceManager {
      */
     private static final float RATIO_RACHAT = 0.55f;
 
+    /**
+     * Décote maximale liée à l'abondance produite sur le serveur.
+     * Volontairement modeste : la production ne mesure pas ce qui reste en jeu.
+     */
+    private static final double DECOTE_MAX = 0.30;
+
     public static class PriceEntry {
         public int  basePrice    = 1;
         public long unitsSold    = 0;   // vendues par le serveur aux joueurs
@@ -71,7 +77,7 @@ public class ServerShopPriceManager {
             ShopThresholds.Entry seuil = ShopThresholds.get(e.getKey());
             if (seuil == null || seuil.prix == e.getValue().basePrice) continue;
             e.getValue().basePrice = seuil.prix;
-            e.getValue().dynamicPrice = calculatePrice(e.getValue());
+            e.getValue().dynamicPrice = calculatePrice(e.getKey(), e.getValue());
             corriges++;
         }
         if (corriges > 0) {
@@ -104,7 +110,7 @@ public class ServerShopPriceManager {
     public static synchronized void recordSale(String itemId, int quantity) {
         PriceEntry e = getOrCreate(itemId);
         e.unitsSold += quantity;
-        e.dynamicPrice = calculatePrice(e);
+        e.dynamicPrice = calculatePrice(itemId, e);
         save();
     }
 
@@ -112,41 +118,75 @@ public class ServerShopPriceManager {
     public static synchronized void recordPurchase(String itemId, int quantity) {
         PriceEntry e = getOrCreate(itemId);
         e.unitsBought += quantity;
-        e.dynamicPrice = calculatePrice(e);
+        e.dynamicPrice = calculatePrice(itemId, e);
         save();
     }
 
     /**
-     * Prix d'achat (ce que paie le joueur), calculé sur le flux net.
-     * Plus le serveur a vendu, plus c'est cher ; plus il a racheté, moins ça l'est.
+     * Prix d'achat (ce que paie le joueur) : prix de référence, corrigé par le
+     * flux net du shop puis par l'abondance de l'item sur le serveur.
      */
-    private static int calculatePrice(PriceEntry entry) {
-        int  base = entry.basePrice;
-        long net  = entry.unitsSold - entry.unitsBought;
-
-        float mult;
-        if      (net >= 2048) mult = 2.00f;
-        else if (net >= 1024) mult = 1.75f;
-        else if (net >=  512) mult = 1.50f;
-        else if (net >=  256) mult = 1.25f;
-        else if (net >=   64) mult = 1.10f;
-        else if (net >   -64) mult = 1.00f;
-        else if (net >  -256) mult = 0.90f;
-        else if (net >  -512) mult = 0.80f;
-        else if (net > -1024) mult = 0.70f;
-        else                  mult = 0.60f;
-
-        return Math.max(1, Math.round(base * mult));
+    private static int calculatePrice(String itemId, PriceEntry entry) {
+        double prix = entry.basePrice * multiplicateurFlux(entry);
+        prix *= (1.0 - decoteAbondance(itemId));
+        return Math.max(1, (int) Math.round(prix));
     }
 
-    /** Prix auquel le joueur achète l'item au serveur. */
+    /**
+     * Pression sur la boutique : plus le serveur a vendu, plus c'est cher ;
+     * plus il a racheté, moins ça l'est.
+     */
+    private static float multiplicateurFlux(PriceEntry entry) {
+        long net = entry.unitsSold - entry.unitsBought;
+        if      (net >= 2048) return 2.00f;
+        else if (net >= 1024) return 1.75f;
+        else if (net >=  512) return 1.50f;
+        else if (net >=  256) return 1.25f;
+        else if (net >=   64) return 1.10f;
+        else if (net >   -64) return 1.00f;
+        else if (net >  -256) return 0.90f;
+        else if (net >  -512) return 0.80f;
+        else if (net > -1024) return 0.70f;
+        else                  return 0.60f;
+    }
+
+    /**
+     * Décote liée à l'abondance : ce que le serveur a réellement produit
+     * ({@link ProductionTracker}), et non le seul volume passé en boutique.
+     *
+     * L'échelle est logarithmique et rapportée au seuil de déblocage de l'item,
+     * sinon un item courant et un minerai rare ne seraient pas comparables.
+     * Le dénominateur a un plancher : les items chers ont un seuil minuscule
+     * (1 à 4) et atteindraient le plancher de prix bien trop vite.
+     *
+     * Plafonnée à −30 % : le compteur de production ne fait que monter — il
+     * ignore ce qui est consommé, posé ou perdu — donc sans plafond tout
+     * finirait mécaniquement au prix plancher.
+     */
+    private static double decoteAbondance(String itemId) {
+        ShopThresholds.Entry seuil = ShopThresholds.get(itemId);
+        if (seuil == null) return 0.0;
+
+        long production = ProductionTracker.get(itemId);
+        double reference = Math.max(seuil.seuil, 64);
+        double ratio = production / reference;
+        if (ratio <= 1.0) return 0.0;
+
+        return Math.min(DECOTE_MAX, 0.10 * Math.log10(ratio));
+    }
+
+    /**
+     * Prix auquel le joueur achète l'item au serveur.
+     * Recalculé à la lecture : la production évolue en continu, une valeur mise
+     * en cache lors de la dernière transaction serait périmée.
+     */
     public static synchronized int getPrice(String itemId) {
-        return getOrCreate(itemId).dynamicPrice;
+        return calculatePrice(itemId, getOrCreate(itemId));
     }
 
     /** Prix auquel le serveur rachète l'item au joueur (prix d'achat diminué de la marge). */
     public static synchronized int getBuybackPrice(String itemId) {
-        return Math.max(1, Math.round(getOrCreate(itemId).dynamicPrice * RATIO_RACHAT));
+        return Math.max(1, Math.round(getPrice(itemId) * RATIO_RACHAT));
     }
 
     public static synchronized Map<String, PriceEntry> all() {
