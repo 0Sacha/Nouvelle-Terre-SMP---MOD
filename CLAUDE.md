@@ -26,7 +26,8 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `1.3.1` (flèche retour hub, /shop, Parchemin offert au shop)
+- Version actuelle : `1.3.2` (migration des prix sans perte de progression)
+  - 1.3.1 : flèche retour hub, /shop, Parchemin offert au shop
   - 1.3.0 : Parchemin + Shop Serveur autonome + prix de référence
   - 1.2.2 : Admin Shop avec prix dynamique + rééquilibrage économie
   - 1.2.1 : quêtes complétées disparaissent et ne peuvent être refaites
@@ -217,11 +218,20 @@ economy/
                              PRIX_REFERENCE : table explicite ◆/unité, fait autorité (la rareté
                              vanilla ne reflète pas la valeur — diamant/netherite sont COMMON).
                              Rareté = repli seulement. Admins peuvent surcharger via le JSON.
-                             ⚠ getOrCreate ne recalcule pas une entrée existante : après une mise à
-                             jour des prix, supprimer seuils-shop.json ou faire /production → Reset.
+                             **Migration (1.3.2)** : Entry.versionPrix + constante VERSION_PRIX.
+                             load() → migrerPrix() réapplique PRIX_REFERENCE aux entrées d'une
+                             révision antérieure, **sans toucher production.json**. Incrémenter
+                             VERSION_PRIX à chaque révision de la table. Une entrée déjà à jour
+                             est laissée intacte → les surcharges admin survivent.
+                             ⚠ Ne jamais conseiller /production → Reset pour changer les prix :
+                             il efface aussi les compteurs de production des joueurs.
   ServerShopPriceManager.java → Singleton server-shop-prices.json — prix dynamiques du shop
                              Flux net = unitsSold − unitsBought ; vendre fait monter, racheter baisser
                              API : getPrice(), getBuybackPrice(), recordSale(), recordPurchase(), reset()
+                             load() → resyncBasePrices() : basePrice est une copie figée de
+                             ShopThresholds, à réaligner sinon une révision des prix resterait
+                             sans effet sur tout item déjà échangé. Le flux net est préservé.
+                             ⚠ Doit être chargé APRÈS ShopThresholds (ordre dans onInitialize).
   ServerShopActions.java   → Achat/revente auprès de $Serveur, marge de rachat 55 %
                              estDebloque() : verrou de seuil de production, revalidé serveur
                              Ne rachète que les piles vierges (ni NBT, ni dégâts)

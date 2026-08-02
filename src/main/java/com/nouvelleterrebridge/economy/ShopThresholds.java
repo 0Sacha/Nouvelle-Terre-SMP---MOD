@@ -27,10 +27,19 @@ import java.util.Map;
  */
 public class ShopThresholds {
 
+    /**
+     * Révision de la table {@link #PRIX_REFERENCE}. L'incrémenter réapplique les
+     * prix de référence aux entrées déjà présentes dans seuils-shop.json, au
+     * prochain démarrage et **sans toucher aux compteurs de production**.
+     */
+    private static final int VERSION_PRIX = 1;
+
     public static class Entry {
         public long seuil    = 512;
         public int  prix     = 1;
         public int  quantite = 64;
+        /** Révision des prix appliquée à cette entrée ; 0 = fichier antérieur au versionnage. */
+        public int  versionPrix = 0;
     }
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -52,6 +61,43 @@ public class ShopThresholds {
             NouvelleTerreBridge.LOGGER.info("[ShopThresholds] {} seuil(s) chargé(s).", thresholds.size());
         } catch (Exception e) {
             NouvelleTerreBridge.LOGGER.error("[ShopThresholds] Erreur lecture : {}", e.getMessage());
+        }
+        migrerPrix();
+    }
+
+    /**
+     * Réapplique les prix de référence aux entrées créées sous une révision antérieure.
+     *
+     * Sans cela, {@link #getOrCreate} conserverait indéfiniment les prix issus de la
+     * rareté vanilla (diamant et netherite y sont COMMON, donc quasi gratuits), et la
+     * seule façon de corriger serait de supprimer le fichier — ce qui viderait le
+     * catalogue jusqu'à ce que chaque item soit reproduit.
+     *
+     * Les compteurs de production ({@code production.json}) ne sont pas touchés.
+     * Une entrée déjà à jour est laissée telle quelle : les surcharges manuelles
+     * d'un admin survivent tant que {@link #VERSION_PRIX} n'est pas incrémenté.
+     */
+    private static void migrerPrix() {
+        int migres = 0;
+        for (Map.Entry<String, Entry> e : thresholds.entrySet()) {
+            Entry entry = e.getValue();
+            if (entry.versionPrix >= VERSION_PRIX) continue;
+
+            Integer reference = PRIX_REFERENCE.get(e.getKey());
+            if (reference != null) {
+                Entry neuf = fromPrix(reference);
+                NouvelleTerreBridge.LOGGER.info("[ShopThresholds] Prix mis à jour — {} : {}◆ → {}◆ (seuil {} → {})",
+                    e.getKey(), entry.prix, neuf.prix, entry.seuil, neuf.seuil);
+                entry.prix     = neuf.prix;
+                entry.seuil    = neuf.seuil;
+                entry.quantite = neuf.quantite;
+                migres++;
+            }
+            entry.versionPrix = VERSION_PRIX;
+        }
+        if (migres > 0) {
+            save();
+            NouvelleTerreBridge.LOGGER.info("[ShopThresholds] {} prix réalignés sur la table de référence.", migres);
         }
     }
 
@@ -169,6 +215,7 @@ public class ShopThresholds {
             NouvelleTerreBridge.LOGGER.info("[ShopThresholds] Nouveau seuil auto — {} (rareté {}) : seuil={} prix={}◆",
                 itemId, rarity, e.seuil, e.prix);
         }
+        e.versionPrix = VERSION_PRIX;   // créée avec la table courante : pas à migrer
         thresholds.put(itemId, e);
         save();
         return e;

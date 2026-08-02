@@ -54,6 +54,30 @@ public class ServerShopPriceManager {
         } catch (Exception e) {
             NouvelleTerreBridge.LOGGER.error("[ServerShopPriceManager] Erreur lecture : {}", e.getMessage());
         }
+        resyncBasePrices();
+    }
+
+    /**
+     * Réaligne le prix de base de chaque entrée sur {@link ShopThresholds}.
+     *
+     * {@code basePrice} est une copie figée au moment de la création : sans cette
+     * resynchronisation, une révision des prix de référence resterait sans effet
+     * sur tout item déjà échangé au shop. Le flux net (vendu/racheté), lui, est
+     * l'état réel du marché et n'est jamais réinitialisé.
+     */
+    private static void resyncBasePrices() {
+        int corriges = 0;
+        for (Map.Entry<String, PriceEntry> e : prices.entrySet()) {
+            ShopThresholds.Entry seuil = ShopThresholds.get(e.getKey());
+            if (seuil == null || seuil.prix == e.getValue().basePrice) continue;
+            e.getValue().basePrice = seuil.prix;
+            e.getValue().dynamicPrice = calculatePrice(e.getValue());
+            corriges++;
+        }
+        if (corriges > 0) {
+            save();
+            NouvelleTerreBridge.LOGGER.info("[ServerShopPriceManager] {} prix de base resynchronisé(s).", corriges);
+        }
     }
 
     public static synchronized void save() {
