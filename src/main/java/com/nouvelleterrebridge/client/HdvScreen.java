@@ -644,20 +644,38 @@ public class HdvScreen extends Screen {
         py += textRenderer.fontHeight + 8;
 
         int cellCols = 5;
-        int cellW = (invW - (cellCols - 1) * GAP) / cellCols;
+        int gridW = invW - SCROLL_W - 4;
+        int cellW = (gridW - (cellCols - 1) * GAP) / cellCols;
         int cellH = 82;
+        int gridH = winY + winH - PAD - py;
 
-        ctx.enableScissor(winX + PAD, py, winX + PAD + invW, winY + winH - PAD);
-        for (int i = 0; i < sellInv.size(); i++) {
+        int visRows = Math.max(1, (gridH + GAP) / (cellH + GAP));
+        int rows    = (int) Math.ceil((double) sellInv.size() / cellCols);
+        gridMaxScroll = Math.max(0, rows - visRows);
+        scrollOffset  = Math.max(0, Math.min(scrollOffset, gridMaxScroll));
+        int start = scrollOffset * cellCols;
+
+        if (gridMaxScroll > 0) {
+            int sbX = winX + PAD + gridW + 2;
+            ctx.fill(sbX, py, sbX + SCROLL_W, py + gridH, C_BORDER);
+            int thumbH = Math.max(20, gridH * visRows / rows);
+            int thumbY = py + (gridH - thumbH) * scrollOffset / gridMaxScroll;
+            ctx.fill(sbX, thumbY, sbX + SCROLL_W, thumbY + thumbH, 0x60FFFFFF);
+        }
+
+        ctx.enableScissor(winX + PAD, py, winX + PAD + gridW, py + gridH);
+        for (int i = start; i < sellInv.size(); i++) {
             SellItem si = sellInv.get(i);
-            int col = i % cellCols;
-            int row = i / cellCols;
+            int col = (i - start) % cellCols;
+            int row = (i - start) / cellCols;
+            if (row > visRows) break;
             int cx  = winX + PAD + col * (cellW + GAP);
             int cy  = py + row * (cellH + GAP);
             boolean sel = selectedSellItem != null
                        && selectedSellItem.itemId().equals(si.itemId())
                        && selectedSellItem.nbt().equals(si.nbt());
-            boolean hov = mx >= cx && mx < cx + cellW && my >= cy && my < cy + cellH;
+            boolean hov = mx >= cx && mx < cx + cellW && my >= cy && my < cy + cellH
+                       && my >= py && my < py + gridH;
             if (hov) hoveredSellItem = si;
 
             ctx.fill(cx, cy, cx + cellW, cy + cellH, sel ? C_HOVER : (hov ? 0xFF1F2128 : C_PANEL));
@@ -1020,24 +1038,16 @@ public class HdvScreen extends Screen {
     private void handleSellClick(int mx, int my) {
         int formW = 290;
         int formX = winX + winW - formW - PAD;
-        int invW  = formX - (winX + PAD * 2);
-        int py    = winY + TOP_H + PAD + textRenderer.fontHeight + 8;
-        int cols  = 5;
-        int cellW = (invW - (cols - 1) * GAP) / cols;
-        int cellH = 82;
 
-        for (int i = 0; i < sellInv.size(); i++) {
-            int col = i % cols, row = i / cols;
-            int cx  = winX + PAD + col * (cellW + GAP);
-            int cy  = py + row * (cellH + GAP);
-            if (mx >= cx && mx < cx + cellW && my >= cy && my < cy + cellH) {
-                selectedSellItem = sellInv.get(i);
-                sellQty = 1;
-                sellQtyField.setText("1");
-                sellPriceField.setText("");
-                sellPrice = 0;
-                return;
-            }
+        // La case survolée est déterminée au rendu, qui tient compte du scroll —
+        // recalculer les positions ici les désynchroniserait dès le premier défilement.
+        if (hoveredSellItem != null) {
+            selectedSellItem = hoveredSellItem;
+            sellQty = 1;
+            sellQtyField.setText("1");
+            sellPriceField.setText("");
+            sellPrice = 0;
+            return;
         }
 
         boolean canSell = selectedSellItem != null && sellPrice > 0 && sellQty > 0 && sellQty <= selectedSellItem.qty();
@@ -1090,7 +1100,7 @@ public class HdvScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mx, double my, double delta) {
-        if (buyingListing != null || activeTab == Tab.SELL) return true;
+        if (buyingListing != null) return true;
         int next = scrollOffset - (int) Math.signum(delta);
         scrollOffset = Math.max(0, Math.min(next, gridMaxScroll));
         return true;

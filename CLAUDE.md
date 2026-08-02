@@ -26,7 +26,8 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `1.3.2` (migration des prix sans perte de progression)
+- Version actuelle : `1.3.3` (scroll de l'onglet Vendre du HDV)
+  - 1.3.2 : migration des prix sans perte de progression
   - 1.3.1 : flèche retour hub, /shop, Parchemin offert au shop
   - 1.3.0 : Parchemin + Shop Serveur autonome + prix de référence
   - 1.2.2 : Admin Shop avec prix dynamique + rééquilibrage économie
@@ -300,6 +301,11 @@ client/                    ← @Environment(CLIENT) uniquement
   HdvScreen.java           → Screen marché : 4 onglets (Marché / Vendre / Mon Shop / Boutiques)
                              - **Marché** : annonces des joueurs uniquement
                              - **Vendre** : créer une annonce (variantes NBT distinctes)
+                               Grille d'inventaire scrollable (1.3.3) — elle avait son propre
+                               rendu, hors de renderCardGrid, et était restée sans décalage :
+                               le scissor masquait tout ce qui dépassait, donc inatteignable.
+                               handleSellClick lit `hoveredSellItem` (positionné au rendu) au
+                               lieu de recalculer les positions, qui se désynchronisaient.
                              - **Mon Shop** : gérer ses annonces (bouton retirer)
                              - **Boutiques** : tri par vendeur
                              `renderCardGrid()` : grille scrollable partagée par les 4 onglets
