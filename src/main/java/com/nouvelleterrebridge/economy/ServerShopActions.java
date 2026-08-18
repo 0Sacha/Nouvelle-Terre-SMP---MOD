@@ -131,7 +131,7 @@ public final class ServerShopActions {
      */
     public static boolean estDebloque(String itemId) {
         ShopThresholds.Entry seuil = ShopThresholds.get(itemId);
-        if (seuil == null) return false;
+        if (seuil == null || seuil.desactive) return false;
         return ProductionTracker.get(itemId) >= seuil.seuil;
     }
 

@@ -40,6 +40,12 @@ public class ShopThresholds {
         public int  quantite = 64;
         /** Révision des prix appliquée à cette entrée ; 0 = fichier antérieur au versionnage. */
         public int  versionPrix = 0;
+        /**
+         * Retiré du catalogue par un admin. Distinct d'une suppression : le compteur
+         * de production et le prix sont conservés, l'item peut être remis en vente
+         * sans que les joueurs perdent leur progression.
+         */
+        public boolean desactive = false;
     }
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -259,6 +265,34 @@ public class ShopThresholds {
     /** Lit sans créer. */
     public static synchronized Entry get(String itemId) {
         return thresholds.get(itemId);
+    }
+
+    /** Change le prix d'un item du catalogue. @return false si l'entrée n'existe pas. */
+    public static synchronized boolean setPrix(String itemId, int prix) {
+        Entry e = thresholds.get(itemId);
+        if (e == null) return false;
+        e.prix = Math.max(1, prix);
+        // Marquée à la révision courante : sinon migrerPrix() écraserait la
+        // correction de l'admin au prochain démarrage.
+        e.versionPrix = VERSION_PRIX;
+        save();
+        return true;
+    }
+
+    /** Active/désactive la vente d'un item. @return le nouvel état, ou null si absent. */
+    public static synchronized Boolean toggleDesactive(String itemId) {
+        Entry e = thresholds.get(itemId);
+        if (e == null) return null;
+        e.desactive = !e.desactive;
+        save();
+        return e.desactive;
+    }
+
+    /** Supprime définitivement une entrée du catalogue (elle se recréera au prochain contact). */
+    public static synchronized boolean supprimer(String itemId) {
+        if (thresholds.remove(itemId) == null) return false;
+        save();
+        return true;
     }
 
     /** Vide tous les seuils (ils se recréent dynamiquement au premier contact). */

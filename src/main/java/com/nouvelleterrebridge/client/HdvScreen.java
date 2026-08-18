@@ -19,7 +19,6 @@ import net.minecraft.util.Identifier;
 import io.netty.buffer.Unpooled;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Environment(EnvType.CLIENT)
 public class HdvScreen extends Screen {
@@ -79,12 +78,12 @@ public class HdvScreen extends Screen {
     private static final int TOP_H    = 44;
     private static final int SIDE_W   = 148;
     private static final int PAD      = 12;
-    private static final int COLS     = 5;
-    private static final int CARD_H   = 106;
     private static final int GAP      = 8;
+    private static final int ROW_H    = 46;
+    private static final int ROW_GAP  = 4;
     private static final int MODAL_W  = 340;
     private static final int MODAL_H  = 260;
-    private static final int SCROLL_W = 4;
+    private static final int SCROLL_W = 6;
 
     // ── Fenêtre centrée ───────────────────────────────────────────────────────
 
@@ -137,19 +136,23 @@ public class HdvScreen extends Screen {
 
     private TextFieldWidget searchField;
     private ListingData hoveredCard = null;
+    private int hoveredCardX = 0;
     private int hoveredCardY = 0;
+    private int hoveredCardW = 0;
     private int gridMaxScroll = 0;
     private int tabsStartX = 0;
     private ListingData buyingListing = null;
-    private int buyQty = 1;
+
+    // Scrollbar générique (piste + pouce), réarmée par la liste active à chaque frame
+    private int scrollTrackX, scrollTrackY, scrollTrackH, scrollThumbH, scrollVisUnits;
+    private boolean draggingScroll = false;
 
     private List<SellItem> sellInv = new ArrayList<>();
     private SellItem selectedSellItem = null;
     private SellItem hoveredSellItem = null;
-    private int sellQty = 1;
-    private int sellPrice = 0;
-    private TextFieldWidget sellQtyField;
-    private TextFieldWidget sellPriceField;
+    private final NumberInput sellQtyInput   = new NumberInput(1, 1, 1);
+    private final NumberInput sellPriceInput = new NumberInput(0, 0, 999_999);
+    private final NumberInput buyQtyInput    = new NumberInput(1, 1, 1);
 
     private String selectedShop = null;
 
@@ -184,19 +187,7 @@ public class HdvScreen extends Screen {
         searchField.setChangedListener(s -> scrollOffset = 0);
         addSelectableChild(searchField);
 
-        sellQtyField = new TextFieldWidget(textRenderer, winX, winY, 100, 18, Text.literal("1"));
-        sellQtyField.setText("1");
-        sellQtyField.setChangedListener(s -> {
-            try { sellQty = Math.max(1, Integer.parseInt(s.trim())); } catch (NumberFormatException ignored) { sellQty = 1; }
-        });
-        addSelectableChild(sellQtyField);
-
-        sellPriceField = new TextFieldWidget(textRenderer, winX, winY, 100, 18, Text.literal(""));
-        sellPriceField.setPlaceholder(Text.literal("Prix/u..."));
-        sellPriceField.setChangedListener(s -> {
-            try { sellPrice = Math.max(0, Integer.parseInt(s.trim())); } catch (NumberFormatException ignored) { sellPrice = 0; }
-        });
-        addSelectableChild(sellPriceField);
+        sellPriceInput.setPlaceholder("Prix/u...");
 
         refreshSellInv();
     }
@@ -223,10 +214,9 @@ public class HdvScreen extends Screen {
         listings         = new ArrayList<>(newListings);
         buyingListing    = null;
         selectedSellItem = null;
-        sellQtyField.setText("1");
-        sellPriceField.setText("");
-        sellQty   = 1;
-        sellPrice = 0;
+        sellQtyInput.setBounds(1, 1);
+        sellQtyInput.setValue(1);
+        sellPriceInput.setValue(0);
         refreshSellInv();
         toast(msg, ok);
     }
@@ -443,7 +433,7 @@ public class HdvScreen extends Screen {
         int gridW = cw - SCROLL_W - 6;
 
         List<ListingData> items = filteredListings();
-        renderCardGrid(ctx, mx, my, items, cx, gridY, gridW, gridH, false);
+        renderListRows(ctx, mx, my, items, cx, gridY, gridW, gridH, false);
 
         if (items.isEmpty()) {
             String me = client != null && client.player != null ? client.player.getName().getString() : "";
@@ -455,97 +445,95 @@ public class HdvScreen extends Screen {
         }
 
         String pg = items.size() + " article" + (items.size() > 1 ? "s" : "");
-        if (gridMaxScroll > 0) pg += "  •  Page " + (scrollOffset + 1) + "/" + (gridMaxScroll + 1);
+        if (gridMaxScroll > 0) pg += "  •  molette ou barre pour faire défiler";
         ctx.drawCenteredTextWithShadow(textRenderer, pg, cx + cw / 2, winY + winH - 20, C_DIM);
     }
 
     /**
-     * Grille de cartes scrollable partagée par tous les onglets.
-     * Clippe le contenu, dessine la scrollbar et mémorise la carte survolée
-     * (`hoveredCard` / `hoveredCardY`) pour la détection de clic.
+     * Liste de lignes scrollable partagée par tous les onglets (Marché, Mon Shop,
+     * détail Boutiques). Clippe le contenu, dessine la scrollbar et mémorise la
+     * ligne survolée (`hoveredCard` / `hoveredCardX/Y/W`) pour la détection de clic.
      */
-    private void renderCardGrid(DrawContext ctx, int mx, int my, List<ListingData> items,
-                                int gx, int gy, int gw, int gh, boolean ownCards) {
-        int cardW     = (gw - (COLS - 1) * GAP) / COLS;
-        int visRows   = Math.max(1, (gh + GAP) / (CARD_H + GAP));
-        int totalRows = (int) Math.ceil((double) items.size() / COLS);
-
-        gridMaxScroll = Math.max(0, totalRows - visRows);
+    private void renderListRows(DrawContext ctx, int mx, int my, List<ListingData> items,
+                                int gx, int gy, int gw, int gh, boolean ownRows) {
+        int visRows = Math.max(1, gh / (ROW_H + ROW_GAP));
+        gridMaxScroll = Math.max(0, items.size() - visRows);
         scrollOffset  = Math.max(0, Math.min(scrollOffset, gridMaxScroll));
-        int start     = scrollOffset * COLS;
+        int start = scrollOffset;
 
-        if (gridMaxScroll > 0) {
-            int sbX = gx + gw + 2;
-            ctx.fill(sbX, gy, sbX + SCROLL_W, gy + gh, C_BORDER);
-            int thumbH = Math.max(20, gh * visRows / totalRows);
-            int thumbY = gy + (gh - thumbH) * scrollOffset / gridMaxScroll;
-            ctx.fill(sbX, thumbY, sbX + SCROLL_W, thumbY + thumbH, 0x60FFFFFF);
-        }
+        renderScrollbar(ctx, gx + gw + 2, gy, gh, visRows, gridMaxScroll);
 
         hoveredCard = null;
         ctx.enableScissor(gx, gy, gx + gw, gy + gh);
         for (int i = start; i < items.size(); i++) {
-            int col = (i - start) % COLS;
-            int row = (i - start) / COLS;
-            if (row > visRows) break;
-            int x = gx + col * (cardW + GAP);
-            int y = gy + row * (CARD_H + GAP);
-            boolean hov = mx >= x && mx < x + cardW && my >= y && my < y + CARD_H
+            int y = gy + (i - start) * (ROW_H + ROW_GAP);
+            if (y > gy + gh) break;
+            boolean hov = mx >= gx && mx < gx + gw && my >= y && my < y + ROW_H
                        && my >= gy && my < gy + gh;
-            if (hov) { hoveredCard = items.get(i); hoveredCardY = y; }
-            if (ownCards) renderOwnCard(ctx, x, y, cardW, CARD_H, items.get(i), hov);
-            else          renderCard(ctx, x, y, cardW, CARD_H, items.get(i), hov, false);
+            if (hov) { hoveredCard = items.get(i); hoveredCardX = gx; hoveredCardY = y; hoveredCardW = gw; }
+            if (ownRows) renderOwnListRow(ctx, gx, y, gw, items.get(i), hov);
+            else         renderListRow(ctx, gx, y, gw, items.get(i), hov);
         }
         ctx.disableScissor();
     }
 
-    private void renderCard(DrawContext ctx, int x, int y, int w, int h, ListingData l, boolean hov, boolean isOwn) {
-        // Background
-        ctx.fill(x, y, x + w, y + h, hov ? C_HOVER : C_PANEL);
+    /**
+     * Scrollbar générique : piste + pouce or opaque, position mémorisée dans
+     * scrollTrackX/Y/H + scrollThumbH pour le drag (mouseClicked/mouseDragged).
+     */
+    private void renderScrollbar(DrawContext ctx, int trackX, int trackY, int trackH, int visUnits, int maxScrollUnits) {
+        scrollTrackX = trackX; scrollTrackY = trackY; scrollTrackH = trackH; scrollVisUnits = visUnits;
+        if (maxScrollUnits <= 0) { scrollThumbH = 0; return; }
+        int totalUnits = visUnits + maxScrollUnits;
+        int thumbH = Math.max(18, trackH * visUnits / totalUnits);
+        scrollThumbH = thumbH;
+        int thumbY = trackY + (trackH - thumbH) * scrollOffset / maxScrollUnits;
+        ctx.fill(trackX, trackY, trackX + SCROLL_W, trackY + trackH, C_BORDER);
+        ctx.fill(trackX, thumbY, trackX + SCROLL_W, thumbY + thumbH, C_GOLD);
+    }
 
-        // Border on hover (1px gold all sides)
+    /** Repositionne scrollOffset d'après la position verticale de la souris sur la piste. */
+    private void applyScrollFromMouse(int mouseY) {
+        if (gridMaxScroll <= 0) { scrollOffset = 0; return; }
+        int usable = Math.max(1, scrollTrackH - scrollThumbH);
+        float ratio = (float) (mouseY - scrollTrackY) / usable;
+        scrollOffset = Math.max(0, Math.min(Math.round(ratio * gridMaxScroll), gridMaxScroll));
+    }
+
+    /** Ligne d'annonce achetable : icône à gauche, prix + bouton Acheter à droite. */
+    private void renderListRow(DrawContext ctx, int x, int y, int w, ListingData l, boolean hov) {
+        ctx.fill(x, y, x + w, y + ROW_H, hov ? C_HOVER : C_PANEL);
         if (hov) {
             ctx.fill(x, y, x + w, y + 1, C_GOLD);
-            ctx.fill(x, y + h - 1, x + w, y + h, C_GOLD);
-            ctx.fill(x, y, x + 1, y + h, C_GOLD);
-            ctx.fill(x + w - 1, y, x + w, y + h, C_GOLD);
+            ctx.fill(x, y + ROW_H - 1, x + w, y + ROW_H, C_GOLD);
+            ctx.fill(x, y, x + 1, y + ROW_H, C_GOLD);
+            ctx.fill(x + w - 1, y, x + w, y + ROW_H, C_GOLD);
         } else {
             ctx.fill(x, y, x + w, y + 1, C_BORDER);
-            ctx.fill(x, y, x + 1, y + h, C_BORDER);
-            ctx.fill(x + w - 1, y, x + w, y + h, C_BORDER);
-            ctx.fill(x, y + h - 1, x + w, y + h, C_BORDER);
+            ctx.fill(x, y + ROW_H - 1, x + w, y + ROW_H, C_BORDER);
         }
 
-        // Icon area
-        int iconH = 48;
-        ctx.fill(x + 1, y + 1, x + w - 1, y + iconH, C_BG);
-        drawItemScaled(ctx, itemStack(l), x + w / 2, y + iconH / 2, 2.0f);
+        // Icône à gauche
+        ctx.fill(x + 1, y + 1, x + 41, y + ROW_H - 1, C_BG);
+        drawItemScaled(ctx, itemStack(l), x + 21, y + ROW_H / 2, 2.0f);
 
-        // Qty badge — top right
-        String qtyStr = "x" + l.quantity();
-        int qw = textRenderer.getWidth(qtyStr) + 4;
-        ctx.fill(x + w - qw - 3, y + 3, x + w - 3, y + 13, 0xBB000000);
-        ctx.drawText(textRenderer, qtyStr, x + w - qw - 1, y + 4, C_MID, false);
+        // Nom + vendeur/stock
+        int tx = x + 50;
+        String name = truncate(FrenchItemNames.toDisplay(l.itemId()), w - 190);
+        ctx.drawText(textRenderer, name, tx, y + 9, C_WHITE, false);
+        String sub = "Vendu par " + l.seller() + "  ·  x" + l.quantity() + " en stock";
+        ctx.drawText(textRenderer, truncate(sub, w - 190), tx, y + 22, C_DIM, false);
 
-        // Info area
-        int ny = y + iconH + 5;
-        String name = truncate(FrenchItemNames.toDisplay(l.itemId()), w - 8);
-        ctx.drawCenteredTextWithShadow(textRenderer, name, x + w / 2, ny, C_WHITE);
-        ctx.drawCenteredTextWithShadow(textRenderer, truncate(l.seller(), w - 8), x + w / 2, ny + 11, C_DIM);
-
-        // Bottom price strip
-        int stripY = y + h - 24;
-        ctx.fill(x + 1, stripY, x + w - 1, y + h - 1, C_STRIP);
-        ctx.fill(x + 1, stripY, x + w - 1, stripY + 1, C_BORDER);
-        String price = l.pricePerUnit() + " ◆";
-        ctx.drawCenteredTextWithShadow(textRenderer, price, x + w / 2, stripY + 7, C_GOLD);
-
-        // MOI badge — top left
-        if (isOwn) {
-            int tw = textRenderer.getWidth("MOI") + 6;
-            ctx.fill(x + 2, y + 2, x + tw + 2, y + 12, C_GOLD_DIM);
-            ctx.drawText(textRenderer, "MOI", x + 5, y + 3, C_GOLD, false);
-        }
+        // Prix + bouton Acheter à droite
+        int btnW = 82, btnH = 22;
+        int btnX = x + w - btnW - 10;
+        int btnY = y + (ROW_H - btnH) / 2;
+        String price = l.pricePerUnit() + " ◆/u";
+        ctx.drawText(textRenderer, price, btnX - textRenderer.getWidth(price) - 14,
+            y + (ROW_H - textRenderer.fontHeight) / 2, C_GOLD, false);
+        ctx.fill(btnX, btnY, btnX + btnW, btnY + btnH, hov ? C_GOLD : C_STRIP);
+        if (!hov) { ctx.fill(btnX, btnY, btnX + btnW, btnY + 1, C_BORDER); ctx.fill(btnX, btnY + btnH - 1, btnX + btnW, btnY + btnH, C_BORDER); }
+        ctx.drawCenteredTextWithShadow(textRenderer, "Acheter", btnX + btnW / 2, btnY + 7, hov ? C_BG : C_MID);
     }
 
     // ── Modal achat ───────────────────────────────────────────────────────────
@@ -579,35 +567,23 @@ public class HdvScreen extends Screen {
         ctx.fill(x + 10, fy, x + MODAL_W - 10, fy + 1, C_BORDER);
         fy += 10;
 
-        // Info rows (price + stock) — same layout as before for handleModalClick compatibility
-        ctx.fill(x + 10, fy, x + MODAL_W - 10, fy + 58, C_STRIP);
+        // Prix unitaire + stock
+        ctx.fill(x + 10, fy, x + MODAL_W - 10, fy + 36, C_STRIP);
         ctx.drawText(textRenderer, "Prix unitaire", x + 18, fy + 8, C_DIM, false);
         String pu = l.pricePerUnit() + " ◆";
         ctx.drawText(textRenderer, pu, x + MODAL_W - textRenderer.getWidth(pu) - 18, fy + 8, C_GOLD, false);
         ctx.drawText(textRenderer, "Stock disponible", x + 18, fy + 22, C_DIM, false);
         String st = "x" + l.quantity();
         ctx.drawText(textRenderer, st, x + MODAL_W - textRenderer.getWidth(st) - 18, fy + 22, C_MID, false);
-        ctx.fill(x + 10, fy + 35, x + MODAL_W - 10, fy + 36, C_BORDER);
+        fy += 44;
 
-        // Qty selector — keep same positions for handleModalClick
-        ctx.drawText(textRenderer, "Quantite", x + 18, fy + 42, C_DIM, false);
-        int bx  = x + MODAL_W - 102;
-        int by2 = fy + 38;
-        boolean minHov = mx >= bx && mx < bx + 22 && my >= by2 && my < by2 + 18;
-        ctx.fill(bx, by2, bx + 22, by2 + 18, minHov ? C_HOVER : C_BORDER);
-        ctx.drawCenteredTextWithShadow(textRenderer, "-", bx + 11, by2 + 5, C_WHITE);
-        ctx.fill(bx + 24, by2, bx + 54, by2 + 18, C_BG);
-        ctx.drawCenteredTextWithShadow(textRenderer, String.valueOf(buyQty), bx + 39, by2 + 5, C_WHITE);
-        boolean plusHov = mx >= bx + 56 && mx < bx + 78 && my >= by2 && my < by2 + 18;
-        ctx.fill(bx + 56, by2, bx + 78, by2 + 18, plusHov ? C_HOVER : C_BORDER);
-        ctx.drawCenteredTextWithShadow(textRenderer, "+", bx + 67, by2 + 5, C_WHITE);
-        boolean maxHov = mx >= bx + 80 && mx < bx + 100 && my >= by2 && my < by2 + 18;
-        ctx.fill(bx + 80, by2, bx + 100, by2 + 18, maxHov ? C_HOVER : C_BORDER);
-        ctx.drawCenteredTextWithShadow(textRenderer, "MAX", bx + 90, by2 + 5, maxHov ? C_GOLD : C_MID);
-
-        fy += 70;
+        ctx.drawText(textRenderer, "QUANTITE", x + 18, fy, C_DIM, false);
+        fy += textRenderer.fontHeight + 4;
+        buyQtyInput.render(ctx, textRenderer, x + 14, fy, MODAL_W - 28, mx, my);
+        fy += NumberInput.H + 10;
 
         // Total
+        int buyQty = buyQtyInput.getValue();
         int total = l.pricePerUnit() * buyQty;
         boolean canAfford = balance >= total;
         ctx.drawText(textRenderer, "Total a payer", x + 18, fy, C_MID, false);
@@ -655,13 +631,7 @@ public class HdvScreen extends Screen {
         scrollOffset  = Math.max(0, Math.min(scrollOffset, gridMaxScroll));
         int start = scrollOffset * cellCols;
 
-        if (gridMaxScroll > 0) {
-            int sbX = winX + PAD + gridW + 2;
-            ctx.fill(sbX, py, sbX + SCROLL_W, py + gridH, C_BORDER);
-            int thumbH = Math.max(20, gridH * visRows / rows);
-            int thumbY = py + (gridH - thumbH) * scrollOffset / gridMaxScroll;
-            ctx.fill(sbX, thumbY, sbX + SCROLL_W, thumbY + thumbH, 0x60FFFFFF);
-        }
+        renderScrollbar(ctx, winX + PAD + gridW + 2, py, gridH, visRows, gridMaxScroll);
 
         ctx.enableScissor(winX + PAD, py, winX + PAD + gridW, py + gridH);
         for (int i = start; i < sellInv.size(); i++) {
@@ -724,20 +694,16 @@ public class HdvScreen extends Screen {
 
         ctx.drawText(textRenderer, "QUANTITE", formX + 12, fy, C_DIM, false);
         fy += textRenderer.fontHeight + 4;
-        sellQtyField.setX(formX + 12);
-        sellQtyField.setY(fy);
-        sellQtyField.setWidth(formW - 24);
-        sellQtyField.render(ctx, mx, my, 0);
-        fy += 26;
+        sellQtyInput.render(ctx, textRenderer, formX + 12, fy, formW - 24, mx, my);
+        fy += NumberInput.H + 8;
 
         ctx.drawText(textRenderer, "PRIX PAR UNITE (◆)", formX + 12, fy, C_DIM, false);
         fy += textRenderer.fontHeight + 4;
-        sellPriceField.setX(formX + 12);
-        sellPriceField.setY(fy);
-        sellPriceField.setWidth(formW - 24);
-        sellPriceField.render(ctx, mx, my, 0);
-        fy += 26;
+        sellPriceInput.render(ctx, textRenderer, formX + 12, fy, formW - 24, mx, my);
+        fy += NumberInput.H + 8;
 
+        int sellQty   = sellQtyInput.getValue();
+        int sellPrice = sellPriceInput.getValue();
         if (selectedSellItem != null && sellPrice > 0 && sellQty > 0) {
             int gross      = sellPrice * sellQty;
             int commission = (int) (gross * 0.05);
@@ -778,53 +744,37 @@ public class HdvScreen extends Screen {
 
         int gridW = winW - PAD * 2 - SCROLL_W - 4;
         int gridH = winY + winH - PAD - py;
-        renderCardGrid(ctx, mx, my, mine, winX + PAD, py, gridW, gridH, true);
+        renderListRows(ctx, mx, my, mine, winX + PAD, py, gridW, gridH, true);
     }
 
-    private void renderOwnCard(DrawContext ctx, int x, int y, int w, int h, ListingData l, boolean hov) {
-        ctx.fill(x, y, x + w, y + h, hov ? C_HOVER : C_PANEL);
-
+    /** Ligne d'annonce possédée : icône à gauche, infos au centre, bouton Retirer rouge à droite. */
+    private void renderOwnListRow(DrawContext ctx, int x, int y, int w, ListingData l, boolean hov) {
+        ctx.fill(x, y, x + w, y + ROW_H, hov ? C_HOVER : C_PANEL);
         if (hov) {
             ctx.fill(x, y, x + w, y + 1, C_GOLD);
-            ctx.fill(x, y + h - 1, x + w, y + h, C_GOLD);
-            ctx.fill(x, y, x + 1, y + h, C_GOLD);
-            ctx.fill(x + w - 1, y, x + w, y + h, C_GOLD);
+            ctx.fill(x, y + ROW_H - 1, x + w, y + ROW_H, C_GOLD);
+            ctx.fill(x, y, x + 1, y + ROW_H, C_GOLD);
+            ctx.fill(x + w - 1, y, x + w, y + ROW_H, C_GOLD);
         } else {
             ctx.fill(x, y, x + w, y + 1, C_BORDER);
-            ctx.fill(x, y, x + 1, y + h, C_BORDER);
-            ctx.fill(x + w - 1, y, x + w, y + h, C_BORDER);
-            ctx.fill(x, y + h - 1, x + w, y + h, C_BORDER);
+            ctx.fill(x, y + ROW_H - 1, x + w, y + ROW_H, C_BORDER);
         }
 
-        int iconH = 48;
-        ctx.fill(x + 1, y + 1, x + w - 1, y + iconH, C_BG);
-        drawItemScaled(ctx, itemStack(l), x + w / 2, y + iconH / 2, 2.0f);
+        ctx.fill(x + 1, y + 1, x + 41, y + ROW_H - 1, C_BG);
+        drawItemScaled(ctx, itemStack(l), x + 21, y + ROW_H / 2, 2.0f);
 
-        String qtyStr = "x" + l.quantity();
-        int qw = textRenderer.getWidth(qtyStr) + 4;
-        ctx.fill(x + w - qw - 3, y + 3, x + w - 3, y + 13, 0xBB000000);
-        ctx.drawText(textRenderer, qtyStr, x + w - qw - 1, y + 4, C_MID, false);
+        int tx = x + 50;
+        String name = truncate(FrenchItemNames.toDisplay(l.itemId()), w - 180);
+        ctx.drawText(textRenderer, name, tx, y + 9, C_WHITE, false);
+        String sub = l.quantity() + " en stock  ·  " + l.pricePerUnit() + " ◆/u";
+        ctx.drawText(textRenderer, truncate(sub, w - 180), tx, y + 22, C_DIM, false);
 
-        int ny = y + iconH + 5;
-        String name = truncate(FrenchItemNames.toDisplay(l.itemId()), w - 8);
-        ctx.drawCenteredTextWithShadow(textRenderer, name, x + w / 2, ny, C_WHITE);
-
-        // Price/quantity info line
-        String info = l.quantity() + " en stock · " + l.pricePerUnit() + " ◆/u";
-        ctx.drawCenteredTextWithShadow(textRenderer, truncate(info, w - 8), x + w / 2, ny + 11, C_DIM);
-
-        // Bottom strip: price normally, red "Retirer" on hover
-        int stripY = y + h - 24;
-        ctx.fill(x + 1, stripY, x + w - 1, y + h - 1, hov ? C_RED : C_STRIP);
-        ctx.fill(x + 1, stripY, x + w - 1, stripY + 1, hov ? C_RED : C_BORDER);
-        String stripText = hov ? "Retirer" : (l.pricePerUnit() + " ◆");
-        int stripTextColor = hov ? C_WHITE : C_GOLD;
-        ctx.drawCenteredTextWithShadow(textRenderer, stripText, x + w / 2, stripY + 7, stripTextColor);
-
-        // MOI badge
-        int tw = textRenderer.getWidth("MOI") + 6;
-        ctx.fill(x + 2, y + 2, x + tw + 2, y + 12, C_GOLD_DIM);
-        ctx.drawText(textRenderer, "MOI", x + 5, y + 3, C_GOLD, false);
+        int btnW = 74, btnH = 22;
+        int btnX = x + w - btnW - 10;
+        int btnY = y + (ROW_H - btnH) / 2;
+        ctx.fill(btnX, btnY, btnX + btnW, btnY + btnH, hov ? C_RED : C_STRIP);
+        if (!hov) { ctx.fill(btnX, btnY, btnX + btnW, btnY + 1, C_BORDER); ctx.fill(btnX, btnY + btnH - 1, btnX + btnW, btnY + btnH, C_BORDER); }
+        ctx.drawCenteredTextWithShadow(textRenderer, "Retirer", btnX + btnW / 2, btnY + 7, hov ? C_WHITE : C_MID);
     }
 
     // ── Onglet Boutiques ──────────────────────────────────────────────────────
@@ -847,13 +797,11 @@ public class HdvScreen extends Screen {
             List<ListingData> items = listings.stream().filter(l -> l.seller().equals(selectedShop)).toList();
             int gridW = winW - PAD * 2 - SCROLL_W - 4;
             int gridH = winY + winH - PAD - py;
-            renderCardGrid(ctx, mx, my, items, winX + PAD, py, gridW, gridH, false);
+            renderListRows(ctx, mx, my, items, winX + PAD, py, gridW, gridH, false);
         } else {
-            ctx.drawText(textRenderer, "BOUTIQUES DES JOUEURS", winX + PAD, py, C_DIM, false);
+            List<String> sellers = shopSellers();
+            ctx.drawText(textRenderer, "BOUTIQUES DES JOUEURS — " + sellers.size(), winX + PAD, py, C_DIM, false);
             py += textRenderer.fontHeight + 10;
-
-            Map<String, Long> sellers = listings.stream()
-                .collect(Collectors.groupingBy(ListingData::seller, LinkedHashMap::new, Collectors.counting()));
 
             int rowH    = 48, step = rowH + 6;
             int listH   = winY + winH - PAD - py;
@@ -862,20 +810,14 @@ public class HdvScreen extends Screen {
             scrollOffset  = Math.max(0, Math.min(scrollOffset, gridMaxScroll));
 
             int listW = winW - PAD * 2 - SCROLL_W - 4;
-            if (gridMaxScroll > 0) {
-                int sbX = winX + PAD + listW + 2;
-                ctx.fill(sbX, py, sbX + SCROLL_W, py + listH, C_BORDER);
-                int thumbH = Math.max(20, listH * visRows / sellers.size());
-                int thumbY = py + (listH - thumbH) * scrollOffset / gridMaxScroll;
-                ctx.fill(sbX, thumbY, sbX + SCROLL_W, thumbY + thumbH, 0x60FFFFFF);
-            }
+            renderScrollbar(ctx, winX + PAD + listW + 2, py, listH, visRows, gridMaxScroll);
 
             ctx.enableScissor(winX + PAD, py, winX + PAD + listW, py + listH);
-            int idx = 0;
-            for (Map.Entry<String, Long> e : sellers.entrySet()) {
-                if (idx < scrollOffset) { idx++; continue; }
+            for (int idx = scrollOffset; idx < sellers.size(); idx++) {
                 int ry = py + (idx - scrollOffset) * step;
                 if (ry > py + listH) break;
+                String seller = sellers.get(idx);
+                long cnt = listings.stream().filter(l -> l.seller().equals(seller)).count();
                 boolean hov = mx >= winX + PAD && mx < winX + PAD + listW
                            && my >= ry && my < ry + rowH && my >= py && my < py + listH;
                 ctx.fill(winX + PAD, ry, winX + PAD + listW, ry + rowH, hov ? C_HOVER : C_PANEL);
@@ -885,14 +827,24 @@ public class HdvScreen extends Screen {
                     ctx.fill(winX + PAD, ry, winX + PAD + 1, ry + rowH, C_GOLD);
                     ctx.fill(winX + PAD + listW - 1, ry, winX + PAD + listW, ry + rowH, C_GOLD);
                 }
-                ctx.drawText(textRenderer, e.getKey(), winX + PAD + 12, ry + 10, C_WHITE, false);
-                long cnt = e.getValue();
+                ctx.drawText(textRenderer, seller, winX + PAD + 12, ry + 10, C_WHITE, false);
                 ctx.drawText(textRenderer, cnt + " article" + (cnt > 1 ? "s" : ""), winX + PAD + 12, ry + 24, C_DIM, false);
                 ctx.drawText(textRenderer, "›", winX + PAD + listW - 16, ry + rowH / 2 - textRenderer.fontHeight / 2, C_DARK, false);
-                idx++;
             }
             ctx.disableScissor();
         }
+    }
+
+    /** Vendeurs distincts affichables dans Boutiques — exclut le Shop Serveur et soi-même. */
+    private List<String> shopSellers() {
+        String me = client != null && client.player != null ? client.player.getName().getString() : "";
+        return listings.stream()
+            .map(ListingData::seller)
+            .filter(s -> !s.equals("$Serveur"))
+            .filter(s -> !s.equalsIgnoreCase(me))
+            .distinct()
+            .sorted(String.CASE_INSENSITIVE_ORDER)
+            .toList();
     }
 
     // ── Toast ─────────────────────────────────────────────────────────────────
@@ -939,10 +891,18 @@ public class HdvScreen extends Screen {
             return true;
         }
 
+        // Drag de la scrollbar — la piste est mémorisée par le dernier rendu
+        if (gridMaxScroll > 0 && x >= scrollTrackX - 2 && x <= scrollTrackX + SCROLL_W + 2
+                && y >= scrollTrackY && y <= scrollTrackY + scrollTrackH) {
+            draggingScroll = true;
+            applyScrollFromMouse(y - scrollThumbH / 2);
+            return true;
+        }
+
         switch (activeTab) {
             case MARKET -> {
                 if (checkSortButtonClick(x, y)) return true;
-                if (hoveredCard != null) { buyingListing = hoveredCard; buyQty = 1; }
+                if (hoveredCard != null) openBuyModal(hoveredCard);
             }
             case SELL    -> handleSellClick(x, y);
             case MY_SHOP -> handleMyShopClick(x, y);
@@ -997,6 +957,14 @@ public class HdvScreen extends Screen {
         return false;
     }
 
+    /** Ouvre le modal d'achat : borne la quantité au stock de l'annonce. */
+    private void openBuyModal(ListingData l) {
+        buyingListing = l;
+        buyQtyInput.setBounds(1, Math.max(1, l.quantity()));
+        buyQtyInput.setValue(1);
+        buyQtyInput.setFocused(false);
+    }
+
     private void handleModalClick(int mx, int my) {
         ListingData l = buyingListing;
         int ox = winX + (winW - MODAL_W) / 2;
@@ -1007,22 +975,7 @@ public class HdvScreen extends Screen {
             return;
         }
 
-        int bx  = ox + MODAL_W - 102;
-        int by2 = oy + 100;
-
-        if (mx >= bx && mx < bx + 22 && my >= by2 && my < by2 + 18) {
-            buyQty = Math.max(1, buyQty - 1);
-            return;
-        }
-        if (mx >= bx + 56 && mx < bx + 78 && my >= by2 && my < by2 + 18) {
-            buyQty = Math.min(l.quantity(), buyQty + 1);
-            return;
-        }
-        if (mx >= bx + 80 && mx < bx + 100 && my >= by2 && my < by2 + 18) {
-            int maxAffordable = l.pricePerUnit() > 0 ? balance / l.pricePerUnit() : l.quantity();
-            buyQty = Math.min(l.quantity(), Math.max(1, maxAffordable));
-            return;
-        }
+        if (buyQtyInput.mouseClicked(mx, my)) return;
 
         int btnY = oy + MODAL_H - 38;
         int half = MODAL_W / 2 - 14;
@@ -1031,7 +984,8 @@ public class HdvScreen extends Screen {
             return;
         }
         if (mx >= ox + MODAL_W - 10 - half && mx < ox + MODAL_W - 10 && my >= btnY && my < btnY + 24) {
-            if (balance >= l.pricePerUnit() * buyQty) sendBuy(l.itemId(), buyQty, l.itemNBT());
+            int qty = buyQtyInput.getValue();
+            if (balance >= l.pricePerUnit() * qty) sendBuy(l.itemId(), qty, l.itemNBT());
         }
     }
 
@@ -1043,13 +997,17 @@ public class HdvScreen extends Screen {
         // recalculer les positions ici les désynchroniserait dès le premier défilement.
         if (hoveredSellItem != null) {
             selectedSellItem = hoveredSellItem;
-            sellQty = 1;
-            sellQtyField.setText("1");
-            sellPriceField.setText("");
-            sellPrice = 0;
+            sellQtyInput.setBounds(1, hoveredSellItem.qty());
+            sellQtyInput.setValue(1);
+            sellPriceInput.setValue(0);
             return;
         }
 
+        if (sellQtyInput.mouseClicked(mx, my))   { sellPriceInput.setFocused(false); return; }
+        if (sellPriceInput.mouseClicked(mx, my)) { sellQtyInput.setFocused(false);   return; }
+
+        int sellQty   = sellQtyInput.getValue();
+        int sellPrice = sellPriceInput.getValue();
         boolean canSell = selectedSellItem != null && sellPrice > 0 && sellQty > 0 && sellQty <= selectedSellItem.qty();
         int btnY = winY + winH - PAD - 28;
         if (canSell && mx >= formX + 8 && mx < formX + formW - 8 && my >= btnY && my < btnY + 22) {
@@ -1058,10 +1016,7 @@ public class HdvScreen extends Screen {
     }
 
     private void handleMyShopClick(int mx, int my) {
-        if (hoveredCard == null) return;
-        if (my >= hoveredCardY + CARD_H - 24 && my < hoveredCardY + CARD_H) {
-            sendWithdraw(hoveredCard.id());
-        }
+        if (hoveredCard != null) sendWithdraw(hoveredCard.id());
     }
 
     private void handleShopsClick(int mx, int my) {
@@ -1072,26 +1027,22 @@ public class HdvScreen extends Screen {
                 scrollOffset = 0;
                 return;
             }
-            if (hoveredCard != null) { buyingListing = hoveredCard; buyQty = 1; }
+            if (hoveredCard != null) openBuyModal(hoveredCard);
         } else {
             py += textRenderer.fontHeight + 10;
-            Map<String, Long> sellers = listings.stream()
-                .collect(Collectors.groupingBy(ListingData::seller, LinkedHashMap::new, Collectors.counting()));
+            List<String> sellers = shopSellers();
             int rowH = 48, step = rowH + 6;
             int listH = winY + winH - PAD - py;
             int listW = winW - PAD * 2 - SCROLL_W - 4;
-            int idx = 0;
-            for (String seller : sellers.keySet()) {
-                if (idx < scrollOffset) { idx++; continue; }
+            for (int idx = scrollOffset; idx < sellers.size(); idx++) {
                 int ry = py + (idx - scrollOffset) * step;
                 if (ry > py + listH) break;
                 if (mx >= winX + PAD && mx < winX + PAD + listW
                     && my >= ry && my < ry + rowH && my < py + listH) {
-                    selectedShop = seller;
+                    selectedShop = sellers.get(idx);
                     scrollOffset = 0;
                     return;
                 }
-                idx++;
             }
         }
     }
@@ -1106,6 +1057,21 @@ public class HdvScreen extends Screen {
         return true;
     }
 
+    @Override
+    public boolean mouseDragged(double mx, double my, int btn, double dx, double dy) {
+        if (draggingScroll) {
+            applyScrollFromMouse((int) my - scrollThumbH / 2);
+            return true;
+        }
+        return super.mouseDragged(mx, my, btn, dx, dy);
+    }
+
+    @Override
+    public boolean mouseReleased(double mx, double my, int btn) {
+        draggingScroll = false;
+        return super.mouseReleased(mx, my, btn);
+    }
+
     // ── Clavier ───────────────────────────────────────────────────────────────
 
     @Override
@@ -1114,7 +1080,22 @@ public class HdvScreen extends Screen {
             if (buyingListing != null) { buyingListing = null; return true; }
             if (selectedShop  != null) { selectedShop  = null; return true; }
         }
+        if (buyingListing != null) {
+            if (buyQtyInput.keyPressed(key)) return true;
+        } else if (activeTab == Tab.SELL) {
+            if (sellQtyInput.keyPressed(key) || sellPriceInput.keyPressed(key)) return true;
+        }
         return super.keyPressed(key, scan, mod);
+    }
+
+    @Override
+    public boolean charTyped(char chr, int mod) {
+        if (buyingListing != null) {
+            if (buyQtyInput.charTyped(chr)) return true;
+        } else if (activeTab == Tab.SELL) {
+            if (sellQtyInput.charTyped(chr) || sellPriceInput.charTyped(chr)) return true;
+        }
+        return super.charTyped(chr, mod);
     }
 
     // ── Envoi paquets ─────────────────────────────────────────────────────────

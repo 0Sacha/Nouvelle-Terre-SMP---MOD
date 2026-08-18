@@ -1,4 +1,9 @@
 {
   "item.nouvelle-terre-bridge.shard": "Shard ◆",
+  "item.nouvelle-terre-bridge.shard_5": "5 Shards ◆",
+  "item.nouvelle-terre-bridge.shard_10": "10 Shards ◆",
+  "item.nouvelle-terre-bridge.shard_20": "20 ◆ Note",
+  "item.nouvelle-terre-bridge.shard_50": "50 ◆ Note",
+  "item.nouvelle-terre-bridge.shard_100": "100 ◆ Note",
   "item.nouvelle-terre-bridge.parchemin": "Parchemin"
 }

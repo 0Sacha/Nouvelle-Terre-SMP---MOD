@@ -9,6 +9,7 @@
     "EntityDropMixin",
     "ServerPlayerEntityMixin",
     "CraftingResultSlotMixin",
+    "BlockItemMixin",
     "ParcheminDropMixin"
   ],
   "client": [

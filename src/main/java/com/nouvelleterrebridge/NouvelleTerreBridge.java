@@ -23,6 +23,8 @@ import com.nouvelleterrebridge.economy.LoanManager;
 import com.nouvelleterrebridge.economy.LocalEconomy;
 import com.nouvelleterrebridge.economy.KillRewards;
 import com.nouvelleterrebridge.economy.PlaytimeTracker;
+import com.nouvelleterrebridge.economy.PlacedBlockTracker;
+import com.nouvelleterrebridge.economy.ShardDenominations;
 import com.nouvelleterrebridge.economy.ProductionShopManager;
 import com.nouvelleterrebridge.economy.ProductionTracker;
 import com.nouvelleterrebridge.economy.RecurringTransfer;
@@ -46,6 +48,7 @@ import com.nouvelleterrebridge.network.HdvNetworking;
 import com.nouvelleterrebridge.network.HubNetworking;
 import com.nouvelleterrebridge.network.ShopNetworking;
 import com.nouvelleterrebridge.network.ProductionNetworking;
+import com.nouvelleterrebridge.market.FrenchItemNames;
 import com.nouvelleterrebridge.market.MarketActions;
 import com.nouvelleterrebridge.market.MarketListing;
 import com.nouvelleterrebridge.market.MarketManager;
@@ -77,9 +80,29 @@ public class NouvelleTerreBridge implements ModInitializer {
     /** Cache uuid → nom RP, partagé entre PlayerEvents et le mixin de nommage. */
     public static final ConcurrentHashMap<String, String> nomsRP = new ConcurrentHashMap<>();
 
-    /** Shard ◆ — monnaie physique (1 item = 1 ◆). Retrait via /bank, dépôt par clic droit. */
-    public static final net.minecraft.item.Item SHARD = new com.nouvelleterrebridge.item.ShardItem(
-        new net.minecraft.item.Item.Settings().rarity(net.minecraft.util.Rarity.UNCOMMON));
+    /**
+     * Serveur courant, pour les notifications émises depuis du code sans contexte
+     * (compteurs de production, par exemple). Null tant que le serveur n'a pas démarré.
+     */
+    public static volatile MinecraftServer serveur;
+
+    // ── Monnaie physique : coupures de 1 à 100 ◆ ──────────────────────────────
+    // Purement du rangement : retirer 5 000 ◆ en pièces de 1 remplissait 78 piles.
+    // `shard` garde son identifiant d'origine — le renommer aurait fait disparaître
+    // tous les Shards déjà en circulation chez les joueurs.
+
+    /** Shard ◆ — 1 ◆. Retrait via /bank, dépôt par clic droit. */
+    public static final net.minecraft.item.Item SHARD     = coupure(1);
+    public static final net.minecraft.item.Item SHARD_5   = coupure(5);
+    public static final net.minecraft.item.Item SHARD_10  = coupure(10);
+    public static final net.minecraft.item.Item SHARD_20  = coupure(20);
+    public static final net.minecraft.item.Item SHARD_50  = coupure(50);
+    public static final net.minecraft.item.Item SHARD_100 = coupure(100);
+
+    private static net.minecraft.item.Item coupure(int valeur) {
+        return new com.nouvelleterrebridge.item.ShardItem(
+            new net.minecraft.item.Item.Settings().rarity(net.minecraft.util.Rarity.UNCOMMON), valeur);
+    }
 
     /** Parchemin — terminal portatif ouvrant le hub des fenêtres du mod. */
     public static final net.minecraft.item.Item PARCHEMIN = new com.nouvelleterrebridge.item.ParcheminItem(
@@ -95,10 +118,28 @@ public class NouvelleTerreBridge implements ModInitializer {
         net.minecraft.registry.Registry.register(net.minecraft.registry.Registries.ITEM,
             new net.minecraft.util.Identifier(MOD_ID, "shard"), SHARD);
         net.minecraft.registry.Registry.register(net.minecraft.registry.Registries.ITEM,
+            new net.minecraft.util.Identifier(MOD_ID, "shard_5"), SHARD_5);
+        net.minecraft.registry.Registry.register(net.minecraft.registry.Registries.ITEM,
+            new net.minecraft.util.Identifier(MOD_ID, "shard_10"), SHARD_10);
+        net.minecraft.registry.Registry.register(net.minecraft.registry.Registries.ITEM,
+            new net.minecraft.util.Identifier(MOD_ID, "shard_20"), SHARD_20);
+        net.minecraft.registry.Registry.register(net.minecraft.registry.Registries.ITEM,
+            new net.minecraft.util.Identifier(MOD_ID, "shard_50"), SHARD_50);
+        net.minecraft.registry.Registry.register(net.minecraft.registry.Registries.ITEM,
+            new net.minecraft.util.Identifier(MOD_ID, "shard_100"), SHARD_100);
+        net.minecraft.registry.Registry.register(net.minecraft.registry.Registries.ITEM,
             new net.minecraft.util.Identifier(MOD_ID, "parchemin"), PARCHEMIN);
         net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents
             .modifyEntriesEvent(net.minecraft.item.ItemGroups.INGREDIENTS)
-            .register(entries -> entries.add(SHARD));
+            .register(entries -> {
+                // Une entrée par coupure : entries.add() n'a pas de variante varargs
+                entries.add(SHARD);
+                entries.add(SHARD_5);
+                entries.add(SHARD_10);
+                entries.add(SHARD_20);
+                entries.add(SHARD_50);
+                entries.add(SHARD_100);
+            });
         net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents
             .modifyEntriesEvent(net.minecraft.item.ItemGroups.TOOLS)
             .register(entries -> entries.add(PARCHEMIN));
@@ -108,6 +149,13 @@ public class NouvelleTerreBridge implements ModInitializer {
 
         EventQueue.getInstance().charger();
         EventDispatcher.init(config);
+
+        // Référence serveur partagée — enregistrée ici et non dans ServerEvents,
+        // qui se désactive entièrement si les événements bot sont coupés en config.
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STARTED
+            .register(s -> serveur = s);
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPED
+            .register(s -> serveur = null);
 
         ServerEvents.register();
         PlayerEvents.register();
@@ -128,6 +176,12 @@ public class NouvelleTerreBridge implements ModInitializer {
         // Blocs cassés → drops réels (fortune/silk touch inclus)
         PlayerBlockBreakEvents.AFTER.register((world, player, pos, state, blockEntity) -> {
             if (!(world instanceof ServerWorld sw)) return;
+
+            // Un bloc posé par un joueur puis recassé n'est pas de la production :
+            // sans ce garde-fou, poser/casser le même bloc en boucle débloquait
+            // n'importe quel item au Shop Serveur.
+            if (PlacedBlockTracker.estPoseParJoueur(world, pos)) return;
+
             String pName = player.getName().getString();
             List<ItemStack> drops = Block.getDroppedStacks(state, sw, pos, blockEntity, player, player.getMainHandStack());
             for (ItemStack drop : drops) {
@@ -189,75 +243,95 @@ public class NouvelleTerreBridge implements ModInitializer {
 
     private void registerHdvNetworking() {
         ServerPlayNetworking.registerGlobalReceiver(HdvNetworking.HDV_ACTION, (server, player, handler, buf, responseSender) -> {
+            // ── Lecture du paquet : obligatoirement ici ──
+            // Le PacketByteBuf est libéré dès le retour de ce callback : tout doit être
+            // extrait maintenant, et rien de ce qui suit ne doit retoucher au buffer.
             int type = buf.readInt();
+            final String sItemId;
+            final String sNbt;
+            final String sTarget;
+            final int    sQty, sPrice, sListingId, sAmount, sInterval, sId;
 
-            final String result;
             switch (type) {
                 case HdvNetworking.ACTION_BUY -> {
-                    String itemId = buf.readString();
-                    int qty = buf.readInt();
-                    String nbt = buf.readString();
-                    result = MarketActions.buy(player, itemId, qty, nbt);
+                    sItemId = buf.readString(); sQty = buf.readInt(); sNbt = buf.readString();
+                    sPrice = 0; sListingId = 0; sTarget = ""; sAmount = 0; sInterval = 0; sId = 0;
                 }
                 case HdvNetworking.ACTION_SELL -> {
-                    String itemId = buf.readString();
-                    int qty = buf.readInt();
-                    int price = buf.readInt();
-                    String nbt = buf.readString();
-                    String err = MarketActions.sellByItemId(player, itemId, qty, price, nbt);
-                    result = err != null ? err : "§a✅ Annonce publiée avec succès !";
+                    sItemId = buf.readString(); sQty = buf.readInt(); sPrice = buf.readInt(); sNbt = buf.readString();
+                    sListingId = 0; sTarget = ""; sAmount = 0; sInterval = 0; sId = 0;
                 }
                 case HdvNetworking.ACTION_WITHDRAW -> {
-                    int listingId = buf.readInt();
-                    result = MarketActions.withdraw(player, listingId);
+                    sListingId = buf.readInt();
+                    sItemId = ""; sNbt = ""; sQty = 0; sPrice = 0; sTarget = ""; sAmount = 0; sInterval = 0; sId = 0;
                 }
                 case HdvNetworking.ACTION_TRANSFER -> {
-                    String target = buf.readString();
-                    int amount = buf.readInt();
-                    String sender = player.getName().getString();
-                    if (sender.equalsIgnoreCase(target)) {
-                        result = "§cVous ne pouvez pas vous envoyer des fonds.";
-                        break;
-                    }
-                    boolean ok = LocalEconomy.getInstance().transfer(sender, target, amount);
-                    if (ok) {
-                        result = "§a✅ " + amount + " ◆ envoyés à §f" + target + "§a.";
-                        server.execute(() -> {
-                            ServerPlayerEntity t = server.getPlayerManager().getPlayer(target);
-                            if (t != null) t.sendMessage(Text.literal(
-                                "§a[Nouvelle Terre] §f" + sender + " §avous a envoyé §f" + amount + " ◆§a !"));
-                        });
-                    } else {
-                        result = "§cSolde insuffisant ou joueur inconnu.";
-                    }
+                    sTarget = buf.readString(); sAmount = buf.readInt();
+                    sItemId = ""; sNbt = ""; sQty = 0; sPrice = 0; sListingId = 0; sInterval = 0; sId = 0;
                 }
                 case HdvNetworking.ACTION_RECURRING_CREATE -> {
-                    String to = buf.readString();
-                    int amount = buf.readInt();
-                    int intervalTicks = buf.readInt();
-                    String from = player.getName().getString();
-                    if (from.equalsIgnoreCase(to)) {
-                        result = "§cVous ne pouvez pas vous faire de virement récurrent.";
-                    } else if (!LocalEconomy.getInstance().estConnu(to)) {
-                        result = "§cJoueur inconnu.";
-                    } else if (amount <= 0) {
-                        result = "§cMontant invalide.";
-                    } else if (intervalTicks < 1200) {
-                        result = "§cIntervalle minimum : 1 minute.";
-                    } else {
-                        RecurringTransferManager.getInstance().add(from, to, amount, intervalTicks);
-                        result = "§a✅ Virement récurrent créé vers §f" + to + "§a !";
-                    }
+                    sTarget = buf.readString(); sAmount = buf.readInt(); sInterval = buf.readInt();
+                    sItemId = ""; sNbt = ""; sQty = 0; sPrice = 0; sListingId = 0; sId = 0;
                 }
                 case HdvNetworking.ACTION_RECURRING_CANCEL -> {
-                    int id = buf.readInt();
-                    boolean ok = RecurringTransferManager.getInstance().cancel(id, player.getName().getString());
-                    result = ok ? "§a✅ Virement récurrent annulé." : "§cVirement introuvable.";
+                    sId = buf.readInt();
+                    sItemId = ""; sNbt = ""; sQty = 0; sPrice = 0; sListingId = 0; sTarget = ""; sAmount = 0; sInterval = 0;
                 }
-                default -> result = "§cAction inconnue.";
+                default -> {
+                    sItemId = ""; sNbt = ""; sQty = 0; sPrice = 0; sListingId = 0;
+                    sTarget = ""; sAmount = 0; sInterval = 0; sId = 0;
+                }
             }
 
-            server.execute(() -> sendHdvResult(player, result, server));
+            // ── Exécution : obligatoirement sur le thread serveur ──
+            // buy/sell/withdraw touchent l'inventaire du joueur. Le faire depuis le thread
+            // réseau court-circuite la synchronisation faite au tick : le serveur avait bien
+            // l'item enchanté, mais le client se retrouvait avec une pile vierge.
+            server.execute(() -> {
+                final String result;
+                switch (type) {
+                    case HdvNetworking.ACTION_BUY -> result = MarketActions.buy(player, sItemId, sQty, sNbt);
+                    case HdvNetworking.ACTION_SELL -> {
+                        String err = MarketActions.sellByItemId(player, sItemId, sQty, sPrice, sNbt);
+                        result = err != null ? err : "§a✅ Annonce publiée avec succès !";
+                    }
+                    case HdvNetworking.ACTION_WITHDRAW -> result = MarketActions.withdraw(player, sListingId);
+                    case HdvNetworking.ACTION_TRANSFER -> {
+                        String sender = player.getName().getString();
+                        if (sender.equalsIgnoreCase(sTarget)) {
+                            result = "§cVous ne pouvez pas vous envoyer des fonds.";
+                        } else if (LocalEconomy.getInstance().transfer(sender, sTarget, sAmount)) {
+                            result = "§a✅ " + sAmount + " ◆ envoyés à §f" + sTarget + "§a.";
+                            ServerPlayerEntity t = server.getPlayerManager().getPlayer(sTarget);
+                            if (t != null) t.sendMessage(Text.literal(
+                                "§a[Nouvelle Terre] §f" + sender + " §avous a envoyé §f" + sAmount + " ◆§a !"));
+                        } else {
+                            result = "§cSolde insuffisant ou joueur inconnu.";
+                        }
+                    }
+                    case HdvNetworking.ACTION_RECURRING_CREATE -> {
+                        String from = player.getName().getString();
+                        if (from.equalsIgnoreCase(sTarget)) {
+                            result = "§cVous ne pouvez pas vous faire de virement récurrent.";
+                        } else if (!LocalEconomy.getInstance().estConnu(sTarget)) {
+                            result = "§cJoueur inconnu.";
+                        } else if (sAmount <= 0) {
+                            result = "§cMontant invalide.";
+                        } else if (sInterval < 1200) {
+                            result = "§cIntervalle minimum : 1 minute.";
+                        } else {
+                            RecurringTransferManager.getInstance().add(from, sTarget, sAmount, sInterval);
+                            result = "§a✅ Virement récurrent créé vers §f" + sTarget + "§a !";
+                        }
+                    }
+                    case HdvNetworking.ACTION_RECURRING_CANCEL -> {
+                        boolean ok = RecurringTransferManager.getInstance().cancel(sId, player.getName().getString());
+                        result = ok ? "§a✅ Virement récurrent annulé." : "§cVirement introuvable.";
+                    }
+                    default -> result = "§cAction inconnue.";
+                }
+                sendHdvResult(player, result, server);
+            });
         });
     }
 
@@ -553,18 +627,51 @@ public class NouvelleTerreBridge implements ModInitializer {
                     } else {
                         LocalEconomy.getInstance().removeShards(name, amount);
                         TransactionLog.log(name, TransactionLog.TYPE_TRANSFER_OUT, "Retrait en Shards physiques", amount);
-                        result = "§a✅ " + amount + " Shard(s) ◆ retirés — clic droit dessus pour les redéposer.";
+                        result = "§a✅ " + amount + " ◆ retirés en coupures — clic droit dessus pour les redéposer.";
+                        // Rendu en grosses coupures d'abord : 5 000 ◆ en pièces de 1
+                        // remplissaient 78 piles d'inventaire.
                         server.execute(() -> {
-                            int restant = amount;
-                            while (restant > 0) {
-                                int sz = Math.min(64, restant);
-                                net.minecraft.item.ItemStack stack = new net.minecraft.item.ItemStack(SHARD, sz);
-                                if (!player.getInventory().insertStack(stack)) player.dropItem(stack, false);
-                                restant -= sz;
-                            }
+                            ShardDenominations.donner(player, amount);
                             sendBalanceToPlayer(player);
                         });
                     }
+                }
+                case BankNetworking.ACTION_DEPOSIT_SHARDS -> {
+                    int demande = buf.readInt();   // 0 = tout ce qu'il y a dans l'inventaire
+                    // Comptage et retrait sur le thread serveur : l'inventaire n'est pas
+                    // thread-safe, et le montant réellement déposable en dépend.
+                    server.execute(() -> {
+                        String name = player.getName().getString();
+
+                        // Valeur réelle de la monnaie portée, toutes coupures confondues
+                        int dispo = ShardDenominations.totalEnPoche(player);
+
+                        if (dispo <= 0) {
+                            sendBankResult(player, "§cAucun Shard dans votre inventaire.", server);
+                            return;
+                        }
+                        if (demande < 0) {
+                            sendBankResult(player, "§cMontant invalide.", server);
+                            return;
+                        }
+                        // Le client borne déjà la saisie, mais il ne fait pas autorité :
+                        // on re-plafonne à ce qui est réellement en poche.
+                        int aDeposer = demande == 0 ? dispo : Math.min(demande, dispo);
+
+                        // Une coupure ne se coupe pas en deux : si le prélèvement dépasse
+                        // le montant voulu, la différence est rendue en petite monnaie.
+                        int prelevé = ShardDenominations.retirer(player, aDeposer);
+                        int appoint = prelevé - aDeposer;
+                        if (appoint > 0) ShardDenominations.donner(player, appoint);
+
+                        LocalEconomy.getInstance().depositShards(name, aDeposer);
+                        TransactionLog.log(name, TransactionLog.TYPE_TRANSFER_IN, "Dépôt de Shards physiques", aDeposer);
+                        sendBalanceToPlayer(player);
+                        sendBankResult(player, "§a✅ " + aDeposer + " ◆ déposés"
+                            + (appoint > 0 ? " §7(" + appoint + " ◆ rendus en monnaie)" : "")
+                            + " §a— solde : §e" + LocalEconomy.getInstance().getBalance(name) + " ◆", server);
+                    });
+                    return;
                 }
                 default -> result = "§cAction inconnue.";
             }
@@ -813,16 +920,22 @@ public class NouvelleTerreBridge implements ModInitializer {
             buf.writeLong(e.getValue().seuil);
             buf.writeInt(e.getValue().prix);
             buf.writeInt(e.getValue().quantite);
-            buf.writeBoolean(MarketManager.getInstance().hasAutoListing(e.getKey(), ProductionShopManager.AUTO_SELLER));
+            // Le shop ne passe plus par des annonces HDV depuis la 1.3.0 : la mise en
+            // vente effective est celle du Shop Serveur, seuil et désactivation compris.
+            buf.writeBoolean(ServerShopActions.estDebloque(e.getKey()));
+            buf.writeBoolean(e.getValue().desactive);
         }
     }
 
     private void registerProductionNetworking() {
         ServerPlayNetworking.registerGlobalReceiver(ProductionNetworking.PROD_ACTION, (server, player, handler, buf, responseSender) -> {
-            int action = buf.readInt();
+            int action    = buf.readInt();
+            String itemId = buf.readString();
+            int valeur    = buf.readInt();
             server.execute(() -> {
                 boolean ok;
                 String msg;
+                String nomItem = itemId.isEmpty() ? "" : FrenchItemNames.toDisplay(itemId);
                 if (!player.hasPermissionLevel(2)) {
                     ok = false; msg = "§cRéservé aux opérateurs.";
                 } else if (action == ProductionNetworking.ACTION_RESET) {
@@ -836,6 +949,32 @@ public class NouvelleTerreBridge implements ModInitializer {
                     ShopThresholds.load();
                     ProductionShopManager.checkAll();
                     ok = true; msg = "§a✅ seuils-shop.json rechargé.";
+                } else if (action == ProductionNetworking.ACTION_SET_PRICE) {
+                    if (valeur <= 0) {
+                        ok = false; msg = "§cPrix invalide.";
+                    } else if (ShopThresholds.setPrix(itemId, valeur)) {
+                        // Le prix de base du shop est une copie figée : sans resync,
+                        // la correction resterait sans effet sur un item déjà échangé.
+                        ServerShopPriceManager.resyncBasePrices();
+                        ok = true; msg = "§a✅ " + nomItem + " : prix fixé à " + valeur + " ◆.";
+                    } else {
+                        ok = false; msg = "§cItem absent du catalogue.";
+                    }
+                } else if (action == ProductionNetworking.ACTION_TOGGLE) {
+                    Boolean desactive = ShopThresholds.toggleDesactive(itemId);
+                    if (desactive == null) {
+                        ok = false; msg = "§cItem absent du catalogue.";
+                    } else {
+                        ok = true;
+                        msg = desactive ? "§e⏸ " + nomItem + " retiré de la vente."
+                                        : "§a✅ " + nomItem + " remis en vente.";
+                    }
+                } else if (action == ProductionNetworking.ACTION_DELETE) {
+                    if (ShopThresholds.supprimer(itemId)) {
+                        ok = true; msg = "§a✅ " + nomItem + " supprimé du catalogue.";
+                    } else {
+                        ok = false; msg = "§cItem absent du catalogue.";
+                    }
                 } else {
                     ok = false; msg = "§cAction inconnue.";
                 }

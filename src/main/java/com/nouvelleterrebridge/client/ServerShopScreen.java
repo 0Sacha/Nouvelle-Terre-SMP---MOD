@@ -55,11 +55,13 @@ public class ServerShopScreen extends Screen {
     private static final int WIN_MAX_H = 520;
     private static final int TOP_H     = 44;
     private static final int PAD       = 12;
-    private static final int COLS      = 4;
-    private static final int CARD_H    = 104;
+    private static final int ROW_H     = 46;
+    private static final int ROW_GAP   = 4;
     private static final int GAP       = 8;
-    private static final int SCROLL_W  = 4;
+    private static final int SCROLL_W  = 6;
     private static final int BANNER_H  = 46;
+    private static final int MODAL_W   = 300;
+    private static final int MODAL_H   = 200;
 
     private int winX, winY, winW, winH;
 
@@ -71,6 +73,10 @@ public class ServerShopScreen extends Screen {
     private int maxScroll = 0;
     private int tabsStartX = 0;
 
+    // Piste de scrollbar mémorisée au rendu, relue par le drag
+    private int scrollTrackY, scrollTrackH, scrollTrackX, scrollThumbH;
+    private boolean draggingScroll = false;
+
     // Position du bouton du bandeau, calculée au rendu et relue par mouseClicked
     private int parcheminBtnX = 0, parcheminBtnY = 0, parcheminBtnW = 0;
 
@@ -78,7 +84,7 @@ public class ServerShopScreen extends Screen {
 
     private ShopEntry hovered = null;
     private ShopEntry selected = null;
-    private int qty = 1;
+    private final NumberInput qtyInput = new NumberInput(1, 1, 1);
 
     private String toastMsg = null;
     private boolean toastOk = true;
@@ -132,7 +138,8 @@ public class ServerShopScreen extends Screen {
         balance  = newBalance;
         entries  = new ArrayList<>(newEntries);
         selected = null;
-        qty      = 1;
+        qtyInput.setBounds(1, 1);
+        qtyInput.setValue(1);
         refreshSellable();
         toastMsg = msg.replaceAll("§[0-9a-fA-Fklmnor]", "");
         toastOk  = ok;
@@ -309,67 +316,78 @@ public class ServerShopScreen extends Screen {
         int gw = winW - PAD * 2 - SCROLL_W - 4;
         int gh = winY + winH - PAD - gy;
 
-        int cardW   = (gw - (COLS - 1) * GAP) / COLS;
-        int visRows = Math.max(1, (gh + GAP) / (CARD_H + GAP));
-        int rows    = (int) Math.ceil((double) list.size() / COLS);
-
-        maxScroll = Math.max(0, rows - visRows);
+        int visRows = Math.max(1, gh / (ROW_H + ROW_GAP));
+        maxScroll = Math.max(0, list.size() - visRows);
         scroll    = Math.max(0, Math.min(scroll, maxScroll));
-        int start = scroll * COLS;
 
-        if (maxScroll > 0) {
-            int sbX = gx + gw + 2;
-            ctx.fill(sbX, gy, sbX + SCROLL_W, gy + gh, C_BORDER);
-            int thumbH = Math.max(20, gh * visRows / rows);
-            int thumbY = gy + (gh - thumbH) * scroll / maxScroll;
-            ctx.fill(sbX, thumbY, sbX + SCROLL_W, thumbY + thumbH, 0x60FFFFFF);
-        }
+        renderScrollbar(ctx, gx + gw + 2, gy, gh, visRows);
 
         ctx.enableScissor(gx, gy, gx + gw, gy + gh);
-        for (int i = start; i < list.size(); i++) {
-            int col = (i - start) % COLS;
-            int row = (i - start) / COLS;
-            if (row > visRows) break;
-            int cx = gx + col * (cardW + GAP);
-            int cy = gy + row * (CARD_H + GAP);
-            boolean hov = mx >= cx && mx < cx + cardW && my >= cy && my < cy + CARD_H
+        for (int i = scroll; i < list.size(); i++) {
+            int ry = gy + (i - scroll) * (ROW_H + ROW_GAP);
+            if (ry > gy + gh) break;
+            boolean hov = mx >= gx && mx < gx + gw && my >= ry && my < ry + ROW_H
                        && my >= gy && my < gy + gh;
             if (hov) hovered = list.get(i);
-            renderCard(ctx, cx, cy, cardW, list.get(i), hov, buying);
+            renderRow(ctx, gx, ry, gw, list.get(i), hov, buying);
         }
         ctx.disableScissor();
     }
 
-    private void renderCard(DrawContext ctx, int x, int y, int w, ShopEntry e, boolean hov, boolean buying) {
-        ctx.fill(x, y, x + w, y + CARD_H, hov ? C_HOVER : C_PANEL);
-        int accent = hov ? (buying ? C_GOLD : C_GREEN) : C_BORDER;
-        ctx.fill(x, y, x + w, y + 1, accent);
-        ctx.fill(x, y + CARD_H - 1, x + w, y + CARD_H, accent);
-        ctx.fill(x, y, x + 1, y + CARD_H, accent);
-        ctx.fill(x + w - 1, y, x + w, y + CARD_H, accent);
+    /** Scrollbar : piste + pouce or opaque, position mémorisée pour le drag. */
+    private void renderScrollbar(DrawContext ctx, int trackX, int trackY, int trackH, int visUnits) {
+        scrollTrackX = trackX; scrollTrackY = trackY; scrollTrackH = trackH;
+        if (maxScroll <= 0) { scrollThumbH = 0; return; }
+        int thumbH = Math.max(18, trackH * visUnits / (visUnits + maxScroll));
+        scrollThumbH = thumbH;
+        int thumbY = trackY + (trackH - thumbH) * scroll / maxScroll;
+        ctx.fill(trackX, trackY, trackX + SCROLL_W, trackY + trackH, C_BORDER);
+        ctx.fill(trackX, thumbY, trackX + SCROLL_W, thumbY + thumbH, C_GOLD);
+    }
 
-        int iconH = 46;
-        ctx.fill(x + 1, y + 1, x + w - 1, y + iconH, C_BG);
-        drawItemScaled(ctx, stackOf(e.itemId()), x + w / 2, y + iconH / 2, 2.0f);
+    private void applyScrollFromMouse(int mouseY) {
+        if (maxScroll <= 0) { scroll = 0; return; }
+        int usable = Math.max(1, scrollTrackH - scrollThumbH);
+        float ratio = (float) (mouseY - scrollTrackY) / usable;
+        scroll = Math.max(0, Math.min(Math.round(ratio * maxScroll), maxScroll));
+    }
 
-        String name = truncate(FrenchItemNames.toDisplay(e.itemId()), w - 8);
-        ctx.drawCenteredTextWithShadow(textRenderer, name, x + w / 2, y + iconH + 5, C_WHITE);
-
-        if (buying) {
-            String trend = e.netFlow() >= 64 ? "§c▲" : (e.netFlow() <= -64 ? "§a▼" : "§8=");
-            ctx.drawCenteredTextWithShadow(textRenderer, trend, x + w / 2, y + iconH + 17, C_DIM);
+    /** Ligne du catalogue : icône à gauche, prix et bouton d'action à droite. */
+    private void renderRow(DrawContext ctx, int x, int y, int w, ShopEntry e, boolean hov, boolean buying) {
+        int accent = buying ? C_GOLD : C_GREEN;
+        ctx.fill(x, y, x + w, y + ROW_H, hov ? C_HOVER : C_PANEL);
+        if (hov) {
+            ctx.fill(x, y, x + w, y + 1, accent);
+            ctx.fill(x, y + ROW_H - 1, x + w, y + ROW_H, accent);
+            ctx.fill(x, y, x + 1, y + ROW_H, accent);
+            ctx.fill(x + w - 1, y, x + w, y + ROW_H, accent);
         } else {
-            int owned = sellable.getOrDefault(e.itemId(), 0);
-            ctx.drawCenteredTextWithShadow(textRenderer, "en stock : " + owned,
-                x + w / 2, y + iconH + 17, C_DIM);
+            ctx.fill(x, y, x + w, y + 1, C_BORDER);
+            ctx.fill(x, y + ROW_H - 1, x + w, y + ROW_H, C_BORDER);
         }
 
-        int stripY = y + CARD_H - 24;
-        ctx.fill(x + 1, stripY, x + w - 1, y + CARD_H - 1, buying ? C_STRIP : 0x152EAD6B);
-        ctx.fill(x + 1, stripY, x + w - 1, stripY + 1, C_BORDER);
+        ctx.fill(x + 1, y + 1, x + 41, y + ROW_H - 1, C_BG);
+        drawItemScaled(ctx, stackOf(e.itemId()), x + 21, y + ROW_H / 2, 2.0f);
+
+        int tx = x + 50;
+        ctx.drawText(textRenderer, truncate(FrenchItemNames.toDisplay(e.itemId()), w - 200), tx, y + 9, C_WHITE, false);
+        String sub = buying
+            ? (e.netFlow() >= 64 ? "§cPrix en hausse — très demandé"
+                                 : (e.netFlow() <= -64 ? "§aPrix en baisse — abondant" : "§8Prix stable"))
+            : "§8En stock : " + sellable.getOrDefault(e.itemId(), 0);
+        ctx.drawText(textRenderer, sub, tx, y + 22, C_DIM, false);
+
+        int btnW = 82, btnH = 22;
+        int btnX = x + w - btnW - 10;
+        int btnY = y + (ROW_H - btnH) / 2;
         int prix = buying ? e.buyPrice() : e.sellPrice();
-        ctx.drawCenteredTextWithShadow(textRenderer, prix + " ◆",
-            x + w / 2, stripY + 7, buying ? C_GOLD : C_GREEN);
+        String price = prix + " ◆";
+        ctx.drawText(textRenderer, price, btnX - textRenderer.getWidth(price) - 14,
+            y + (ROW_H - textRenderer.fontHeight) / 2, accent, false);
+        ctx.fill(btnX, btnY, btnX + btnW, btnY + btnH, hov ? accent : C_STRIP);
+        if (!hov) { ctx.fill(btnX, btnY, btnX + btnW, btnY + 1, C_BORDER); ctx.fill(btnX, btnY + btnH - 1, btnX + btnW, btnY + btnH, C_BORDER); }
+        ctx.drawCenteredTextWithShadow(textRenderer, buying ? "Acheter" : "Vendre",
+            btnX + btnW / 2, btnY + 7, hov ? C_BG : C_MID);
     }
 
     private void renderTooltip(DrawContext ctx, ShopEntry e, int mx, int my) {
@@ -397,7 +415,7 @@ public class ServerShopScreen extends Screen {
         ctx.getMatrices().push();
         ctx.getMatrices().translate(0, 0, 300);
 
-        int mw = 300, mh = 190;
+        int mw = MODAL_W, mh = MODAL_H;
         int ox = winX + (winW - mw) / 2;
         int oy = winY + (winH - mh) / 2;
         boolean buying = tab == Tab.ACHETER;
@@ -415,34 +433,19 @@ public class ServerShopScreen extends Screen {
         int unit = buying ? selected.buyPrice() : selected.sellPrice();
         ctx.drawText(textRenderer, unit + " ◆ / unité", ox + 52, oy + 54, C_MID, false);
 
-        int max = modalMax();
-        qty = Math.max(1, Math.min(qty, max));
+        qtyInput.setBounds(1, modalMax());
+        qtyInput.render(ctx, textRenderer, ox + 14, oy + 76, mw - 28, mx, my);
+        int qty = qtyInput.getValue();
 
-        int by = oy + 84;
-        drawButton(ctx, ox + 14, by, 24, "-", mx, my);
-        String q = String.valueOf(qty);
-        ctx.fill(ox + 42, by, ox + 102, by + 20, C_STRIP);
-        ctx.drawCenteredTextWithShadow(textRenderer, q, ox + 72, by + 6, C_WHITE);
-        drawButton(ctx, ox + 106, by, 24, "+", mx, my);
-        drawButton(ctx, ox + 134, by, 40, "max", mx, my);
-
-        ctx.drawText(textRenderer, "Total : §6" + (unit * qty) + " ◆", ox + 14, oy + 116, C_MID, false);
-        if (buying)
-            ctx.drawText(textRenderer, "§8Solde après : " + (balance - unit * qty) + " ◆", ox + 14, oy + 130, C_DIM, false);
-        else
-            ctx.drawText(textRenderer, "§8Solde après : " + (balance + unit * qty) + " ◆", ox + 14, oy + 130, C_DIM, false);
+        ctx.drawText(textRenderer, "Total : §6" + (unit * qty) + " ◆", ox + 14, oy + 128, C_MID, false);
+        int after = buying ? balance - unit * qty : balance + unit * qty;
+        ctx.drawText(textRenderer, "§8Solde après : " + after + " ◆", ox + 14, oy + 142, C_DIM, false);
 
         int cbY = oy + mh - 34;
         drawWideButton(ctx, ox + 14, cbY, 120, "Annuler", C_RED, mx, my);
         drawWideButton(ctx, ox + mw - 134, cbY, 120, buying ? "Acheter" : "Vendre", accent, mx, my);
 
         ctx.getMatrices().pop();
-    }
-
-    private void drawButton(DrawContext ctx, int x, int y, int w, String label, int mx, int my) {
-        boolean hov = mx >= x && mx < x + w && my >= y && my < y + 20;
-        ctx.fill(x, y, x + w, y + 20, hov ? C_HOVER : C_STRIP);
-        ctx.drawCenteredTextWithShadow(textRenderer, label, x + w / 2, y + 6, hov ? C_WHITE : C_MID);
     }
 
     private void drawWideButton(DrawContext ctx, int x, int y, int w, String label, int color, int mx, int my) {
@@ -482,10 +485,35 @@ public class ServerShopScreen extends Screen {
             return true;
         }
 
+        // Drag de la scrollbar — piste mémorisée au dernier rendu
+        if (maxScroll > 0 && x >= scrollTrackX - 2 && x <= scrollTrackX + SCROLL_W + 2
+                && y >= scrollTrackY && y <= scrollTrackY + scrollTrackH) {
+            draggingScroll = true;
+            applyScrollFromMouse(y - scrollThumbH / 2);
+            return true;
+        }
+
         super.mouseClicked(mx0, my0, btn);
 
-        if (hovered != null) { selected = hovered; qty = 1; return true; }
+        if (hovered != null) {
+            selected = hovered;
+            qtyInput.setBounds(1, modalMax());
+            qtyInput.setValue(1);
+            qtyInput.setFocused(false);
+        }
         return true;
+    }
+
+    @Override
+    public boolean mouseDragged(double mx0, double my0, int btn, double dx, double dy) {
+        if (draggingScroll) { applyScrollFromMouse((int) my0 - scrollThumbH / 2); return true; }
+        return super.mouseDragged(mx0, my0, btn, dx, dy);
+    }
+
+    @Override
+    public boolean mouseReleased(double mx0, double my0, int btn) {
+        draggingScroll = false;
+        return super.mouseReleased(mx0, my0, btn);
     }
 
     private void handleTabClick(int mx, int my) {
@@ -505,26 +533,20 @@ public class ServerShopScreen extends Screen {
     }
 
     private void handleModalClick(int mx, int my) {
-        int mw = 300, mh = 190;
+        int mw = MODAL_W, mh = MODAL_H;
         int ox = winX + (winW - mw) / 2;
         int oy = winY + (winH - mh) / 2;
 
         if (mx < ox || mx > ox + mw || my < oy || my > oy + mh) { selected = null; return; }
 
-        int max = modalMax();
-        int by = oy + 84;
-        if (my >= by && my < by + 20) {
-            if (mx >= ox + 14  && mx < ox + 38)  { qty = Math.max(1, qty - 1);   return; }
-            if (mx >= ox + 106 && mx < ox + 130) { qty = Math.min(max, qty + 1); return; }
-            if (mx >= ox + 134 && mx < ox + 174) { qty = max;                    return; }
-        }
+        if (qtyInput.mouseClicked(mx, my)) return;
 
         int cbY = oy + mh - 34;
         if (my >= cbY && my < cbY + 22) {
             if (mx >= ox + 14 && mx < ox + 134) { selected = null; return; }
             if (mx >= ox + mw - 134 && mx < ox + mw - 14) {
                 send(tab == Tab.ACHETER ? ShopNetworking.ACTION_BUY : ShopNetworking.ACTION_SELL,
-                     selected.itemId(), qty);
+                     selected.itemId(), qtyInput.getValue());
                 selected = null;
             }
         }
@@ -540,7 +562,14 @@ public class ServerShopScreen extends Screen {
     @Override
     public boolean keyPressed(int key, int scan, int mod) {
         if (key == 256 && selected != null) { selected = null; return true; }
+        if (selected != null && qtyInput.keyPressed(key)) return true;
         return super.keyPressed(key, scan, mod);
+    }
+
+    @Override
+    public boolean charTyped(char chr, int mod) {
+        if (selected != null && qtyInput.charTyped(chr)) return true;
+        return super.charTyped(chr, mod);
     }
 
     private void send(int action, String itemId, int quantity) {

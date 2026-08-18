@@ -446,7 +446,7 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
         for (int i = 0; i < count; i++)
             list.add(new ProductionScreen.ProdEntry(
                 buf.readString(), buf.readLong(), buf.readLong(),
-                buf.readInt(), buf.readInt(), buf.readBoolean()));
+                buf.readInt(), buf.readInt(), buf.readBoolean(), buf.readBoolean()));
         return list;
     }
 

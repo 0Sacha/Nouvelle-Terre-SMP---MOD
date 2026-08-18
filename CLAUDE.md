@@ -26,7 +26,8 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `1.3.3` (scroll de l'onglet Vendre du HDV)
+- Version actuelle : `1.4.0` (refonte UI — listes, saisie numérique, gestion du shop)
+  - 1.3.3 : scroll de l'onglet Vendre du HDV
   - 1.3.2 : migration des prix sans perte de progression
   - 1.3.1 : flèche retour hub, /shop, Parchemin offert au shop
   - 1.3.0 : Parchemin + Shop Serveur autonome + prix de référence
@@ -43,10 +44,30 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 - Après chaque op, événement async vers le bot pour sync DB Discord
 - `ECONOMY_SALARY` = notification only côté bot (ne pas appeler `db.addShards`, déjà fait via `ECONOMY_REWARD`)
 - `PLAYER_JOIN` inclut `balance` → bot fait `UPDATE joueurs SET shards=? WHERE uuid=?` pour resync au login
+- **Coupures (1.4.0, `ShardDenominations`)** : 6 items de monnaie — 1, 5, 10, 20, 50, 100 ◆.
+  Uniquement du rangement : retirer 5 000 ◆ en pièces de 1 remplissait 78 piles d'inventaire.
+  Une coupure de 100 vaut exactement cent pièces de 1, il n'y a **aucune** logique de change
+  au-delà de ça (pas d'ATM, pas de caisse — voir le stash pour cette refonte-là, abandonnée).
+  ⚠ `shard` **garde son identifiant d'origine** (valeur 1) : le renommer aurait fait disparaître
+  tous les Shards déjà en circulation chez les joueurs.
+  - `ShardItem` porte sa `valeur` ; le clic droit dépose `count × valeur`.
+  - `decomposer()` / `donner()` : rendu en grosses coupures d'abord.
+  - `retirer()` : prélève les **petites** coupures d'abord, pour ne pas casser un billet de 100
+    quand le joueur a l'appoint. Une coupure étant insécable, le prélèvement peut dépasser le
+    montant voulu — l'excédent est rendu en monnaie par l'appelant.
+  - `totalEnPoche()` : valeur réelle portée, toutes coupures confondues (le dépôt s'en sert).
 - **Monnaie physique (`ShardItem`)** : item custom `nouvelle-terre-bridge:shard` ("Shard ◆", 1 item = 1 ◆).
   Retrait : `/bank` → Compte → bouton "Retirer en Shards ◆" → modal montant (`ACTION_WITHDRAW_SHARDS`,
   `removeShards` + items donnés/drop). Dépôt : clic droit avec le stack en main → `depositShards`
   (tout le stack, log TRANSFER_IN, event ECONOMY_REWARD au bot, actionbar + NT_BALANCE).
+  **Dépôt groupé (1.4.0)** : `/bank` → Compte → "Déposer des Shards ◆" ouvre un modal avec le
+  montant (`ACTION_DEPOSIT_SHARDS`, pré-rempli au total en poche mais **ajustable** — on ne
+  dépose pas forcément tout). Le clic droit pile par pile devenait interminable dès qu'un joueur
+  avait un peu d'argent. Le serveur re-plafonne au contenu réel de l'inventaire : le client
+  borne la saisie mais ne fait pas autorité. `amount = 0` signifie « tout ».
+  Déposer un montant que les coupures en poche ne font pas exactement (7 ◆ avec un billet de 100)
+  prélève la coupure et **rend l'appoint** en petite monnaie.
+  Le retrait rend le montant en coupures optimales (`ShardDenominations.donner`).
   Texture custom or (assets/…/textures/item/shard.png), enregistré dans ItemGroups.INGREDIENTS.
 - **Robinets (argent créé par le serveur via `addShards`)** : récompenses de quêtes SHARDS,
   quête communautaire (◆ par contributeur), bonus quotidien de connexion (+25 ◆/jour réel),
@@ -74,6 +95,29 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 - Catalogue = items de `ShopThresholds` **dont la production a atteint le seuil**
   (`ServerShopActions.estDebloque()`, revalidé serveur — le client ne fait pas autorité).
 - `ProductionShopManager` ne crée plus d'annonces `$Serveur` ; `checkAll()` purge les anciennes.
+- **Notification de déblocage (1.4.0)** : `ProductionShopManager.notifierSiDebloque(itemId, avant, apres)`,
+  appelé par `ProductionTracker.add()`, envoie un toast vert (`NT_TOAST`) à tous les joueurs
+  connectés quand un item franchit son seuil.
+  Le franchissement se teste sur l'intervalle `]avant, apres]`, **pas** par égalité avec le
+  seuil : une récolte Fortune ou un craft de pile peut sauter la valeur exacte
+  (l'ancien `count == entry.seuil` de `checkItem` ratait ces cas).
+  Utilise `NouvelleTerreBridge.serveur` (référence statique posée sur SERVER_STARTED, en dehors
+  de `ServerEvents` qui se désactive entièrement si les événements bot sont coupés en config).
+
+### Anti-exploit de production (1.4.0)
+La production n'est censée compter que la matière qui **entre** réellement dans le monde.
+Deux boucles la contournaient, toutes deux fermées :
+- **Poser/casser** (`PlacedBlockTracker` + `BlockItemMixin`) : poser puis recasser le même bloc
+  512 fois débloquait l'item aussi sûrement que d'en produire 512. Tout bloc posé par un joueur
+  est marqué ; le casser consomme la marque et **ne compte pas**.
+  Table bornée à 200 000 positions en éviction LRU, non persistée : la marque est posée à la pose,
+  donc toujours plus récente que la casse qu'elle annule. Un redémarrage entre les deux fait
+  repasser le bloc pour naturel — marginal, et non exploitable sans redémarrer le serveur.
+- **Compacter/décompacter** (`CraftingResultSlotMixin`) : 9 diamants → 1 bloc → 9 diamants
+  créditait les deux compteurs à chaque tour. Le décompactage retire maintenant 1 du compteur
+  du bloc et ne crédite rien → cycle neutre. Le compactage reste compté.
+⚠ Ne pas « corriger » le compactage en le décomptant : fabriquer réellement des blocs est la
+façon prévue de les débloquer au Shop.
 - **Prix de référence (`ShopThresholds.PRIX_REFERENCE`)** : table explicite ◆/unité.
   Indispensable — la rareté vanilla ne reflète pas la valeur : diamant et lingot de
   netherite sont `Rarity.COMMON`, d'où le diamant à 1-2 ◆. La rareté n'est plus qu'un repli.
@@ -207,6 +251,11 @@ economy/
   LoanManager.java         → Singleton nouvelle-terre-credits.json, check pénalités toutes les 1200 ticks
   Quest.java               → POJO quête (id, type, target, quantity, rewardType/Shards/Item/Xp, tags, label, expiresAt)
   QuestGenerator.java      → Pool de ~70 templates (KILL/HARVEST/DELIVERY × FACILE/MOYEN/DIFFICILE/LÉGENDAIRE)
+                             **Cibles 100 % vanilla (1.4.0)** : les 2 templates cottonmod
+                             (`cottonmod:cotton`, `cottonmod:bandage`) ont été remplacés par
+                             `minecraft:clay_ball` et `minecraft:golden_carrot`. Une quête ne doit
+                             jamais dépendre d'un mod : un joueur sans le mod ne peut pas la finir.
+                             ⚠ N'introduire aucun identifiant hors `minecraft:` dans ce pool.
                              + generateDailies() (3 journalières : 1 par difficulté, expirent à minuit)
                              + generateCommunity() (pool dédié de 10 objectifs serveur)
                              + nextMidnightMs() (epoch du prochain minuit, heure locale serveur)
@@ -235,6 +284,12 @@ economy/
                              est laissée intacte → les surcharges admin survivent.
                              ⚠ Ne jamais conseiller /production → Reset pour changer les prix :
                              il efface aussi les compteurs de production des joueurs.
+                             **Gestion par item (1.4.0)** : `setPrix()` (marque l'entrée à
+                             VERSION_PRIX, sinon migrerPrix() écraserait la correction admin
+                             au prochain démarrage), `toggleDesactive()`, `supprimer()`.
+                             `Entry.desactive` = retiré du catalogue **sans** perdre le compteur
+                             de production ni le prix — distinct d'une suppression, l'item peut
+                             être remis en vente sans que les joueurs perdent leur progression.
   ServerShopPriceManager.java → Singleton server-shop-prices.json — prix dynamiques du shop
                              Flux net = unitsSold − unitsBought ; vendre fait monter, racheter baisser
                              API : getPrice(), getBuybackPrice(), recordSale(), recordPurchase(), reset()
@@ -243,7 +298,9 @@ economy/
                              sans effet sur tout item déjà échangé. Le flux net est préservé.
                              ⚠ Doit être chargé APRÈS ShopThresholds (ordre dans onInitialize).
   ServerShopActions.java   → Achat/revente auprès de $Serveur, marge de rachat 55 %
-                             estDebloque() : verrou de seuil de production, revalidé serveur
+                             estDebloque() : seuil de production atteint ET entrée non désactivée
+                             (`Entry.desactive`), revalidé serveur. Fait aussi autorité pour le
+                             statut « en vente » affiché par /production.
                              Ne rachète que les piles vierges (ni NBT, ni dégâts)
 
 item/
@@ -269,6 +326,15 @@ http/
   EventQueue.java          → Persistance JSON de la file d'attente
 
 mixin/
+  BlockItemMixin.java              → @Inject BlockItem.place RETURN → PlacedBlockTracker.marquer()
+                                     Marque tout bloc posé par un joueur (voir anti-exploit ci-dessous)
+  CraftingResultSlotMixin.java     → @Inject onTakeItem HEAD → compte le craft en production
+                                     @Shadow du champ `input` : à HEAD la grille contient encore les
+                                     ingrédients, seul moment où la provenance du résultat est lisible.
+                                     Décompactage (1 bloc → 4/9 unités) : ne crédite rien et **retire**
+                                     1 du compteur du bloc → le cycle compacter/décompacter est neutre.
+                                     Le compactage (9 → 1) reste compté : fabriquer des blocs est la
+                                     façon prévue de les débloquer au Shop.
   LivingEntityMixin.java           → Intercepte les morts joueurs → event PLAYER_DEATH
   InGameHudMixin.java              → @Inject InGameHud.render HEAD → reset debugHudActive = false
   DebugHudMixin.java               → @Inject DebugHud.render HEAD → set debugHudActive = true (détection F3)
@@ -283,12 +349,20 @@ network/
   BankNetworking.java      → Canaux : BANK_OPEN / BANK_ACTION / BANK_RESULT / BANK_REQUEST
                              Actions : LOAN_REQUEST(0) / LOAN_REPAY(1) / LOAN_FORGIVE(2) /
                                        TRANSFER(3) / RECURRING_CREATE(4) / RECURRING_CANCEL(5) /
-                                       LOAN_ACCEPT(6) / LOAN_DECLINE(7) / WITHDRAW_SHARDS(8)
+                                       LOAN_ACCEPT(6) / LOAN_DECLINE(7) / WITHDRAW_SHARDS(8) /
+                                       DEPOSIT_SHARDS(9)
+                             DEPOSIT_SHARDS (1.4.0) : `int amount` (0 = tout). Comptage et retrait
+                             dans `server.execute` — l'inventaire n'est pas thread-safe, et le
+                             montant réellement déposable en dépend.
   QuestNetworking.java     → Canaux : QUEST_OPEN (S→C, ouvre GUI) / QUEST_ACTION (C→S) / QUEST_RESULT (S→C)
                              Actions : ACTION_ACCEPT(0) / ACTION_CLAIM(1)
   RegistreNetworking.java  → Canal : REGISTRE_OPEN (S→C, ouvre RegistreScreen)
   ProductionNetworking.java → Canaux : PROD_OPEN (S→C, ouvre GUI) / PROD_ACTION (C→S) / PROD_RESULT (S→C)
                              Actions (op only, revalidées serveur) : RESET(0) / RECHECK(1) / RELOAD(2)
+                                       / SET_PRICE(3) / TOGGLE(4) / DELETE(5)   (1.4.0)
+                             PROD_ACTION porte toujours (int action, string itemId, int valeur),
+                             même quand l'action n'en a pas besoin : un format unique évite de
+                             faire dépendre la lecture du buffer de la valeur de l'action.
   ConflitNetworking.java   → Canaux : CONFLIT_OPEN (S→C, liste joueurs) / CONFLIT_ACTION (C→S, cible+raison)
                              / CONFLIT_RESULT (S→C, ok+msg → toast NotificationHud, ferme le screen si ok)
   HubNetworking.java       → Canaux : HUB_OPEN (S→C, ouvre HubScreen) / HUB_ACTION (C→S)
@@ -298,39 +372,68 @@ network/
                              Actions : ACTION_BUY(0) / ACTION_SELL(1) / ACTION_CLAIM_PARCHEMIN(2)
 
 client/                    ← @Environment(CLIENT) uniquement
+  NumberInput.java         → **Champ numérique partagé (1.4.0)** — prix, quantités, montants.
+                             Deux saisies complémentaires, aucune ne suffit seule : paliers
+                             (Min/-64/-32/-1/+1/+32/+64/Max) pour ajuster à la souris, et frappe
+                             clavier directe pour les gros montants. `keyPressed` traite
+                             explicitement GLFW KP_0..KP_9 (320-329) : selon la disposition
+                             clavier, `charTyped` ne remonte pas toujours le pavé numérique.
+                             Bornes via `setBounds(min,max)` (re-clampe la valeur), position
+                             mémorisée au rendu (`lastX/Y/W`) et relue par `mouseClicked`.
+                             Hauteur totale = `NumberInput.H` (42 px).
+                             ⚠ L'écran hôte doit relayer `keyPressed`/`charTyped`, sinon la
+                             frappe clavier ne marche pas (les paliers, eux, fonctionnent seuls).
   HdvScreen.java           → Screen marché : 4 onglets (Marché / Vendre / Mon Shop / Boutiques)
                              - **Marché** : annonces des joueurs uniquement
                              - **Vendre** : créer une annonce (variantes NBT distinctes)
                                Grille d'inventaire scrollable (1.3.3) — elle avait son propre
-                               rendu, hors de renderCardGrid, et était restée sans décalage :
+                               rendu, hors de la grille partagée, et était restée sans décalage :
                                le scissor masquait tout ce qui dépassait, donc inatteignable.
                                handleSellClick lit `hoveredSellItem` (positionné au rendu) au
                                lieu de recalculer les positions, qui se désynchronisaient.
-                             - **Mon Shop** : gérer ses annonces (bouton retirer)
-                             - **Boutiques** : tri par vendeur
-                             `renderCardGrid()` : grille scrollable partagée par les 4 onglets
-                             (scissor + scrollbar + molette bornée). Les onglets autres que Marché
-                             rendaient auparavant toutes les cartes sans clipping → débordement.
+                             - **Mon Shop** : gérer ses annonces (bouton Retirer)
+                             - **Boutiques** : tri par vendeur. `shopSellers()` exclut `$Serveur`
+                               et soi-même — la liste était gonflée par des entrées non cliquables.
+                             **Affichage en liste (1.4.0)** : `renderListRows()` remplace la grille
+                             de cards — icône à gauche, prix et bouton d'action à droite. Une ligne
+                             par article, donc le scroll se compte en articles et non en rangées.
+                             **Scrollbar (1.4.0)** : `renderScrollbar()` + `applyScrollFromMouse()`,
+                             pouce **or opaque** et **draggable** (mouseDragged/mouseReleased).
+                             L'ancienne barre était en `0x60FFFFFF` et non saisissable : la molette
+                             marchait, mais rien ne signalait qu'il restait du contenu — d'où le
+                             « scroll cassé » remonté par les joueurs.
                              Les boucles d'onglets itèrent sur `Tab.values()` : un tableau codé en
                              dur avait rendu un onglet ni dessiné ni cliquable.
                              Tooltip vanilla au survol (nom + enchantements) + ligne vendeur/prix
                              Chip solde haut-droit → BANK_REQUEST → ouvre BankScreen
                              Catégorie "Médical" : items cottonmod (coton, bandage, medkit, plantes...)
-  ServerShopScreen.java    → Shop Serveur autonome : onglets Acheter / Vendre, grille scrollable,
-                             modal quantité (−/+/max), tendance de prix (▲ ▼ =)
+  ServerShopScreen.java    → Shop Serveur autonome : onglets Acheter / Vendre, **liste** (1.4.0,
+                             même forme que le HDV), scrollbar or draggable, modal quantité avec
+                             `NumberInput`, tendance de prix en clair sur la ligne
                              Bandeau Parchemin épinglé en tête de l'onglet Acheter (offert) —
-                             la grille est décalée de BANNER_H pour ne pas passer dessous
+                             la liste est décalée de BANNER_H pour ne pas passer dessous
   HubScreen.java           → Hub du Parchemin, DA carte électronique, 8 puces cliquables
   BankScreen.java          → Screen banque : 5 onglets (Compte / Economie / Classement / Credits / Virements)
   QuetesScreen.java        → Screen quêtes : 2 onglets (Disponibles / Mes Quêtes), PW=420 PH=300,
                              cards avec barre de progression, boutons Accepter/Réclamer.
                              Objectifs affichés avec le nom localisé de la cible (targetName(type,target) :
                              ENTITY_TYPE pour KILL, ITEM sinon) — plus de labels poétiques côté UI
-  ProductionScreen.java    → Screen production : liste scrollable (icône + nom FR + barre + count/seuil + statut),
+  ProductionScreen.java    → Screen production : liste scrollable (icône + nom FR + compteur + barre + statut),
                              tri : en vente d'abord puis progression desc. Boutons admin (Recheck/Recharger/Reset)
                              rendus uniquement si isOp (revalidé serveur). Reset = double-clic ("Confirmer ?" 3 s)
                              → remise à zéro complète : compteurs + seuils dynamiques + annonces auto.
-                             PW_MAX=520 PH_MAX=420
+                             PW_MAX=620 PH_MAX=460 ROW_H=40
+                             **Recherche (1.4.0)** : champ en tête, filtre sur le nom FR ou l'identifiant.
+                             Toutes les bornes de scroll lisent `filtered()`, pas `entries` — sinon
+                             le scroll resterait calé sur la liste complète pendant un filtrage.
+                             **Gestion du shop (1.4.0, op only)** : clic sur une ligne → modal avec
+                             prix (`NumberInput`), Retirer/Remettre en vente, Supprimer (double-clic).
+                             Les lignes mémorisent leur index dans `rowBtnBounds` au rendu ; le
+                             recalculer au clic se désynchroniserait du scroll et du filtre.
+                             ⚠ Le statut « en vente » vient désormais de `ServerShopActions.estDebloque()`.
+                             Il lisait `MarketManager.hasAutoListing()`, mécanisme abandonné en 1.3.0
+                             (les annonces `$Serveur` sont purgées et jamais recréées) : tous les items
+                             s'affichaient donc comme non mis en vente.
   ConflitScreen.java       → Screen conflit RP : liste joueurs en ligne (clic = sélection) + champ raison
                              + bouton rouge "Déclarer le conflit". PW_MAX=340 PH_MAX=320
   RegistreScreen.java      → Screen registre personnages : liste scrollable, PW_MAX=400 PH_MAX=300
@@ -443,9 +546,13 @@ REGISTRE_OPEN : int count → (string nomRp, string pseudoMc, bool enLigne) × c
 ### Production
 ```
 PROD_OPEN  : bool isOp | entries[]
-PROD_ACTION: int action (RESET 0 / RECHECK 1 / RELOAD 2 — op only)
+PROD_ACTION: int action | string itemId | int valeur
+             (RESET 0 / RECHECK 1 / RELOAD 2 / SET_PRICE 3 / TOGGLE 4 / DELETE 5 — op only)
+             itemId = "" et valeur = 0 pour les actions globales
 PROD_RESULT: bool ok | string msg | bool isOp | entries[]
-entries[]  : int count → (string itemId, long count, long seuil, int prix, int quantite, bool enVente) × count
+entries[]  : int count → (string itemId, long count, long seuil, int prix, int quantite,
+                          bool enVente, bool desactive) × count
+             enVente = ServerShopActions.estDebloque() (seuil atteint ET non désactivé)
 ```
 
 ### Conflit
@@ -474,18 +581,36 @@ CONFLIT_RESULT: bool ok | string msg
 
 ## GUI HDV — décisions techniques
 
+- **Thread des actions HDV (corrigé en 1.4.0)** — le récepteur `HDV_ACTION` doit lire le
+  `PacketByteBuf` sur le thread réseau (il est libéré au retour du callback) puis exécuter
+  **toute la logique dans `server.execute(...)`**.
+  Il exécutait `MarketActions.buy/sellByItemId/withdraw` directement sur le thread netty, donc
+  `insertStack()` / `decrement()` touchaient l'inventaire hors du thread serveur, en concurrence
+  avec la synchronisation faite au tick : le serveur avait bien l'item enchanté, le client
+  recevait une pile vierge — d'où « les items enchantés perdent leur enchantement à l'achat ».
+  Le NBT lui-même n'était pas en cause (SNBT → JSON → SNBT vérifié intact).
+  Les récepteurs Shop et Production suivaient déjà ce schéma ; HDV était le seul écart.
 - Screen Fabric pur — pas de `ScreenHandler`, pas de slots vanilla
 - Items rendus en 2× (32×32 px) via `drawItemScaled()` — transform matricielle sur `ctx.getMatrices()`
 - La vente lit l'inventaire côté client (`client.player.getInventory().main`) — le serveur revalide
 - Sidebar catégories : icône item Minecraft + compteur d'annonces par catégorie (`CAT_ICONS` map)
 - Tri : enum `SortMode` (PRICE_ASC / PRICE_DESC / NAME) cyclé par le bouton "⇅"
-- Scrollbar visuelle 4 px — thumb proportionnel au ratio visRows/totalRows
+- **Scrollbar (1.4.0)** : 6 px, piste `C_BORDER` + pouce **or opaque**, saisissable à la souris.
+  Elle était en `0x60FFFFFF` et non draggable : la molette fonctionnait, mais rien n'indiquait
+  qu'il restait du contenu — les joueurs l'ont signalé comme un « scroll cassé ».
+  La piste est mémorisée au rendu (`scrollTrackX/Y/H`, `scrollThumbH`) et relue par
+  `mouseClicked`/`mouseDragged`, comme partout ailleurs dans le mod.
+- **Liste plutôt que grille (1.4.0)** : `renderListRows()` — une ligne par article, icône à
+  gauche, prix et bouton d'action à droite. Le scroll se compte donc en articles, pas en rangées.
 - Toast bottom-right avec accent coloré sur la bordure gauche (vert succès, rouge erreur)
 - **Chip solde** haut-droit : cliquable → envoie `BANK_REQUEST` → ouvre `BankScreen`
-- **Modal achat z-order** : `renderBuyModal()` dans `ctx.getMatrices().push() / translate(0,0,300) / pop()` — sinon texte des cards passe devant (batching Minecraft)
-- **Shop Serveur (🏛️)** : utilise `serverShopListings()` — filtre les annonces où seller = "$Serveur"
-  Même logique que Market tab, affichage identique (cards + achat). Prix dynamiques mis à jour via `ServerShopPriceManager.recordSale()`
-  appelé dans `MarketActions.buy()` quand isAuto = true. Voir aussi `filteredListings()` qui exclut maintenant $Serveur.
+- **Modal achat z-order** : `renderBuyModal()` dans `ctx.getMatrices().push() / translate(0,0,300) / pop()` — sinon le texte des lignes passe devant (batching Minecraft)
+- **Prix dynamiques du Shop Serveur** : `ServerShopPriceManager.recordSale()` appelé dans
+  `MarketActions.buy()` quand isAuto = true. `filteredListings()` exclut `$Serveur` — le Shop
+  Serveur est un écran séparé depuis la 1.3.0.
+- **Saisie numérique** : tous les champs prix/quantité passent par `NumberInput` (voir plus haut).
+  L'écran hôte doit relayer `keyPressed`/`charTyped` au champ concerné, sinon seuls les paliers
+  souris répondent.
 
 ## GUI Bank — décisions techniques
 

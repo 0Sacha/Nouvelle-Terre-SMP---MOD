@@ -71,7 +71,7 @@ public class ServerShopPriceManager {
      * sur tout item déjà échangé au shop. Le flux net (vendu/racheté), lui, est
      * l'état réel du marché et n'est jamais réinitialisé.
      */
-    private static void resyncBasePrices() {
+    public static void resyncBasePrices() {
         int corriges = 0;
         for (Map.Entry<String, PriceEntry> e : prices.entrySet()) {
             ShopThresholds.Entry seuil = ShopThresholds.get(e.getKey());

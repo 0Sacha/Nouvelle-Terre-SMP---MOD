@@ -113,7 +113,7 @@ public class QuestGenerator {
         h("minecraft:raw_copper","Mineur de Cuivre",      24,  6f, "MOYEN",   "SHARDS", 55,  9f, null, 0, 60, 0, 5, 1);
         h("minecraft:nether_wart","Herboriste du Nether", 32,  8f, "MOYEN",   "SHARDS", 65, 10f, null, 0, 75, 0, 5, 1);
         h("minecraft:glowstone_dust","Recolteur de Lumiere",24,6f, "MOYEN",   "SHARDS", 60, 10f, null, 0, 70, 0, 5, 1);
-        h("cottonmod:cotton",    "Recolteur de Coton",    32,  8f, "MOYEN",   "SHARDS", 60, 10f, null, 0, 65, 0, 5, 1);
+        h("minecraft:clay_ball", "Argilier",              32,  8f, "MOYEN",   "SHARDS", 60, 10f, null, 0, 65, 0, 5, 1);
 
         // ── DELIVERY — extension ────────────────────────────────────────────
         d("minecraft:baked_potato","Cantine du Village",  24,  "FACILE",  "SHARDS", 40, null, 0,  30,  0,  0, 1);
@@ -126,7 +126,7 @@ public class QuestGenerator {
         d("minecraft:hay_block", "Fourrage pour Betail",  16,  "MOYEN",   "SHARDS", 70, null, 0,  75,  0,  5, 1);
         d("minecraft:lantern",   "Lanternier",            16,  "DIFFICILE","SHARDS",120, null, 0, 120,  0, 15, 1);
         d("minecraft:ender_pearl","Chasseur de Perles",    8,  "DIFFICILE","SHARDS",130, null, 0, 130,  0, 15, 1);
-        d("cottonmod:bandage",   "Fournitures Medicales", 12,  "MOYEN",   "SHARDS", 85, null, 0,  90,  0,  5, 1);
+        d("minecraft:golden_carrot","Ravitaillement de Soin",12, "MOYEN", "SHARDS", 85, null, 0,  90,  0,  5, 1);
     }
 
     // ── Quêtes communautaires (pool dédié) ────────────────────────────────────

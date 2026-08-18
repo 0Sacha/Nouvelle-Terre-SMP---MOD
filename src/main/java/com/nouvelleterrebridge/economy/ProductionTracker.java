@@ -46,9 +46,27 @@ public class ProductionTracker {
 
     public static synchronized void add(String itemId, long amount) {
         if (amount <= 0) return;
+        long avant  = counts.getOrDefault(itemId, 0L);
         long newVal = counts.merge(itemId, amount, Long::sum);
         save();
         ProductionShopManager.checkItem(itemId, newVal);
+        ProductionShopManager.notifierSiDebloque(itemId, avant, newVal);
+    }
+
+    /**
+     * Retire des unités du compteur, sans jamais passer sous zéro.
+     *
+     * Sert à annuler une production qui n'en était pas une : décompacter un bloc
+     * rend les ingrédients d'origine, la matière n'a fait que changer de forme.
+     */
+    public static synchronized void remove(String itemId, long amount) {
+        if (amount <= 0) return;
+        Long actuel = counts.get(itemId);
+        if (actuel == null) return;
+        long nouveau = Math.max(0L, actuel - amount);
+        if (nouveau == 0L) counts.remove(itemId);
+        else               counts.put(itemId, nouveau);
+        save();
     }
 
     public static synchronized long get(String itemId) {

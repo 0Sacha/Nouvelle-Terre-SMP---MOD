@@ -19,6 +19,7 @@ public final class BankNetworking {
     public static final int ACTION_LOAN_ACCEPT       = 6;  // emprunteur accepte → crédit créé + fonds transférés
     public static final int ACTION_LOAN_DECLINE      = 7;  // emprunteur refuse OU prêteur annule sa proposition
     public static final int ACTION_WITHDRAW_SHARDS   = 8;  // retire N ◆ du compte en items Shard physiques
+    public static final int ACTION_DEPOSIT_SHARDS    = 9;  // dépose N ◆ de Shards physiques (0 = tout)
 
     private BankNetworking() {}
 }

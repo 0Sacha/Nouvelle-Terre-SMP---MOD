@@ -1,5 +1,6 @@
 package com.nouvelleterrebridge.client;
 
+import com.nouvelleterrebridge.economy.ShardDenominations;
 import com.nouvelleterrebridge.network.BankNetworking;
 import io.netty.buffer.Unpooled;
 import net.fabricmc.api.EnvType;
@@ -8,6 +9,7 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
+import net.minecraft.item.ItemStack;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.text.Text;
 
@@ -128,8 +130,16 @@ public class BankScreen extends Screen {
     // ── Modal — retrait en Shards physiques ────────────────────────────────────
 
     private boolean wModalOpen = false;
-    private TextFieldWidget withdrawAmountField;
+    private final NumberInput withdrawInput = new NumberInput(0, 0, 0);
+
+    // ── Modal — dépôt de Shards physiques ──────────────────────────────────────
+
+    private boolean dModalOpen = false;
+    private final NumberInput depositInput = new NumberInput(0, 0, 0);
+    private int dModalX, dModalY, dModalW, dModalH;
+    private int dConfirmBtnY = -1;
     private int wBtnX = -1, wBtnY = -1, wBtnW;
+    private int dBtnX = -1, dBtnY = -1, dBtnW;
     private int wModalX, wModalY, wModalW, wModalH;
     private int wConfirmBtnY = -1;
 
@@ -176,10 +186,7 @@ public class BankScreen extends Screen {
         modalAmountField.setPlaceholder(Text.literal("Montant..."));
         addSelectableChild(modalAmountField);
 
-        withdrawAmountField = new TextFieldWidget(textRenderer, 0, -200, 160, 18, Text.empty());
-        withdrawAmountField.setMaxLength(8);
-        withdrawAmountField.setPlaceholder(Text.literal("Montant..."));
-        addSelectableChild(withdrawAmountField);
+        withdrawInput.setPlaceholder("Montant...");
 
         trfAmountField = new TextFieldWidget(textRenderer, 0, -200, 100, 18, Text.empty());
         trfAmountField.setMaxLength(8);
@@ -230,6 +237,7 @@ public class BankScreen extends Screen {
         this.screenOpenTime     = System.currentTimeMillis();
         modalOpen        = false;
         wModalOpen       = false;
+        dModalOpen       = false;
         borrowerDropOpen = false;
         txScroll         = 0;
         trfDropOpen      = false;
@@ -288,12 +296,12 @@ public class BankScreen extends Screen {
         if (wModalOpen) {
             ctx.fill(winX, winY + TOP_H, winX + winW, winY + winH, 0x88000000);
             renderWithdrawModal(ctx, mx, my);
-            withdrawAmountField.setX(wModalX + PAD);
-            withdrawAmountField.setY(wModalY + 48);
-            withdrawAmountField.setWidth(wModalW - PAD * 2);
-            withdrawAmountField.render(ctx, mx, my, delta);
-        } else if (withdrawAmountField != null) {
-            withdrawAmountField.setY(-200);
+        }
+
+        // Modal dépôt de Shards
+        if (dModalOpen) {
+            ctx.fill(winX, winY + TOP_H, winX + winW, winY + winH, 0x88000000);
+            renderDepositModal(ctx, mx, my);
         }
 
         // Dropdowns virements — APRÈS le tab mais AVANT super.render()
@@ -387,6 +395,17 @@ public class BankScreen extends Screen {
         ctx.fill(wBtnX, wBtnY, wBtnX + wBtnW, wBtnY + 22, wHov ? C_HOVER : C_SURFACE);
         ctx.fill(wBtnX, wBtnY, wBtnX + wBtnW, wBtnY + 1, C_GOLD);
         ctx.drawText(textRenderer, wLbl, wBtnX + 8, wBtnY + 7, C_GOLD, false);
+
+        // Bouton "Déposer ◆" — dépose le montant choisi d'un coup, au lieu de devoir
+        // faire un clic droit sur chaque pile
+        String dLbl = "Déposer des Shards ◆";
+        dBtnW = textRenderer.getWidth(dLbl) + 16;
+        dBtnX = wBtnX - dBtnW - 6;
+        dBtnY = wBtnY;
+        boolean dHov = mx >= dBtnX && mx < dBtnX + dBtnW && my >= dBtnY && my < dBtnY + 22;
+        ctx.fill(dBtnX, dBtnY, dBtnX + dBtnW, dBtnY + 22, dHov ? C_HOVER : C_SURFACE);
+        ctx.fill(dBtnX, dBtnY, dBtnX + dBtnW, dBtnY + 1, C_GREEN);
+        ctx.drawText(textRenderer, dLbl, dBtnX + 8, dBtnY + 7, C_GREEN, false);
 
         cy += headerH + GAP;
 
@@ -759,7 +778,7 @@ public class BankScreen extends Screen {
     // ── Modal retrait en Shards physiques ───────────────────────────────────────
 
     private void renderWithdrawModal(DrawContext ctx, int mx, int my) {
-        int mw = 300, mh = 148;
+        int mw = 300, mh = 186;
         int mx0 = winX + (winW - mw) / 2;
         int my0 = winY + (winH - mh) / 2;
         wModalX = mx0; wModalY = my0; wModalW = mw; wModalH = mh;
@@ -774,15 +793,14 @@ public class BankScreen extends Screen {
         ctx.fill(mx0, my0 + 28, mx0 + mw, my0 + 29, C_BORDER);
 
         ctx.drawText(textRenderer, "Montant a retirer", mx0 + PAD, my0 + 36, C_DIM, false);
-        // Champ positionné par render() à my0 + 48
+        withdrawInput.setBounds(0, Math.max(0, balance));
+        withdrawInput.render(ctx, textRenderer, mx0 + PAD, my0 + 50, mw - PAD * 2, mx, my);
 
-        int fy = my0 + 74;
-        ctx.drawText(textRenderer, "1 Shard ◆ = 1 shard du compte", mx0 + PAD, fy, C_DIM, false);
-        fy += textRenderer.fontHeight + 3;
+        int fy = my0 + 50 + NumberInput.H + 8;
         ctx.drawText(textRenderer, "Clic droit sur l'item pour le redeposer", mx0 + PAD, fy, C_DIM, false);
         fy += textRenderer.fontHeight + 8;
 
-        int amount = parseWithdrawAmount();
+        int amount = withdrawInput.getValue();
         boolean canWithdraw = amount > 0 && amount <= balance;
         boolean hov = canWithdraw && mx >= mx0 + PAD && mx < mx0 + mw - PAD && my >= fy && my < fy + 26;
         ctx.fill(mx0 + PAD, fy, mx0 + mw - PAD, fy + 26, canWithdraw ? (hov ? 0xFF1A8050 : C_GREEN) : C_DARK);
@@ -791,15 +809,62 @@ public class BankScreen extends Screen {
         wConfirmBtnY = fy;
     }
 
-    private int parseWithdrawAmount() {
-        if (withdrawAmountField == null) return 0;
-        try { return Math.max(0, Integer.parseInt(withdrawAmountField.getText().trim())); }
-        catch (NumberFormatException e) { return 0; }
-    }
-
     private void sendWithdrawShards(int amount) {
         PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
         buf.writeInt(BankNetworking.ACTION_WITHDRAW_SHARDS);
+        buf.writeInt(amount);
+        ClientPlayNetworking.send(BankNetworking.BANK_ACTION, buf);
+    }
+
+    // ── Modal dépôt de Shards physiques ─────────────────────────────────────────
+
+    /**
+     * Valeur de la monnaie physique portée, toutes coupures confondues.
+     * Le serveur revalide le montant : ce compte ne sert qu'à borner la saisie.
+     */
+    private int shardsEnPoche() {
+        if (client == null || client.player == null) return 0;
+        int total = 0;
+        for (ItemStack s : client.player.getInventory().main)
+            total += ShardDenominations.valeur(s.getItem()) * s.getCount();
+        return total;
+    }
+
+    private void renderDepositModal(DrawContext ctx, int mx, int my) {
+        int mw = 300, mh = 176;
+        int mx0 = winX + (winW - mw) / 2;
+        int my0 = winY + (winH - mh) / 2;
+        dModalX = mx0; dModalY = my0; dModalW = mw; dModalH = mh;
+
+        ctx.fill(mx0, my0, mx0 + mw, my0 + mh, C_SURFACE);
+        ctx.fill(mx0, my0, mx0 + mw, my0 + 1, C_GREEN);
+        ctx.fill(mx0, my0 + mh - 1, mx0 + mw, my0 + mh, C_BORDER);
+        ctx.fill(mx0, my0, mx0 + 1, my0 + mh, C_GREEN);
+        ctx.fill(mx0 + mw - 1, my0, mx0 + mw, my0 + mh, C_BORDER);
+
+        ctx.drawText(textRenderer, "DEPOSER DES SHARDS ◆", mx0 + PAD, my0 + 10, C_GREEN, false);
+        ctx.fill(mx0, my0 + 28, mx0 + mw, my0 + 29, C_BORDER);
+
+        int enPoche = shardsEnPoche();
+        depositInput.setBounds(0, enPoche);
+        ctx.drawText(textRenderer, "Dans votre inventaire : §f" + fmt(enPoche) + " ◆",
+            mx0 + PAD, my0 + 36, C_DIM, false);
+        depositInput.render(ctx, textRenderer, mx0 + PAD, my0 + 50, mw - PAD * 2, mx, my);
+
+        int fy = my0 + 50 + NumberInput.H + 10;
+        int amount = depositInput.getValue();
+        boolean canDeposit = amount > 0 && amount <= enPoche;
+        boolean hov = canDeposit && mx >= mx0 + PAD && mx < mx0 + mw - PAD && my >= fy && my < fy + 26;
+        ctx.fill(mx0 + PAD, fy, mx0 + mw - PAD, fy + 26, canDeposit ? (hov ? 0xFF1A8050 : C_GREEN) : C_DARK);
+        String lbl = enPoche == 0 ? "Aucun Shard en poche"
+                                  : "Deposer" + (amount > 0 ? " " + fmt(amount) + " ◆" : "");
+        ctx.drawCenteredTextWithShadow(textRenderer, lbl, mx0 + mw / 2, fy + 9, canDeposit ? C_WHITE : C_DIM);
+        dConfirmBtnY = fy;
+    }
+
+    private void sendDepositShards(int amount) {
+        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        buf.writeInt(BankNetworking.ACTION_DEPOSIT_SHARDS);
         buf.writeInt(amount);
         ClientPlayNetworking.send(BankNetworking.BANK_ACTION, buf);
     }
@@ -881,11 +946,29 @@ public class BankScreen extends Screen {
                 wModalOpen = false;
                 return true;
             }
-            if (super.mouseClicked(mx0, my0, btn)) return true; // focus du champ montant
+            if (withdrawInput.mouseClicked(x, y)) return true;
             if (y >= wConfirmBtnY && y < wConfirmBtnY + 26
                     && x >= wModalX + PAD && x < wModalX + wModalW - PAD) {
-                int amount = parseWithdrawAmount();
+                int amount = withdrawInput.getValue();
                 if (amount > 0 && amount <= balance) sendWithdrawShards(amount);
+            }
+            return true;
+        }
+
+        // ── Modal dépôt de Shards ──
+        if (dModalOpen) {
+            if (x < dModalX || x > dModalX + dModalW || y < dModalY || y > dModalY + dModalH) {
+                dModalOpen = false;
+                return true;
+            }
+            if (depositInput.mouseClicked(x, y)) return true;
+            if (y >= dConfirmBtnY && y < dConfirmBtnY + 26
+                    && x >= dModalX + PAD && x < dModalX + dModalW - PAD) {
+                int amount = depositInput.getValue();
+                if (amount > 0 && amount <= shardsEnPoche()) {
+                    sendDepositShards(amount);
+                    dModalOpen = false;
+                }
             }
             return true;
         }
@@ -931,7 +1014,20 @@ public class BankScreen extends Screen {
         if (activeTab == Tab.ACCOUNT && wBtnX >= 0
                 && x >= wBtnX && x < wBtnX + wBtnW && y >= wBtnY && y < wBtnY + 22) {
             wModalOpen = true;
-            if (withdrawAmountField != null) withdrawAmountField.setText("");
+            withdrawInput.setBounds(0, Math.max(0, balance));
+            withdrawInput.setValue(0);
+            withdrawInput.setFocused(false);
+            return true;
+        }
+
+        // ── Onglet Compte : bouton "Déposer des Shards" ──
+        if (activeTab == Tab.ACCOUNT && dBtnX >= 0
+                && x >= dBtnX && x < dBtnX + dBtnW && y >= dBtnY && y < dBtnY + 22) {
+            int enPoche = shardsEnPoche();
+            dModalOpen = true;
+            depositInput.setBounds(0, enPoche);
+            depositInput.setValue(enPoche);   // tout par défaut, ajustable
+            depositInput.setFocused(false);
             return true;
         }
 
@@ -985,6 +1081,26 @@ public class BankScreen extends Screen {
             return true;
         }
         return super.mouseScrolled(mx, my, amount);
+    }
+
+    @Override
+    public boolean keyPressed(int key, int scan, int mod) {
+        if (wModalOpen) {
+            if (key == 256) { wModalOpen = false; return true; }
+            if (withdrawInput.keyPressed(key)) return true;
+        }
+        if (dModalOpen) {
+            if (key == 256) { dModalOpen = false; return true; }
+            if (depositInput.keyPressed(key)) return true;
+        }
+        return super.keyPressed(key, scan, mod);
+    }
+
+    @Override
+    public boolean charTyped(char chr, int mod) {
+        if (wModalOpen && withdrawInput.charTyped(chr)) return true;
+        if (dModalOpen && depositInput.charTyped(chr)) return true;
+        return super.charTyped(chr, mod);
     }
 
     @Override public boolean shouldPause() { return false; }
