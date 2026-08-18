@@ -136,15 +136,12 @@ public class HdvScreen extends Screen {
 
     private TextFieldWidget searchField;
     private ListingData hoveredCard = null;
-    private int hoveredCardX = 0;
-    private int hoveredCardY = 0;
-    private int hoveredCardW = 0;
     private int gridMaxScroll = 0;
     private int tabsStartX = 0;
     private ListingData buyingListing = null;
 
     // Scrollbar générique (piste + pouce), réarmée par la liste active à chaque frame
-    private int scrollTrackX, scrollTrackY, scrollTrackH, scrollThumbH, scrollVisUnits;
+    private int scrollTrackX, scrollTrackY, scrollTrackH, scrollThumbH;
     private boolean draggingScroll = false;
 
     private List<SellItem> sellInv = new ArrayList<>();
@@ -452,7 +449,7 @@ public class HdvScreen extends Screen {
     /**
      * Liste de lignes scrollable partagée par tous les onglets (Marché, Mon Shop,
      * détail Boutiques). Clippe le contenu, dessine la scrollbar et mémorise la
-     * ligne survolée (`hoveredCard` / `hoveredCardX/Y/W`) pour la détection de clic.
+     * ligne survolée (`hoveredCard`) pour la détection de clic.
      */
     private void renderListRows(DrawContext ctx, int mx, int my, List<ListingData> items,
                                 int gx, int gy, int gw, int gh, boolean ownRows) {
@@ -470,7 +467,7 @@ public class HdvScreen extends Screen {
             if (y > gy + gh) break;
             boolean hov = mx >= gx && mx < gx + gw && my >= y && my < y + ROW_H
                        && my >= gy && my < gy + gh;
-            if (hov) { hoveredCard = items.get(i); hoveredCardX = gx; hoveredCardY = y; hoveredCardW = gw; }
+            if (hov) hoveredCard = items.get(i);
             if (ownRows) renderOwnListRow(ctx, gx, y, gw, items.get(i), hov);
             else         renderListRow(ctx, gx, y, gw, items.get(i), hov);
         }
@@ -482,7 +479,7 @@ public class HdvScreen extends Screen {
      * scrollTrackX/Y/H + scrollThumbH pour le drag (mouseClicked/mouseDragged).
      */
     private void renderScrollbar(DrawContext ctx, int trackX, int trackY, int trackH, int visUnits, int maxScrollUnits) {
-        scrollTrackX = trackX; scrollTrackY = trackY; scrollTrackH = trackH; scrollVisUnits = visUnits;
+        scrollTrackX = trackX; scrollTrackY = trackY; scrollTrackH = trackH;
         if (maxScrollUnits <= 0) { scrollThumbH = 0; return; }
         int totalUnits = visUnits + maxScrollUnits;
         int thumbH = Math.max(18, trackH * visUnits / totalUnits);

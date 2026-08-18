@@ -33,8 +33,4 @@ public class MarketListing {
         this.timestamp = System.currentTimeMillis();
         this.itemNBT = itemNBT;
     }
-
-    public int getTotal() {
-        return quantity * pricePerUnit;
-    }
 }

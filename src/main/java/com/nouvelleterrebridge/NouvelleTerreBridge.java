@@ -167,7 +167,7 @@ public class NouvelleTerreBridge implements ModInitializer {
         ShopThresholds.load();
         ServerShopPriceManager.load();
         ProductionTracker.load();
-        ProductionShopManager.checkAll();
+        ProductionShopManager.purgerAnnoncesLegacy();
         PlayerLevelManager.load();
         QuestManager.load();
         FirstJoinTracker.getInstance().load();
@@ -249,37 +249,23 @@ public class NouvelleTerreBridge implements ModInitializer {
             int type = buf.readInt();
             final String sItemId;
             final String sNbt;
-            final String sTarget;
-            final int    sQty, sPrice, sListingId, sAmount, sInterval, sId;
+            final int    sQty, sPrice, sListingId;
 
             switch (type) {
                 case HdvNetworking.ACTION_BUY -> {
                     sItemId = buf.readString(); sQty = buf.readInt(); sNbt = buf.readString();
-                    sPrice = 0; sListingId = 0; sTarget = ""; sAmount = 0; sInterval = 0; sId = 0;
+                    sPrice = 0; sListingId = 0;
                 }
                 case HdvNetworking.ACTION_SELL -> {
                     sItemId = buf.readString(); sQty = buf.readInt(); sPrice = buf.readInt(); sNbt = buf.readString();
-                    sListingId = 0; sTarget = ""; sAmount = 0; sInterval = 0; sId = 0;
+                    sListingId = 0;
                 }
                 case HdvNetworking.ACTION_WITHDRAW -> {
                     sListingId = buf.readInt();
-                    sItemId = ""; sNbt = ""; sQty = 0; sPrice = 0; sTarget = ""; sAmount = 0; sInterval = 0; sId = 0;
-                }
-                case HdvNetworking.ACTION_TRANSFER -> {
-                    sTarget = buf.readString(); sAmount = buf.readInt();
-                    sItemId = ""; sNbt = ""; sQty = 0; sPrice = 0; sListingId = 0; sInterval = 0; sId = 0;
-                }
-                case HdvNetworking.ACTION_RECURRING_CREATE -> {
-                    sTarget = buf.readString(); sAmount = buf.readInt(); sInterval = buf.readInt();
-                    sItemId = ""; sNbt = ""; sQty = 0; sPrice = 0; sListingId = 0; sId = 0;
-                }
-                case HdvNetworking.ACTION_RECURRING_CANCEL -> {
-                    sId = buf.readInt();
-                    sItemId = ""; sNbt = ""; sQty = 0; sPrice = 0; sListingId = 0; sTarget = ""; sAmount = 0; sInterval = 0;
+                    sItemId = ""; sNbt = ""; sQty = 0; sPrice = 0;
                 }
                 default -> {
                     sItemId = ""; sNbt = ""; sQty = 0; sPrice = 0; sListingId = 0;
-                    sTarget = ""; sAmount = 0; sInterval = 0; sId = 0;
                 }
             }
 
@@ -296,38 +282,6 @@ public class NouvelleTerreBridge implements ModInitializer {
                         result = err != null ? err : "§a✅ Annonce publiée avec succès !";
                     }
                     case HdvNetworking.ACTION_WITHDRAW -> result = MarketActions.withdraw(player, sListingId);
-                    case HdvNetworking.ACTION_TRANSFER -> {
-                        String sender = player.getName().getString();
-                        if (sender.equalsIgnoreCase(sTarget)) {
-                            result = "§cVous ne pouvez pas vous envoyer des fonds.";
-                        } else if (LocalEconomy.getInstance().transfer(sender, sTarget, sAmount)) {
-                            result = "§a✅ " + sAmount + " ◆ envoyés à §f" + sTarget + "§a.";
-                            ServerPlayerEntity t = server.getPlayerManager().getPlayer(sTarget);
-                            if (t != null) t.sendMessage(Text.literal(
-                                "§a[Nouvelle Terre] §f" + sender + " §avous a envoyé §f" + sAmount + " ◆§a !"));
-                        } else {
-                            result = "§cSolde insuffisant ou joueur inconnu.";
-                        }
-                    }
-                    case HdvNetworking.ACTION_RECURRING_CREATE -> {
-                        String from = player.getName().getString();
-                        if (from.equalsIgnoreCase(sTarget)) {
-                            result = "§cVous ne pouvez pas vous faire de virement récurrent.";
-                        } else if (!LocalEconomy.getInstance().estConnu(sTarget)) {
-                            result = "§cJoueur inconnu.";
-                        } else if (sAmount <= 0) {
-                            result = "§cMontant invalide.";
-                        } else if (sInterval < 1200) {
-                            result = "§cIntervalle minimum : 1 minute.";
-                        } else {
-                            RecurringTransferManager.getInstance().add(from, sTarget, sAmount, sInterval);
-                            result = "§a✅ Virement récurrent créé vers §f" + sTarget + "§a !";
-                        }
-                    }
-                    case HdvNetworking.ACTION_RECURRING_CANCEL -> {
-                        boolean ok = RecurringTransferManager.getInstance().cancel(sId, player.getName().getString());
-                        result = ok ? "§a✅ Virement récurrent annulé." : "§cVirement introuvable.";
-                    }
                     default -> result = "§cAction inconnue.";
                 }
                 sendHdvResult(player, result, server);
@@ -341,6 +295,13 @@ public class NouvelleTerreBridge implements ModInitializer {
         buf.writeInt(balance);
         ServerPlayNetworking.send(player, HdvNetworking.NT_BALANCE, buf);
     }
+
+    // Couleurs des toasts NT_TOAST — dupliquées de NotificationHud exprès : le code
+    // serveur ne doit pas référencer une classe cliente, même pour des constantes
+    // (l'inlining de javac masquait le problème, jusqu'au jour où il ne le fera plus).
+    public static final int TOAST_VERT  = 0xFF2EAD6B;
+    public static final int TOAST_OR    = 0xFFE8A838;
+    public static final int TOAST_ROUGE = 0xFFBF2040;
 
     public static void sendToast(ServerPlayerEntity player, int color, String... lines) {
         PacketByteBuf buf = PacketByteBufs.create();
@@ -943,11 +904,13 @@ public class NouvelleTerreBridge implements ModInitializer {
                     ShopThresholds.resetAll();
                     ok = true; msg = "§a✅ Production remise à zéro : compteurs, seuils et annonces auto.";
                 } else if (action == ProductionNetworking.ACTION_RECHECK) {
-                    ProductionShopManager.checkAll();
-                    ok = true; msg = "§a✅ Seuils re-vérifiés.";
+                    // Le shop lit les seuils en direct depuis la 1.3.0 : il n'y a plus
+                    // rien à « re-vérifier », l'action ne sert qu'à renvoyer un état frais.
+                    ProductionShopManager.purgerAnnoncesLegacy();
+                    ok = true; msg = "§a✅ Données rafraîchies.";
                 } else if (action == ProductionNetworking.ACTION_RELOAD) {
                     ShopThresholds.load();
-                    ProductionShopManager.checkAll();
+                    ProductionShopManager.purgerAnnoncesLegacy();
                     ok = true; msg = "§a✅ seuils-shop.json rechargé.";
                 } else if (action == ProductionNetworking.ACTION_SET_PRICE) {
                     if (valeur <= 0) {

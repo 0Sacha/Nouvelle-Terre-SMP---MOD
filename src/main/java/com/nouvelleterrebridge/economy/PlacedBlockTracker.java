@@ -56,12 +56,4 @@ public final class PlacedBlockTracker {
     public static synchronized boolean estPoseParJoueur(World world, BlockPos pos) {
         return marques.remove(cle(world, pos)) != null;
     }
-
-    public static synchronized int taille() {
-        return marques.size();
-    }
-
-    public static synchronized void reset() {
-        marques.clear();
-    }
 }

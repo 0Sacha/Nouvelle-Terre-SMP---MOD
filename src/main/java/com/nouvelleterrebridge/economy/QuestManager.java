@@ -257,7 +257,7 @@ public class QuestManager {
         }
     }
 
-    /** Valeur en shards d'un item (prix du shop auto × quantité, minimum 1). */
+    /** Valeur en shards d'un item (prix du Shop Serveur × quantité, minimum 1). */
     private static int shardsValueOf(String itemId, int qty) {
         if (itemId == null || itemId.isEmpty() || qty <= 0) return Math.max(1, qty);
         ShopThresholds.Entry entry = ShopThresholds.getOrCreate(itemId);

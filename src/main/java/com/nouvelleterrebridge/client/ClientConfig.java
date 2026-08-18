@@ -31,12 +31,6 @@ public class ClientConfig {
     public float   coordsY            = 0.06f;
     public boolean coordsShowDecimals = false;
 
-    // ── Widget Boussole ───────────────────────────────────────────────────────
-    public boolean compassEnabled     = false;
-    public float   compassX           = 0.50f;
-    public float   compassY           = 0.02f;
-    public boolean compassShowDegrees = false;
-
     // ── Widget Heure ──────────────────────────────────────────────────────────
     public boolean timeEnabled  = false;
     public float   timeX        = 0.01f;

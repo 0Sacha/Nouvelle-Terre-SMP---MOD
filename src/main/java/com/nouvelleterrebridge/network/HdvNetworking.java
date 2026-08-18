@@ -12,12 +12,11 @@ public final class HdvNetworking {
     public static final Identifier NT_TOAST   = new Identifier("nouvelle-terre-bridge", "nt_toast");
     public static final Identifier NT_NOM_RP  = new Identifier("nouvelle-terre-bridge", "nt_nom_rp");
 
-    public static final int ACTION_BUY              = 0;
-    public static final int ACTION_SELL             = 1;
-    public static final int ACTION_WITHDRAW         = 2;
-    public static final int ACTION_TRANSFER         = 3;
-    public static final int ACTION_RECURRING_CREATE = 4;
-    public static final int ACTION_RECURRING_CANCEL = 5;
+    // Virements et récurrents vivent sur BANK_ACTION depuis la création de BankScreen —
+    // les anciennes valeurs 3/4/5 de ce canal ont été retirées avec leurs handlers.
+    public static final int ACTION_BUY      = 0;
+    public static final int ACTION_SELL     = 1;
+    public static final int ACTION_WITHDRAW = 2;
 
     private HdvNetworking() {}
 }

@@ -29,17 +29,11 @@ public final class MarketActions {
     // ── Achat ─────────────────────────────────────────────────────────────────
 
     /**
-     * Achète {@code qty} unités de {@code itemId} au meilleur prix disponible.
-     * @return message de résultat à afficher au joueur
-     */
-    public static String buy(ServerPlayerEntity player, String itemId, int qty) {
-        return buy(player, itemId, qty, "");
-    }
-
-    /**
      * Achète {@code qty} unités de la variante {@code itemNBT} de {@code itemId}
-     * ("" = variante sans NBT). Seules les annonces de la même variante sont
-     * agrégées, pour ne pas livrer un mélange d'items enchantés et vierges.
+     * ("" = variante sans NBT) au meilleur prix disponible. Seules les annonces
+     * de la même variante sont agrégées, pour ne pas livrer un mélange d'items
+     * enchantés et vierges.
+     * @return message de résultat à afficher au joueur
      */
     public static String buy(ServerPlayerEntity player, String itemId, int qty, String itemNBT) {
         String pseudo  = player.getName().getString();
@@ -132,54 +126,15 @@ public final class MarketActions {
             qty, nomItem, EconomieCommand.fmt(coutTotal), EconomieCommand.fmt(eco.getBalance(pseudo)));
     }
 
-    // ── Vente ─────────────────────────────────────────────────────────────────
+    // ── Vente (depuis le GUI client) ──────────────────────────────────────────
 
     /**
-     * Met en vente {@code qty} unités de l'item en main du joueur à {@code pricePerUnit} shards/u.
-     * @return message de résultat ou null si succès (la liste a été créée)
-     */
-    public static String sell(ServerPlayerEntity player, int qty, int pricePerUnit) {
-        ItemStack main = player.getMainHandStack();
-        if (main.isEmpty())
-            return "§cTiens l'item à vendre dans ta main !";
-        if (main.getCount() < qty)
-            return String.format("§cTu n'as que §f%d§c exemplaire(s) en main.", main.getCount());
-
-        String itemId  = Registries.ITEM.getId(main.getItem()).toString();
-        String nomItem = FrenchItemNames.toDisplay(itemId);
-        String itemNBT = main.hasNbt() ? main.getNbt().asString() : null;
-
-        main.decrement(qty);
-        MarketListing annonce = MarketManager.getInstance().addListing(
-            player.getName().getString(), itemId, qty, pricePerUnit, itemNBT);
-
-        player.getServer().getPlayerManager().broadcast(Text.literal(String.format(
-            "§6[Marché] §e%s §7vend §f%dx %s §7· §f%d💎/u — §f/hdv",
-            player.getName().getString(), qty, nomItem, pricePerUnit)), false);
-
-        Map<String, Object> data = new HashMap<>();
-        data.put("player", player.getName().getString());
-        data.put("item", itemId); data.put("quantity", qty);
-        data.put("price", pricePerUnit); data.put("id", annonce.id);
-        EventDispatcher.envoyer("SALE_POSTED", data);
-
-        return null; // succès
-    }
-
-    // ── Vente par ID d'item (depuis le GUI client) ────────────────────────────
-
-    /**
-     * Met en vente {@code qty} unités de {@code itemId} depuis l'inventaire du joueur.
-     * Contrairement à {@link #sell}, ne requiert pas l'item en main.
-     */
-    public static String sellByItemId(ServerPlayerEntity player, String itemId, int qty, int pricePerUnit) {
-        return sellByItemId(player, itemId, qty, pricePerUnit, "");
-    }
-
-    /**
-     * Vend {@code qty} unités de {@code itemId} dont le NBT correspond à {@code itemNBT}
-     * (chaîne vide = uniquement les piles sans NBT). Garantit qu'une pile enchantée
-     * n'est jamais consommée à la place d'une pile vierge, et inversement.
+     * Met en vente {@code qty} unités de {@code itemId} depuis l'inventaire du
+     * joueur, en ne consommant que les piles dont le NBT correspond à
+     * {@code itemNBT} (chaîne vide = uniquement les piles sans NBT). Garantit
+     * qu'une pile enchantée n'est jamais consommée à la place d'une pile vierge,
+     * et inversement.
+     * @return message d'erreur, ou null si l'annonce a été créée
      */
     public static String sellByItemId(ServerPlayerEntity player, String itemId, int qty, int pricePerUnit, String itemNBT) {
         String pseudo  = player.getName().getString();
@@ -208,7 +163,7 @@ public final class MarketActions {
         MarketListing annonce = MarketManager.getInstance()
             .addListing(pseudo, itemId, qty, pricePerUnit, wanted.isEmpty() ? null : wanted);
 
-        player.getServer().getPlayerManager().broadcast(net.minecraft.text.Text.literal(String.format(
+        player.getServer().getPlayerManager().broadcast(Text.literal(String.format(
             "§6[Marché] §e%s §7vend §f%dx %s §7· §f%d💎/u — §f/hdv",
             pseudo, qty, nomItem, pricePerUnit)), false);
 

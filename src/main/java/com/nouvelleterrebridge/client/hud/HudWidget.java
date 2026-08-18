@@ -24,18 +24,12 @@ public abstract class HudWidget {
     public float         anchorX, anchorY;
     public boolean       enabled;
 
-    private final float   defaultX, defaultY;
-    private final boolean defaultEnabled;
-
     protected HudWidget(String id, String label, float defaultX, float defaultY, boolean defaultEnabled) {
-        this.id             = id;
-        this.label          = label;
-        this.anchorX        = defaultX;
-        this.anchorY        = defaultY;
-        this.enabled        = defaultEnabled;
-        this.defaultX       = defaultX;
-        this.defaultY       = defaultY;
-        this.defaultEnabled = defaultEnabled;
+        this.id      = id;
+        this.label   = label;
+        this.anchorX = defaultX;
+        this.anchorY = defaultY;
+        this.enabled = defaultEnabled;
     }
 
     public abstract void render(DrawContext ctx, MinecraftClient mc);
@@ -47,12 +41,6 @@ public abstract class HudWidget {
     }
     public int getPixelY(int sh, MinecraftClient mc) {
         return Math.max(0, Math.min((int)(anchorY * sh), sh - getHeight(mc)));
-    }
-
-    public void resetToDefault() {
-        anchorX = defaultX;
-        anchorY = defaultY;
-        enabled = defaultEnabled;
     }
 
     public boolean isDragOnly() { return false; }

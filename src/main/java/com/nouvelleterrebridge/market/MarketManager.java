@@ -14,7 +14,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
 
 /**
  * Gestionnaire du marché (HDV). Stockage JSON dans <gameDir>/marche.json.
@@ -99,33 +98,8 @@ public class MarketManager {
     }
 
     /**
-     * Trouve une annonce par vendeur + item (insensible à la casse).
-     */
-    public synchronized Optional<MarketListing> getBySellerAndItem(String seller, String itemId) {
-        return annonces.stream()
-                .filter(l -> l.seller.equalsIgnoreCase(seller) && l.item.equalsIgnoreCase(itemId))
-                .findFirst();
-    }
-
-    /**
-     * Retourne toutes les annonces d'un vendeur donné.
-     */
-    public synchronized List<MarketListing> getBySeller(String seller) {
-        return annonces.stream()
-                .filter(l -> l.seller.equalsIgnoreCase(seller))
-                .collect(Collectors.toList());
-    }
-
-    /**
-     * Vérifie si une annonce automatique (seller exact) existe pour cet item.
-     */
-    public synchronized boolean hasAutoListing(String itemId, String seller) {
-        return annonces.stream()
-                .anyMatch(l -> l.seller.equals(seller) && l.item.equalsIgnoreCase(itemId));
-    }
-
-    /**
-     * Supprime toutes les annonces d'un vendeur exact (pour reset des annonces auto).
+     * Supprime toutes les annonces d'un vendeur exact (purge des annonces auto
+     * `$Serveur` héritées d'avant la 1.3.0, quand le shop passait par le HDV).
      */
     public synchronized void removeAutoListings(String seller) {
         int before = annonces.size();

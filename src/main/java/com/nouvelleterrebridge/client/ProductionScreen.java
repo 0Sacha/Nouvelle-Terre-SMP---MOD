@@ -23,7 +23,7 @@ import java.util.List;
 
 /**
  * GUI /production : liste des productions naturelles avec barres de progression.
- * Quand un item atteint son seuil, il est mis en vente au shop auto $Serveur.
+ * Quand un item atteint son seuil, il entre au catalogue du Shop Serveur (/shop).
  * Les boutons admin (reset / recheck / reload) ne sont visibles que pour les op.
  */
 @Environment(EnvType.CLIENT)
@@ -211,7 +211,7 @@ public class ProductionScreen extends Screen {
     }
 
     private void renderAdminButtons(DrawContext ctx, int mx, int my) {
-        String[] labels  = {"Recheck", "Recharger", "Reset"};
+        String[] labels  = {"Rafraîchir", "Recharger", "Reset"};
         int[]    actions = {ProductionNetworking.ACTION_RECHECK, ProductionNetworking.ACTION_RELOAD, ProductionNetworking.ACTION_RESET};
         boolean resetArmed = System.currentTimeMillis() < resetConfirmUntil;
         int bx = px + pw - PAD;

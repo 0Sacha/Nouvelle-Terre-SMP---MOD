@@ -49,8 +49,7 @@ public class ProductionTracker {
         long avant  = counts.getOrDefault(itemId, 0L);
         long newVal = counts.merge(itemId, amount, Long::sum);
         save();
-        ProductionShopManager.checkItem(itemId, newVal);
-        ProductionShopManager.notifierSiDebloque(itemId, avant, newVal);
+        ProductionShopManager.onProduction(itemId, avant, newVal);
     }
 
     /**
@@ -80,7 +79,7 @@ public class ProductionTracker {
     public static synchronized void reset() {
         counts.clear();
         save();
-        ProductionShopManager.removeAllAutoListings();
+        ProductionShopManager.purgerAnnoncesLegacy();
         NouvelleTerreBridge.LOGGER.info("[ProductionTracker] Compteurs réinitialisés.");
     }
 }

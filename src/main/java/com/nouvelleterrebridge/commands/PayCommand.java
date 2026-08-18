@@ -5,7 +5,6 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
-import com.nouvelleterrebridge.client.NotificationHud;
 import com.nouvelleterrebridge.economy.LocalEconomy;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
@@ -51,14 +50,14 @@ public class PayCommand {
         String sender = joueur.getName().getString();
 
         if (sender.equalsIgnoreCase(cible)) {
-            NouvelleTerreBridge.sendToast(joueur, NotificationHud.COLOR_RED,
+            NouvelleTerreBridge.sendToast(joueur, NouvelleTerreBridge.TOAST_ROUGE,
                 "✗  Virement refusé",
                 "Vous ne pouvez pas vous payer vous-même.");
             return 0;
         }
 
         if (!LocalEconomy.getInstance().estConnu(cible)) {
-            NouvelleTerreBridge.sendToast(joueur, NotificationHud.COLOR_RED,
+            NouvelleTerreBridge.sendToast(joueur, NouvelleTerreBridge.TOAST_ROUGE,
                 "✗  Joueur inconnu",
                 cible + " n'a jamais joué ici.");
             return 0;
@@ -68,7 +67,7 @@ public class PayCommand {
 
         if (!ok) {
             int solde = LocalEconomy.getInstance().getBalance(sender);
-            NouvelleTerreBridge.sendToast(joueur, NotificationHud.COLOR_RED,
+            NouvelleTerreBridge.sendToast(joueur, NouvelleTerreBridge.TOAST_ROUGE,
                 "✗  Solde insuffisant",
                 "Requis : " + EconomieCommand.fmt(montant) + " ◆",
                 "Solde  : " + EconomieCommand.fmt(solde) + " ◆");
@@ -77,7 +76,7 @@ public class PayCommand {
 
         // Toast expéditeur
         int nouveauSolde = LocalEconomy.getInstance().getBalance(sender);
-        NouvelleTerreBridge.sendToast(joueur, NotificationHud.COLOR_GREEN,
+        NouvelleTerreBridge.sendToast(joueur, NouvelleTerreBridge.TOAST_VERT,
             "✦  Virement envoyé",
             "→ " + cible + "  -" + EconomieCommand.fmt(montant) + " ◆",
             "Solde : " + EconomieCommand.fmt(nouveauSolde) + " ◆");
@@ -87,7 +86,7 @@ public class PayCommand {
         ServerPlayerEntity dest = source.getServer().getPlayerManager().getPlayer(cible);
         if (dest != null) {
             int soldeDest = LocalEconomy.getInstance().getBalance(cible);
-            NouvelleTerreBridge.sendToast(dest, NotificationHud.COLOR_GOLD,
+            NouvelleTerreBridge.sendToast(dest, NouvelleTerreBridge.TOAST_OR,
                 "✦  Virement reçu !",
                 "← " + sender + "  +" + EconomieCommand.fmt(montant) + " ◆",
                 "Solde : " + EconomieCommand.fmt(soldeDest) + " ◆");

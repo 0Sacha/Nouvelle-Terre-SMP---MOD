@@ -26,7 +26,9 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `1.4.0` (refonte UI — listes, saisie numérique, gestion du shop)
+- Version actuelle : `1.4.1` (nettoyage — code mort retiré, aucun changement de gameplay)
+  - 1.4.0 : refonte UI (listes, saisie numérique, gestion du shop), coupures de monnaie,
+    anti-exploit de production, fix enchantements perdus à l'achat
   - 1.3.3 : scroll de l'onglet Vendre du HDV
   - 1.3.2 : migration des prix sans perte de progression
   - 1.3.1 : flèche retour hub, /shop, Parchemin offert au shop
@@ -94,10 +96,14 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
   Ce n'est plus un onglet du HDV et il ne passe plus par `marche.json`.
 - Catalogue = items de `ShopThresholds` **dont la production a atteint le seuil**
   (`ServerShopActions.estDebloque()`, revalidé serveur — le client ne fait pas autorité).
-- `ProductionShopManager` ne crée plus d'annonces `$Serveur` ; `checkAll()` purge les anciennes.
-- **Notification de déblocage (1.4.0)** : `ProductionShopManager.notifierSiDebloque(itemId, avant, apres)`,
-  appelé par `ProductionTracker.add()`, envoie un toast vert (`NT_TOAST`) à tous les joueurs
-  connectés quand un item franchit son seuil.
+- `ProductionShopManager` ne crée plus d'annonces `$Serveur` ; `purgerAnnoncesLegacy()` nettoie
+  celles héritées d'avant la 1.3.0 (appelée au démarrage et par Rafraîchir/Recharger/Reset).
+- **Notification de déblocage (1.4.0)** : `ProductionShopManager.onProduction(itemId, avant, apres)`,
+  appelé par `ProductionTracker.add()`, crée l'entrée de seuil au premier contact avec l'item
+  (`ShopThresholds.getOrCreate`) puis envoie un toast vert (`NT_TOAST`) à tous les joueurs
+  connectés quand un item franchit son seuil. Couleurs des toasts côté serveur :
+  `NouvelleTerreBridge.TOAST_VERT/OR/ROUGE` — dupliquées de `NotificationHud` exprès, le code
+  serveur ne doit pas référencer une classe cliente même pour des constantes.
   Le franchissement se teste sur l'intervalle `]avant, apres]`, **pas** par égalité avec le
   seuil : une récolte Fortune ou un craft de pile peut sauter la valeur exacte
   (l'ancien `count == entry.seuil` de `checkItem` ratait ces cas).
@@ -200,6 +206,7 @@ façon prévue de les débloquer au Shop.
 | `/economie admin give/take/check <joueur>` | Admin (op 2) |
 | `/hdv` | Ouvre le GUI Marché (screen client Fabric) |
 | `/bank` | Ouvre le GUI Banque (screen client Fabric) |
+| `/pay <joueur> <montant>` | Virement rapide en chat (autocomplete joueurs connus, retour par toast) |
 | `/discord` | Lier compte Minecraft ↔ Discord |
 | `/conflit` | Ouvre le GUI Conflit RP (liste joueurs en ligne + raison → alerte Discord) |
 | `/evenement <message>` | Narration (op only) |
@@ -419,7 +426,7 @@ client/                    ← @Environment(CLIENT) uniquement
                              Objectifs affichés avec le nom localisé de la cible (targetName(type,target) :
                              ENTITY_TYPE pour KILL, ITEM sinon) — plus de labels poétiques côté UI
   ProductionScreen.java    → Screen production : liste scrollable (icône + nom FR + compteur + barre + statut),
-                             tri : en vente d'abord puis progression desc. Boutons admin (Recheck/Recharger/Reset)
+                             tri : en vente d'abord puis progression desc. Boutons admin (Rafraîchir/Recharger/Reset)
                              rendus uniquement si isOp (revalidé serveur). Reset = double-clic ("Confirmer ?" 3 s)
                              → remise à zéro complète : compteurs + seuils dynamiques + annonces auto.
                              PW_MAX=620 PH_MAX=460 ROW_H=40
@@ -452,7 +459,7 @@ client/                    ← @Environment(CLIENT) uniquement
                              Positions relatives (0.0-1.0), snap aux bords, sauvegarde sur close.
   ClientConfig.java        → Config client-only (config/nouvelle-terre-client.json)
                              Champs : discordRPCEnabled, hudEnabled/balanceX/Y, coordsEnabled/X/Y/ShowDecimals,
-                             compassEnabled/X/Y/ShowDegrees (legacy), timeEnabled/X/Y/ShowIcon,
+                             timeEnabled/X/Y/ShowIcon,
                              santeEnabled/X/Y, nourritureEnabled/X/Y, fpsEnabled/X/Y/ShowPing,
                              biomeEnabled/X/Y, notifEnabled/X/Y, armureEnabled/X/Y,
                              xpEnabled/X/Y, dimensionEnabled/X/Y, effetsEnabled/X/Y
@@ -461,7 +468,7 @@ client/                    ← @Environment(CLIENT) uniquement
 
 client/hud/                ← Widgets HUD individuels
   HudWidget.java           → Classe abstraite : id, label, anchorX/Y, enabled, getPixelX/Y (clamped),
-                             resetToDefault(), renderCheckbox() helper. loadFromConfig/saveToConfig abstraits.
+                             renderCheckbox() helper. loadFromConfig/saveToConfig abstraits.
                              isDragOnly() → false par défaut (true = widget de position pure, pas rendu dans le HUD).
   BalanceWidget.java       → Affiche cachedBalance + " ◆". Pas de paramètres.
   CoordsWidget.java        → "XYZ x / y / z". Paramètre : coordsShowDecimals.
@@ -672,7 +679,6 @@ C_DIM     = 0xFF565C6A   // labels, placeholders
 EconomieCommand.SEP_GOLD    // séparateur or
 EconomieCommand.SEP_GREEN   // séparateur vert (succès)
 EconomieCommand.SEP_RED     // séparateur rouge (erreur)
-EconomieCommand.SEP_YELLOW  // séparateur jaune (warning)
 EconomieCommand.SEP_DARK    // séparateur gris (admin)
 EconomieCommand.fmt(int)    // formatte un nombre avec espaces (1 250)
 ```

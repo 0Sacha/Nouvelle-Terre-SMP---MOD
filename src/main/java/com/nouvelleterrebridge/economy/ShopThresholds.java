@@ -20,7 +20,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Seuils de déblocage du shop auto, persistés dans <gameDir>/seuils-shop.json.
+ * Seuils de déblocage du Shop Serveur, persistés dans <gameDir>/seuils-shop.json.
  * Les entrées sont créées dynamiquement au premier contact avec un item (bloc cassé,
  * drop mob, craft). Le seuil est calculé automatiquement d'après la rareté vanilla.
  * Les admins peuvent éditer le JSON pour surcharger n'importe quelle entrée.
