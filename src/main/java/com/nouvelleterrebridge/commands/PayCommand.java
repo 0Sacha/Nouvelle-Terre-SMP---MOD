@@ -82,7 +82,9 @@ public class PayCommand {
             "Solde : " + EconomieCommand.fmt(nouveauSolde) + " ◆");
         NouvelleTerreBridge.sendBalanceToPlayer(joueur);
 
-        // Toast destinataire (si connecté)
+        // Notification destinataire (si connecté) — toast ET message chat.
+        // Le toast seul passait inaperçu : il s'efface au bout de quelques secondes
+        // et le joueur peut avoir masqué la zone de notification dans l'éditeur HUD.
         ServerPlayerEntity dest = source.getServer().getPlayerManager().getPlayer(cible);
         if (dest != null) {
             int soldeDest = LocalEconomy.getInstance().getBalance(cible);
@@ -90,6 +92,10 @@ public class PayCommand {
                 "✦  Virement reçu !",
                 "← " + sender + "  +" + EconomieCommand.fmt(montant) + " ◆",
                 "Solde : " + EconomieCommand.fmt(soldeDest) + " ◆");
+            dest.sendMessage(Text.literal(
+                "§6[Nouvelle Terre] §f" + sender + " §avous a envoyé §e"
+                + EconomieCommand.fmt(montant) + " ◆§a — solde : §e"
+                + EconomieCommand.fmt(soldeDest) + " ◆"));
             NouvelleTerreBridge.sendBalanceToPlayer(dest);
         }
 

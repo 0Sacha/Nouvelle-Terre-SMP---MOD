@@ -30,7 +30,8 @@ import java.util.List;
 public class ProductionScreen extends Screen {
 
     public record ProdEntry(String itemId, long count, long seuil, int prix, int quantite,
-                            boolean enVente, boolean desactive) {}
+                            boolean enVente, boolean desactive,
+                            int prixRachat, boolean rachatImpose) {}
 
     // ── Couleurs (palette commune) ─────────────────────────────────────────────
 
@@ -68,6 +69,8 @@ public class ProductionScreen extends Screen {
     /** Item dont les contrôles admin sont dépliés (null = aucun). */
     private String expanded = null;
     private final NumberInput priceInput = new NumberInput(1, 1, 999_999);
+    /** Rachat imposé ; 0 remet le calcul automatique (part du prix de vente). */
+    private final NumberInput rachatInput = new NumberInput(0, 0, 999_999);
     /** Suppression armée : deux clics requis, comme le Reset global. */
     private long deleteConfirmUntil = 0;
 
@@ -123,6 +126,8 @@ public class ProductionScreen extends Screen {
             Text.literal(""));
         searchField.setDrawsBackground(false);
         searchField.setPlaceholder(Text.literal("Rechercher un item..."));
+        priceInput.setPlaceholder("Prix ◆/u...");
+        rachatInput.setPlaceholder("0 = automatique");
         searchField.setChangedListener(s -> scroll = 0);
         addSelectableChild(searchField);
     }
@@ -296,7 +301,7 @@ public class ProductionScreen extends Screen {
         ctx.getMatrices().translate(0, 0, 300);
         ctx.fill(px, py, px + pw, py + ph, 0x99000000);
 
-        int mw = 300, mh = 208;
+        int mw = 300, mh = 300;
         int ox = px + (pw - mw) / 2;
         int oy = py + (ph - mh) / 2;
         ctx.fill(ox, oy, ox + mw, oy + mh, C_SURFACE);
@@ -306,13 +311,26 @@ public class ProductionScreen extends Screen {
         ctx.drawText(textRenderer, truncate(FrenchItemNames.toDisplay(e.itemId()), mw - 50), ox + 38, oy + 12, C_WHITE, false);
         ctx.drawText(textRenderer, fmt(e.count()) + " / " + fmt(e.seuil()) + " produits", ox + 38, oy + 24, C_DIM, false);
 
-        ctx.drawText(textRenderer, "PRIX UNITAIRE (◆)", ox + 14, oy + 46, C_DIM, false);
+        ctx.drawText(textRenderer, "PRIX DE VENTE (◆/u)", ox + 14, oy + 46, C_DIM, false);
         priceInput.render(ctx, textRenderer, ox + 14, oy + 60, mw - 28, mx, my);
 
-        int by = oy + 60 + NumberInput.H + 8;
-        drawModalBtn(ctx, ox + 14, by, mw - 28, "Appliquer le prix", C_GOLD, mx, my,
+        int by = oy + 60 + NumberInput.H + 6;
+        drawModalBtn(ctx, ox + 14, by, mw - 28, "Appliquer le prix de vente", C_GOLD, mx, my,
             ProductionNetworking.ACTION_SET_PRICE);
-        by += 26;
+        by += 28;
+
+        // Rachat : ce que le serveur paie au joueur qui lui revend l'item
+        String etat = e.rachatImpose() ? "§7imposé" : "§8auto (55 % du prix de vente)";
+        ctx.drawText(textRenderer, "PRIX DE RACHAT (◆/u) — " + etat, ox + 14, by, C_DIM, false);
+        by += 14;
+        rachatInput.render(ctx, textRenderer, ox + 14, by, mw - 28, mx, my);
+        by += NumberInput.H + 2;
+        ctx.drawText(textRenderer, "§8Actuel : " + e.prixRachat() + " ◆  ·  plafonné au prix de vente",
+            ox + 14, by, C_DIM, false);
+        by += 12;
+        drawModalBtn(ctx, ox + 14, by, mw - 28, "Appliquer le rachat", C_GREEN, mx, my,
+            ProductionNetworking.ACTION_SET_RACHAT);
+        by += 28;
         drawModalBtn(ctx, ox + 14, by, mw - 28,
             e.desactive() ? "Remettre en vente" : "Retirer de la vente",
             e.desactive() ? C_GREEN : 0xFFB07818, mx, my, ProductionNetworking.ACTION_TOGGLE);
@@ -365,6 +383,7 @@ public class ProductionScreen extends Screen {
         // ── Modal de gestion : capture tout ──
         if (expanded != null) {
             if (priceInput.mouseClicked(x, y)) return true;
+            if (rachatInput.mouseClicked(x, y)) return true;
             for (int[] b : rowBtnBounds) {
                 if (x < b[0] || x >= b[0] + b[2] || y < b[1] || y >= b[1] + b[3]) continue;
                 if (b[4] == ProductionNetworking.ACTION_DELETE
@@ -373,9 +392,16 @@ public class ProductionScreen extends Screen {
                     return true;
                 }
                 deleteConfirmUntil = 0;
-                sendItemAction(b[4], expanded,
-                    b[4] == ProductionNetworking.ACTION_SET_PRICE ? priceInput.getValue() : 0);
-                if (b[4] != ProductionNetworking.ACTION_SET_PRICE) expanded = null;
+                int valeur = switch (b[4]) {
+                    case ProductionNetworking.ACTION_SET_PRICE  -> priceInput.getValue();
+                    case ProductionNetworking.ACTION_SET_RACHAT -> rachatInput.getValue();
+                    default -> 0;
+                };
+                sendItemAction(b[4], expanded, valeur);
+                // Les réglages de prix laissent le modal ouvert : on enchaîne souvent
+                // vente puis rachat sur le même item.
+                if (b[4] != ProductionNetworking.ACTION_SET_PRICE
+                    && b[4] != ProductionNetworking.ACTION_SET_RACHAT) expanded = null;
                 return true;
             }
             // Ne ferme que sur un clic hors du cadre : un clic dans le vide du
@@ -413,6 +439,10 @@ public class ProductionScreen extends Screen {
                 expanded = cible.itemId();
                 priceInput.setValue(cible.prix());
                 priceInput.setFocused(false);
+                // 0 quand le rachat est automatique : le champ doit refléter l'état
+                // réel, pas suggérer une valeur imposée qui ne l'est pas.
+                rachatInput.setValue(cible.rachatImpose() ? cible.prixRachat() : 0);
+                rachatInput.setFocused(false);
                 deleteConfirmUntil = 0;
                 return true;
             }
@@ -465,6 +495,7 @@ public class ProductionScreen extends Screen {
         if (expanded != null) {
             if (key == 256) { expanded = null; return true; }
             if (priceInput.keyPressed(key)) return true;
+            if (rachatInput.keyPressed(key)) return true;
             return true;   // le modal garde le focus clavier
         }
         return super.keyPressed(key, scan, mod);
@@ -472,7 +503,7 @@ public class ProductionScreen extends Screen {
 
     @Override
     public boolean charTyped(char chr, int mod) {
-        if (expanded != null && priceInput.charTyped(chr)) return true;
+        if (expanded != null && (priceInput.charTyped(chr) || rachatInput.charTyped(chr))) return true;
         return super.charTyped(chr, mod);
     }
 

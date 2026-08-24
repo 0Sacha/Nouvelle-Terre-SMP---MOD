@@ -89,6 +89,11 @@ public class BankScreen extends Screen {
 
     private Tab activeTab = Tab.ACCOUNT;
     private int txScroll = 0;
+
+    // Classement : scroll + recherche
+    private int lbScroll = 0;
+    private int lbMaxScroll = 0;
+    private TextFieldWidget lbSearchField;
     private int tabsStartX = 0;
     private long screenOpenTime;
 
@@ -152,10 +157,18 @@ public class BankScreen extends Screen {
     private int modalCreateBtnX, modalCreateBtnY, modalCreateBtnW;
     private int newLoanBtnX, newLoanBtnY, newLoanBtnW;
 
+    /** Répartition des richesses du serveur (calculée serveur, cf. BANK_OPEN). */
+    public record WealthData(int[] tranches, int partBasse, int partMoyenne, int partHaute, int median) {
+        public static WealthData vide() { return new WealthData(new int[5], 0, 0, 0, 0); }
+    }
+
+    private WealthData wealth = WealthData.vide();
+
     // ── Constructeur ───────────────────────────────────────────────────────────
 
     public BankScreen(int balance, int ticksReward, List<TxData> transactions,
-                      int totalShards, int playerCount, List<LeaderboardEntry> leaderboard,
+                      int totalShards, int playerCount, WealthData wealth,
+                      List<LeaderboardEntry> leaderboard,
                       List<LoanData> loansAsLender, List<LoanData> loansAsBorrower,
                       List<LoanRequestData> requestsAsLender, List<LoanRequestData> requestsAsBorrower,
                       List<String> knownPlayers, List<RecurringData> recurring) {
@@ -165,6 +178,7 @@ public class BankScreen extends Screen {
         this.transactions       = new ArrayList<>(transactions);
         this.totalShards        = totalShards;
         this.playerCount        = playerCount;
+        this.wealth             = wealth;
         this.leaderboard        = new ArrayList<>(leaderboard);
         this.loansAsLender      = new ArrayList<>(loansAsLender);
         this.loansAsBorrower    = new ArrayList<>(loansAsBorrower);
@@ -187,6 +201,13 @@ public class BankScreen extends Screen {
         addSelectableChild(modalAmountField);
 
         withdrawInput.setPlaceholder("Montant...");
+        depositInput.setPlaceholder("Montant... (Max = tout)");
+
+        lbSearchField = new TextFieldWidget(textRenderer, 0, -200, 160, 18, Text.empty());
+        lbSearchField.setDrawsBackground(false);
+        lbSearchField.setPlaceholder(Text.literal("Rechercher un joueur..."));
+        lbSearchField.setChangedListener(s -> lbScroll = 0);
+        addSelectableChild(lbSearchField);
 
         trfAmountField = new TextFieldWidget(textRenderer, 0, -200, 100, 18, Text.empty());
         trfAmountField.setMaxLength(8);
@@ -218,7 +239,7 @@ public class BankScreen extends Screen {
 
     public void handleResult(boolean ok, String message, int balance, int ticksReward,
                              List<TxData> transactions, int totalShards, int playerCount,
-                             List<LeaderboardEntry> leaderboard,
+                             WealthData wealth, List<LeaderboardEntry> leaderboard,
                              List<LoanData> loansAsLender, List<LoanData> loansAsBorrower,
                              List<LoanRequestData> requestsAsLender, List<LoanRequestData> requestsAsBorrower,
                              List<String> knownPlayers, List<RecurringData> recurring) {
@@ -227,6 +248,7 @@ public class BankScreen extends Screen {
         this.transactions       = new ArrayList<>(transactions);
         this.totalShards        = totalShards;
         this.playerCount        = playerCount;
+        this.wealth             = wealth;
         this.leaderboard        = new ArrayList<>(leaderboard);
         this.loansAsLender      = new ArrayList<>(loansAsLender);
         this.loansAsBorrower    = new ArrayList<>(loansAsBorrower);
@@ -426,39 +448,86 @@ public class BankScreen extends Screen {
             px + 12, cy + 38, ready ? C_GOLD : C_MID, false);
         cy += cardH + GAP;
 
-        // Liste transactions
+        // Transactions en deux colonnes : entre joueurs à gauche, avec le serveur à
+        // droite. Mélangées, les récompenses automatiques (kills, temps de jeu)
+        // noyaient les virements entre joueurs, qui sont ceux qu'on vient vérifier.
         int txAreaH = ch - (headerH + GAP + cardH + GAP);
-        ctx.fill(px, cy, px + pw, cy + txAreaH, C_PANEL);
-        ctx.fill(px, cy, px + 3, cy + txAreaH, C_BORDER);
-        ctx.fill(px, cy + txAreaH - 1, px + pw, cy + txAreaH, C_BORDER);
-        ctx.drawText(textRenderer, "TRANSACTIONS", px + 12, cy + 8, C_DIM, false);
-        int rowH = 20, listY = cy + 24;
-        int visRows = (txAreaH - 24) / rowH;
-        int start = Math.max(0, Math.min(txScroll, transactions.size() - visRows));
-        for (int i = start; i < Math.min(start + visRows, transactions.size()); i++) {
-            TxData tx = transactions.get(i);
+        int colW = (pw - GAP) / 2;
+        List<TxData> joueurs = new ArrayList<>();
+        List<TxData> serveur = new ArrayList<>();
+        for (TxData tx : transactions) (estAvecJoueur(tx.type()) ? joueurs : serveur).add(tx);
+
+        renderTxColumn(ctx, px, cy, colW, txAreaH, "AVEC LES JOUEURS", joueurs);
+        renderTxColumn(ctx, px + colW + GAP, cy, colW, txAreaH, "AVEC LE SERVEUR", serveur);
+    }
+
+    /**
+     * Vrai pour les transactions dont la contrepartie est un autre joueur
+     * (virements, crédits, ventes du HDV) — par opposition aux flux serveur
+     * (récompenses, achats au Shop Serveur, dépôts et retraits de Shards).
+     */
+    private static boolean estAvecJoueur(int type) {
+        return type == 2 || type == 3          // TRANSFER_IN / OUT
+            || type == 5 || type == 6          // LOAN_OUT / IN
+            || type == 7 || type == 8          // LOAN_REPAY_OUT / IN
+            || type == 9;                      // LOAN_PENALTY
+    }
+
+    private void renderTxColumn(DrawContext ctx, int x, int y, int w, int h,
+                                String titre, List<TxData> list) {
+        ctx.fill(x, y, x + w, y + h, C_PANEL);
+        ctx.fill(x, y, x + 3, y + h, C_BORDER);
+        ctx.fill(x, y + h - 1, x + w, y + h, C_BORDER);
+        ctx.drawText(textRenderer, titre + " (" + list.size() + ")", x + 12, y + 8, C_DIM, false);
+
+        if (list.isEmpty()) {
+            ctx.drawCenteredTextWithShadow(textRenderer, "Aucune", x + w / 2, y + h / 2, C_DIM);
+            return;
+        }
+
+        int rowH = 20, listY = y + 24;
+        int visRows = Math.max(1, (h - 24) / rowH);
+        int start = Math.max(0, Math.min(txScroll, Math.max(0, list.size() - visRows)));
+        for (int i = start; i < Math.min(start + visRows, list.size()); i++) {
+            TxData tx = list.get(i);
             int ry = listY + (i - start) * rowH;
             boolean isIn = tx.type() == 1 || tx.type() == 2 || tx.type() == 4
                         || tx.type() == 6 || tx.type() == 8;
             int accent = (tx.type() == 9) ? C_RED : (isIn ? C_GREEN : C_RED);
-            ctx.fill(px + 12, ry + 2, px + 15, ry + rowH - 2, accent);
-            ctx.drawText(textRenderer, tx.label(), px + 20, ry + 4, C_MID, false);
+            ctx.fill(x + 12, ry + 2, x + 15, ry + rowH - 2, accent);
             String amtStr = (isIn ? "+" : "-") + fmt(tx.amount()) + " ◆";
-            ctx.drawText(textRenderer, amtStr,
-                px + pw - textRenderer.getWidth(amtStr) - 12, ry + 4,
-                isIn ? C_GREEN : C_RED, false);
+            int amtW = textRenderer.getWidth(amtStr);
+            ctx.drawText(textRenderer, truncate(tx.label(), w - amtW - 40), x + 20, ry + 4, C_MID, false);
+            ctx.drawText(textRenderer, amtStr, x + w - amtW - 12, ry + 4, isIn ? C_GREEN : C_RED, false);
         }
     }
 
     // ── Onglet Economie ────────────────────────────────────────────────────────
 
+    /**
+     * Rampe or, du plus sombre au plus clair — reprise de la palette du Shard.
+     *
+     * Une seule teinte, en variation de clarté : les tranches de richesse sont des
+     * catégories <b>ordonnées</b>, pas des identités. Des teintes différentes
+     * (or/vert/bleu) échouaient d'ailleurs la séparation daltonienne, l'or et le
+     * vert n'étant pas distinguables en protanopie.
+     */
+    private static final int[] RAMPE_OR = {
+        0xFF6B4A0E, 0xFF9A6A12, 0xFFB57614, 0xFFE8A838, 0xFFFFD97A
+    };
+
+    /** En dessous, une « répartition » ne veut rien dire — on affiche un état vide explicite. */
+    private static final int MIN_JOUEURS_REPARTITION = 4;
+
+    private static final String[] TRANCHES_LABELS = {
+        "< 100 ◆", "100 – 1k ◆", "1k – 10k ◆", "10k – 100k ◆", "> 100k ◆"
+    };
+
     private void renderEconomyTab(DrawContext ctx, int mx, int my, int cy, int ch) {
         int px = winX + PAD, pw = winW - PAD * 2;
-        int cardH = 80, cardW = (pw - GAP) / 2;
+        int cardH = 64, cardW = (pw - GAP) / 2;
 
         int avg = playerCount > 0 ? totalShards / playerCount : 0;
-        String topName = leaderboard.isEmpty() ? "—" : leaderboard.get(0).name();
-        int topBal = leaderboard.isEmpty() ? 0 : leaderboard.get(0).balance();
 
         renderStatCard(ctx, px, cy, cardW, cardH, C_GOLD,
             "SHARDS EN CIRCULATION", fmt(totalShards) + " ◆", C_GOLD);
@@ -466,9 +535,81 @@ public class BankScreen extends Screen {
             "JOUEURS ENREGISTRES", String.valueOf(playerCount), C_BLUE);
         cy += cardH + GAP;
         renderStatCard(ctx, px, cy, cardW, cardH, C_GREEN,
-            "SOLDE MOYEN", fmt(avg) + " ◆", C_GREEN);
-        renderStatCard(ctx, px + cardW + GAP, cy, cardW, cardH, C_GOLD,
-            "JOUEUR LE PLUS RICHE", topName + "  —  " + fmt(topBal) + " ◆", C_GOLD);
+            "SOLDE MEDIAN", fmt(wealth.median()) + " ◆", C_GREEN);
+        renderStatCard(ctx, px + cardW + GAP, cy, cardW, cardH, C_MID,
+            "SOLDE MOYEN", fmt(avg) + " ◆", C_MID);
+        cy += cardH + GAP;
+
+        renderRepartition(ctx, mx, my, px, cy, pw);
+    }
+
+    /**
+     * Répartition des joueurs par tranche de richesse.
+     *
+     * Volontairement une seule lecture : « combien de joueurs ont combien ». La
+     * version précédente empilait un histogramme et une barre de concentration
+     * 50/40/10 % ; à quelques joueurs, elle affichait quatre barres vides et un
+     * « 40 % milieu = 100 % » que personne ne pouvait interpréter.
+     *
+     * En dessous de {@link #MIN_JOUEURS_REPARTITION} joueurs, aucune distribution
+     * n'a de sens : on le dit, au lieu de dessiner un graphique trompeur.
+     */
+    private void renderRepartition(DrawContext ctx, int mx, int my, int px, int cy, int pw) {
+        int[] tranches = wealth.tranches();
+        int total = 0, maxCount = 1;
+        for (int t : tranches) { total += t; maxCount = Math.max(maxCount, t); }
+
+        int panelH = 116;
+        ctx.fill(px, cy, px + pw, cy + panelH, C_PANEL);
+        ctx.fill(px, cy, px + 3, cy + panelH, C_GOLD);
+        ctx.fill(px, cy + panelH - 1, px + pw, cy + panelH, C_BORDER);
+        ctx.drawText(textRenderer, "COMBIEN DE JOUEURS ONT COMBIEN ?", px + 12, cy + 8, C_DIM, false);
+
+        if (total < MIN_JOUEURS_REPARTITION) {
+            ctx.drawCenteredTextWithShadow(textRenderer,
+                "Pas encore assez de joueurs pour une répartition",
+                px + pw / 2, cy + panelH / 2 - 8, C_MID);
+            ctx.drawCenteredTextWithShadow(textRenderer,
+                "§8(" + total + " joueur" + (total > 1 ? "s" : "") + " sur "
+                + MIN_JOUEURS_REPARTITION + " minimum)",
+                px + pw / 2, cy + panelH / 2 + 4, C_DIM);
+            return;
+        }
+
+        // Une ligne par tranche : libellé à gauche, barre proportionnelle, puis le
+        // nombre de joueurs ET sa part en clair — l'information ne dépend jamais
+        // de la seule couleur.
+        int labelW = 88;
+        int valueW = 74;
+        int barX   = px + 12 + labelW;
+        int barW   = pw - 24 - labelW - valueW;
+        int barH   = 13;
+        int y      = cy + 26;
+
+        for (int i = 0; i < tranches.length; i++) {
+            int by = y + i * (barH + 3);
+            ctx.drawText(textRenderer, TRANCHES_LABELS[i], px + 12, by + 3, C_MID, false);
+
+            ctx.fill(barX, by, barX + barW, by + barH, C_BG);
+            if (tranches[i] > 0) {
+                int w = (int) Math.round(barW * (tranches[i] / (double) maxCount));
+                ctx.fill(barX, by, barX + Math.max(3, w), by + barH, RAMPE_OR[i]);
+            }
+
+            int pct = (int) Math.round(tranches[i] * 100.0 / total);
+            String val = tranches[i] + (tranches[i] > 1 ? " joueurs" : " joueur");
+            ctx.drawText(textRenderer, val, barX + barW + 8, by + 3,
+                tranches[i] > 0 ? C_WHITE : C_DIM, false);
+            ctx.drawText(textRenderer, "§8" + pct + " %",
+                barX + barW + 8 + textRenderer.getWidth(val) + 4, by + 3, C_DIM, false);
+        }
+
+        // Une phrase de conclusion vaut mieux qu'une barre empilée illisible :
+        // la part détenue par les plus riches est le seul chiffre qui compte ici.
+        int cby = y + tranches.length * (barH + 3) + 4;
+        String phrase = "Les 10 % les plus riches détiennent §6" + wealth.partHaute()
+            + " %§7 du total  ·  les 50 % les plus modestes, §6" + wealth.partBasse() + " %";
+        ctx.drawText(textRenderer, "§7" + phrase, px + 12, cby, C_MID, false);
     }
 
     private void renderStatCard(DrawContext ctx, int x, int y, int w, int h,
@@ -485,7 +626,20 @@ public class BankScreen extends Screen {
     private void renderLeaderboardTab(DrawContext ctx, int mx, int my, int cy, int ch) {
         int px = winX + PAD, pw = winW - PAD * 2;
         String me = client != null && client.player != null ? client.player.getName().getString() : "";
+        int top = cy;
 
+        // Barre de recherche
+        ctx.fill(px, cy, px + pw, cy + 22, C_SURFACE);
+        ctx.fill(px, cy + 21, px + pw, cy + 22, C_BORDER);
+        if (lbSearchField != null) {
+            lbSearchField.setX(px + 10);
+            lbSearchField.setY(cy + 7);
+            lbSearchField.setWidth(pw - 20);
+            lbSearchField.render(ctx, mx, my, 0);
+        }
+        cy += 26;
+
+        // En-tête
         ctx.fill(px, cy, px + pw, cy + 24, C_PANEL);
         ctx.fill(px, cy + 23, px + pw, cy + 24, C_BORDER);
         ctx.drawText(textRenderer, "#",       px + 12,  cy + 7, C_DIM, false);
@@ -494,21 +648,52 @@ public class BankScreen extends Screen {
         ctx.drawText(textRenderer, hdSolde, px + pw - textRenderer.getWidth(hdSolde) - 12, cy + 7, C_DIM, false);
         cy += 24;
 
-        int rowH = 36;
-        for (int i = 0; i < leaderboard.size(); i++) {
+        // Le rang affiché reste celui du classement complet : filtrer ne doit pas
+        // faire croire à un joueur qu'il est premier parce qu'il est seul à l'écran.
+        String q = lbSearchField != null ? lbSearchField.getText().trim().toLowerCase() : "";
+        List<Integer> visibles = new ArrayList<>();
+        for (int i = 0; i < leaderboard.size(); i++)
+            if (q.isEmpty() || leaderboard.get(i).name().toLowerCase().contains(q)) visibles.add(i);
+
+        int rowH    = 36;
+        int listH   = ch - (cy - top);
+        int visRows = Math.max(1, listH / rowH);
+        lbMaxScroll = Math.max(0, visibles.size() - visRows);
+        lbScroll    = Math.max(0, Math.min(lbScroll, lbMaxScroll));
+
+        if (visibles.isEmpty()) {
+            ctx.drawCenteredTextWithShadow(textRenderer, "Aucun joueur trouvé", px + pw / 2, cy + 20, C_DIM);
+            return;
+        }
+
+        // Scissor : sans lui la liste débordait sous les onglets et la fenêtre —
+        // c'est ce qui donnait l'impression que le classement « ne scrollait pas ».
+        int listW = pw - (lbMaxScroll > 0 ? 8 : 0);
+        ctx.enableScissor(px, cy, px + pw, cy + listH);
+        for (int n = lbScroll; n < Math.min(lbScroll + visRows + 1, visibles.size()); n++) {
+            int i = visibles.get(n);
             LeaderboardEntry e = leaderboard.get(i);
+            int ry = cy + (n - lbScroll) * rowH;
             boolean isMe = e.name().equalsIgnoreCase(me);
-            ctx.fill(px, cy, px + pw, cy + rowH, isMe ? 0x20E8A838 : (i % 2 == 0 ? C_PANEL : C_BG));
-            if (isMe) ctx.fill(px, cy, px + 3, cy + rowH, C_GOLD);
-            ctx.fill(px, cy + rowH - 1, px + pw, cy + rowH, C_BORDER);
+            ctx.fill(px, ry, px + listW, ry + rowH, isMe ? 0x20E8A838 : (i % 2 == 0 ? C_PANEL : C_BG));
+            if (isMe) ctx.fill(px, ry, px + 3, ry + rowH, C_GOLD);
+            ctx.fill(px, ry + rowH - 1, px + listW, ry + rowH, C_BORDER);
             int rankColor = i == 0 ? C_GOLD : (i == 1 ? 0xFFC0C0C0 : (i == 2 ? 0xFFCD7F32 : C_DIM));
-            ctx.drawText(textRenderer, "#" + (i + 1), px + 12, cy + (rowH - textRenderer.fontHeight) / 2, rankColor, false);
-            ctx.drawText(textRenderer, e.name(), px + 52, cy + (rowH - textRenderer.fontHeight) / 2,
+            ctx.drawText(textRenderer, "#" + (i + 1), px + 12, ry + (rowH - textRenderer.fontHeight) / 2, rankColor, false);
+            ctx.drawText(textRenderer, e.name(), px + 52, ry + (rowH - textRenderer.fontHeight) / 2,
                 isMe ? C_GOLD : C_WHITE, false);
             String balStr = fmt(e.balance()) + " ◆";
-            ctx.drawText(textRenderer, balStr, px + pw - textRenderer.getWidth(balStr) - 12,
-                cy + (rowH - textRenderer.fontHeight) / 2, C_GOLD, false);
-            cy += rowH;
+            ctx.drawText(textRenderer, balStr, px + listW - textRenderer.getWidth(balStr) - 12,
+                ry + (rowH - textRenderer.fontHeight) / 2, C_GOLD, false);
+        }
+        ctx.disableScissor();
+
+        if (lbMaxScroll > 0) {
+            int sbX = px + pw - 6;
+            ctx.fill(sbX, cy, sbX + 6, cy + listH, C_BORDER);
+            int thumbH = Math.max(18, listH * visRows / visibles.size());
+            int thumbY = cy + (listH - thumbH) * lbScroll / lbMaxScroll;
+            ctx.fill(sbX, thumbY, sbX + 6, thumbY + thumbH, C_GOLD);
         }
     }
 
@@ -1015,7 +1200,7 @@ public class BankScreen extends Screen {
                 && x >= wBtnX && x < wBtnX + wBtnW && y >= wBtnY && y < wBtnY + 22) {
             wModalOpen = true;
             withdrawInput.setBounds(0, Math.max(0, balance));
-            withdrawInput.setValue(0);
+            withdrawInput.clear();
             withdrawInput.setFocused(false);
             return true;
         }
@@ -1026,7 +1211,7 @@ public class BankScreen extends Screen {
             int enPoche = shardsEnPoche();
             dModalOpen = true;
             depositInput.setBounds(0, enPoche);
-            depositInput.setValue(enPoche);   // tout par défaut, ajustable
+            depositInput.clear();   // placeholder « Max = tout en poche »
             depositInput.setFocused(false);
             return true;
         }
@@ -1050,6 +1235,9 @@ public class BankScreen extends Screen {
             }
         }
 
+        // ── Onglet Classement : focus du champ de recherche ──
+        if (activeTab == Tab.LEADERBOARD && super.mouseClicked(mx0, my0, btn)) return true;
+
         // ── Onglet Virements ──
         if (activeTab == Tab.TRANSFERS) {
             // D'abord les champs texte (focus clavier), sinon les boutons/dropdowns
@@ -1065,6 +1253,10 @@ public class BankScreen extends Screen {
     public boolean mouseScrolled(double mx, double my, double amount) {
         if (activeTab == Tab.ACCOUNT) {
             txScroll = Math.max(0, txScroll - (int) amount);
+            return true;
+        }
+        if (activeTab == Tab.LEADERBOARD) {
+            lbScroll = Math.max(0, Math.min(lbScroll - (int) amount, lbMaxScroll));
             return true;
         }
         if (borrowerDropOpen) {

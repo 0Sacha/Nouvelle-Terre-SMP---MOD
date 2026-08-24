@@ -158,7 +158,7 @@ public class QuestManager {
 
         server.execute(() -> {
             ServerPlayerEntity sp = server.getPlayerManager().getPlayer(player);
-            if (sp != null) NouvelleTerreBridge.sendQuestOpen(sp);
+            if (sp != null) NouvelleTerreBridge.sendQuestUpdate(sp);
         });
     }
 
@@ -235,7 +235,8 @@ public class QuestManager {
                             // Livraison partielle : le reste est converti en shards
                             int remaining = stack.getCount();
                             int shards = shardsValueOf(pr.rewardItem, remaining);
-                            LocalEconomy.getInstance().addShards(name, shards);
+                            LocalEconomy.getInstance().addShards(name, shards,
+                                "Quête (reste converti) : " + pr.questLabel);
                             delivered = true;
                             sp.sendMessage(net.minecraft.text.Text.literal(
                                 "§6[Quêtes] §fRécompense livrée, inventaire plein : le reste converti en §a+"
@@ -246,7 +247,8 @@ public class QuestManager {
                 if (!delivered) {
                     // Hors ligne ou inventaire plein : conversion complète en shards (argent créé)
                     int shards = shardsValueOf(pr.rewardItem, pr.rewardItemQty);
-                    LocalEconomy.getInstance().addShards(name, shards);
+                    LocalEconomy.getInstance().addShards(name, shards,
+                        "Quête (convertie) : " + pr.questLabel);
                     if (sp != null) sp.sendMessage(net.minecraft.text.Text.literal(
                         "§6[Quêtes] §fInventaire plein — récompense convertie : §a+" + shards
                         + " ◆ §7(" + pr.questLabel + ")"), false);
@@ -344,7 +346,7 @@ public class QuestManager {
                     server.execute(() -> {
                         ServerPlayerEntity sp = server.getPlayerManager().getPlayer(p);
                         if (sp != null) {
-                            NouvelleTerreBridge.sendQuestOpen(sp);
+                            NouvelleTerreBridge.sendQuestUpdate(sp);
                             sp.sendMessage(net.minecraft.text.Text.literal(
                                 "§a[Quêtes] La quête groupe \"" + q.label + "\" est maintenant active !"), false);
                         }
@@ -546,8 +548,7 @@ public class QuestManager {
             community.completed = true;
             int reward = q.rewardShards;
             for (String p : community.contributors.keySet()) {
-                LocalEconomy.getInstance().addShards(p, reward);
-                TransactionLog.log(p, TransactionLog.TYPE_REWARD, "Quête communautaire : " + q.label, reward);
+                LocalEconomy.getInstance().addShards(p, reward, "Quête communautaire : " + q.label);
             }
             int count = community.contributors.size();
             if (server != null) server.execute(() -> {
@@ -572,8 +573,7 @@ public class QuestManager {
     }
 
     private static void giveReward(String player, Quest q, MinecraftServer server) {
-        LocalEconomy.getInstance().addShards(player, q.rewardShards);
-        TransactionLog.log(player, TransactionLog.TYPE_REWARD, "Quête : " + q.label, q.rewardShards);
+        LocalEconomy.getInstance().addShards(player, q.rewardShards, "Quête : " + q.label);
         server.execute(() -> {
             ServerPlayerEntity sp = server.getPlayerManager().getPlayer(player);
             if (sp != null) NouvelleTerreBridge.sendBalanceToPlayer(sp);

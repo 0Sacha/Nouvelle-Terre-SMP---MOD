@@ -12,6 +12,7 @@ import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -64,22 +65,33 @@ public class LocalEconomy {
         return true;
     }
 
-    /** Ajoute des shards à un joueur (récompense, salaire, admin give). */
-    public synchronized void addShards(String pseudo, int montant) {
+    /**
+     * Ajoute des shards à un joueur (récompense, salaire, admin give).
+     *
+     * @param raison libellé affiché dans l'historique — <b>précisez la provenance</b>
+     *               (« Quête : … », « Kill : zombie », « Temps de jeu »…). Ce
+     *               paramètre est obligatoire depuis la 1.4.2 : la méthode
+     *               journalisait auparavant un « Récompense » générique en plus du
+     *               log de l'appelant, d'où des transactions en double et sans
+     *               provenance dans /bank.
+     */
+    public synchronized void addShards(String pseudo, int montant, String raison) {
         soldes.merge(pseudo.toLowerCase(), montant, Integer::sum);
         save();
-        TransactionLog.log(pseudo, TransactionLog.TYPE_REWARD, "Récompense", montant);
+        TransactionLog.log(pseudo, TransactionLog.TYPE_REWARD, raison, montant);
         Map<String, Object> data = new HashMap<>();
         data.put("player", pseudo);
         data.put("amount", montant);
         EventDispatcher.envoyer("ECONOMY_REWARD", data);
     }
 
-    /** Dépose des Shards physiques sur le compte (clic droit sur l'item — conversion item → solde). */
+    /**
+     * Dépose des Shards physiques sur le compte (conversion item → solde).
+     * Ne journalise pas : l'appelant le fait avec le détail du dépôt.
+     */
     public synchronized void depositShards(String pseudo, int montant) {
         soldes.merge(pseudo.toLowerCase(), montant, Integer::sum);
         save();
-        TransactionLog.log(pseudo, TransactionLog.TYPE_TRANSFER_IN, "Dépôt de Shards physiques", montant);
         Map<String, Object> data = new HashMap<>();
         data.put("player", pseudo);
         data.put("amount", montant);
@@ -94,6 +106,40 @@ public class LocalEconomy {
     /** Retourne les clés (lowercase) de tous les joueurs connus. */
     public synchronized Set<String> getSoldesKeys() {
         return new java.util.HashSet<>(soldes.keySet());
+    }
+
+    /** Soldes des vrais joueurs, comptes système ($Serveur…) exclus. */
+    private synchronized List<Integer> soldesJoueurs() {
+        List<Integer> out = new java.util.ArrayList<>();
+        for (Map.Entry<String, Integer> e : soldes.entrySet())
+            if (!e.getKey().startsWith("$")) out.add(e.getValue());
+        return out;
+    }
+
+    /** Masse monétaire totale détenue par les joueurs. */
+    public synchronized long masseMonetaire() {
+        long total = 0;
+        for (int solde : soldesJoueurs()) total += Math.max(0, solde);
+        return total;
+    }
+
+    public synchronized int nombreJoueursConnus() {
+        return soldesJoueurs().size();
+    }
+
+    /**
+     * Solde médian des joueurs.
+     *
+     * Médiane et non moyenne : quelques millionnaires suffisent à faire mentir une
+     * moyenne, or c'est précisément le cas qu'on cherche à mesurer — beaucoup de
+     * joueurs pauvres et une poignée de très riches.
+     */
+    public synchronized int soldeMedian() {
+        List<Integer> l = soldesJoueurs();
+        if (l.isEmpty()) return 0;
+        java.util.Collections.sort(l);
+        int n = l.size();
+        return n % 2 == 1 ? l.get(n / 2) : (l.get(n / 2 - 1) + l.get(n / 2)) / 2;
     }
 
     /** Retire des shards à un joueur (ne passe pas en négatif). */

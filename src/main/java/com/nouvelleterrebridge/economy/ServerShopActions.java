@@ -35,15 +35,19 @@ public final class ServerShopActions {
         String nomItem = FrenchItemNames.toDisplay(itemId);
         LocalEconomy eco = LocalEconomy.getInstance();
 
-        int prixUnite = ServerShopPriceManager.getPrice(itemId);
-        int total     = prixUnite * qty;
+        // Surtaxe de fortune : les plus riches paient davantage, ce qui freine la
+        // concentration des shards sans pénaliser les joueurs au niveau médian.
+        int    prixBase = ServerShopPriceManager.getPrice(itemId);
+        double taxe     = ServerShopPriceManager.taxeRichesse(pseudo);
+        int    prixUnite = Math.max(1, (int) Math.round(prixBase * (1.0 + taxe)));
+        int    total     = prixUnite * qty;
 
         if (eco.getBalance(pseudo) < total)
             return String.format("§cSolde insuffisant — §f%s ◆§c requis, tu as §f%s ◆§c.",
                 EconomieCommand.fmt(total), EconomieCommand.fmt(eco.getBalance(pseudo)));
 
         eco.removeShards(pseudo, total);
-        eco.addShards(COMPTE_SERVEUR, total);
+        eco.addShards(COMPTE_SERVEUR, total, "Vente au joueur");
 
         int restant = qty;
         while (restant > 0) {
@@ -56,8 +60,12 @@ public final class ServerShopActions {
         ServerShopPriceManager.recordSale(itemId, qty);
         TransactionLog.log(pseudo, TransactionLog.TYPE_BUY, qty + "x " + nomItem + " (Shop Serveur)", total);
 
-        return String.format("§a✅ §f%dx %s §aacheté pour §f%s ◆§a. Solde : §f%s ◆§a.",
-            qty, nomItem, EconomieCommand.fmt(total), EconomieCommand.fmt(eco.getBalance(pseudo)));
+        String mentionTaxe = taxe > 0
+            ? String.format(" §7(dont %d%% de taxe de fortune)", Math.round(taxe * 100))
+            : "";
+        return String.format("§a✅ §f%dx %s §aacheté pour §f%s ◆§a%s. Solde : §f%s ◆§a.",
+            qty, nomItem, EconomieCommand.fmt(total), mentionTaxe,
+            EconomieCommand.fmt(eco.getBalance(pseudo)));
     }
 
     // ── Revente (joueur → serveur) ────────────────────────────────────────────
@@ -103,7 +111,7 @@ public final class ServerShopActions {
         // Le compte serveur peut passer négatif : c'est un puits comptable,
         // exclu des totaux, pas une trésorerie à équilibrer.
         eco.forceDeduct(COMPTE_SERVEUR, total);
-        eco.addShards(pseudo, total);
+        eco.addShards(pseudo, total, "Revente au Shop Serveur");
 
         ServerShopPriceManager.recordPurchase(itemId, qty);
         TransactionLog.log(pseudo, TransactionLog.TYPE_SELL, qty + "x " + nomItem + " (Shop Serveur)", total);

@@ -92,7 +92,7 @@ public class EconomieCommand {
     // ── /economie admin give ──────────────────────────────────────────────────
     private static int executerAdminGive(ServerCommandSource source, String cible, int montant) {
         LocalEconomy eco = LocalEconomy.getInstance();
-        eco.addShards(cible, montant);
+        eco.addShards(cible, montant, "Don administrateur");
         int nouveau = eco.getBalance(cible);
 
         source.sendFeedback(() -> Text.literal(SEP_DARK), false);
@@ -165,7 +165,7 @@ public class EconomieCommand {
         // Donner 500 ◆ immédiatement à tous les joueurs en ligne
         for (ServerPlayerEntity p : source.getServer().getPlayerManager().getPlayerList()) {
             String name = p.getName().getString();
-            eco.addShards(name, 500);
+            eco.addShards(name, 500, "Pécule de départ");
             FirstJoinTracker.getInstance().markReceived(name);
             p.sendMessage(Text.literal(
                 "§6[Admin] §fL'économie a été réinitialisée. Tu reçois §e§l500 ◆§f de départ !"));

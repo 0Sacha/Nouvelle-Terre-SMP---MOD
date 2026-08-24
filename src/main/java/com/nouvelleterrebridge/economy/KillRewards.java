@@ -45,7 +45,8 @@ public class KillRewards {
             if (shards <= 0) return;
 
             String pseudo = joueur.getName().getString();
-            LocalEconomy.getInstance().addShards(pseudo, shards);
+            LocalEconomy.getInstance().addShards(pseudo, shards,
+                "Kill : " + killedEntity.getType().getName().getString());
             com.nouvelleterrebridge.NouvelleTerreBridge.sendBalanceToPlayer(joueur);
 
             joueur.sendMessage(net.minecraft.text.Text.literal(

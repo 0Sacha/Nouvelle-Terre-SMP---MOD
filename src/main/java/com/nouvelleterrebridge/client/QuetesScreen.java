@@ -55,16 +55,17 @@ public class QuetesScreen extends Screen {
 
     // ── Layout ────────────────────────────────────────────────────────────────
 
-    private static final int MAX_PW = 540;
-    private static final int MAX_PH = 400;
+    private static final int MAX_PW = 620;
+    private static final int MAX_PH = 440;
     private static final int TOP_H  = 64;
     private static final int PAD    = 12;
-    private static final int COLS   = 3;
     private static final int GAP    = 8;
-    private static final int CARD_H = 120;
+    /** Une quête par ligne : le scroll se compte en quêtes, plus en rangées. */
+    private static final int ROW_H   = 46;
+    private static final int ROW_GAP = 4;
     private static final int BTN_H  = 18;
 
-    private int pw, ph, px, py, cardW;
+    private int pw, ph, px, py, rowW;
 
     // ── State ─────────────────────────────────────────────────────────────────
 
@@ -107,7 +108,7 @@ public class QuetesScreen extends Screen {
         ph    = Math.min(MAX_PH, height - 20);
         px    = (width  - pw) / 2;
         py    = (height - ph) / 2;
-        cardW = (pw - PAD * 2 - (COLS - 1) * GAP) / COLS;
+        rowW  = pw - PAD * 2 - 8;   // 8 px réservés à la scrollbar
     }
 
     @Override public boolean shouldPause() { return false; }
@@ -188,22 +189,19 @@ public class QuetesScreen extends Screen {
         }
 
         List<QuestData> list = getAvailableFiltered();
-        int rows      = (list.size() + COLS - 1) / COLS;
-        int maxScroll = Math.max(0, rows - visibleRows());
+        if (list.isEmpty()) { drawCentered(ctx, "Aucune quête disponible.", cardsY + 60); return; }
+        int maxScroll = Math.max(0, list.size() - visibleRows());
         scrollRow = Math.min(scrollRow, maxScroll);
 
         for (int row = 0; row < visibleRows(); row++) {
-            for (int col = 0; col < COLS; col++) {
-                int idx = (scrollRow + row) * COLS + col;
-                if (idx >= list.size()) continue;
-                QuestData q = list.get(idx);
-                int cx = px + PAD + col * (cardW + GAP);
-                int cy = cardsY + PAD + row * (CARD_H + GAP);
-                boolean hover = mx >= cx && mx < cx + cardW && my >= cy && my < cy + CARD_H;
-                renderAvailableCard(ctx, q, cx, cy, hover, mx, my);
-            }
+            int idx = scrollRow + row;
+            if (idx >= list.size()) break;
+            int rx = px + PAD;
+            int ry = cardsY + PAD + row * (ROW_H + ROW_GAP);
+            boolean hover = mx >= rx && mx < rx + rowW && my >= ry && my < ry + ROW_H;
+            renderAvailableRow(ctx, list.get(idx), rx, ry, hover, mx, my);
         }
-        renderScrollbar(ctx, cardsY, rows, visibleRows(), scrollRow, maxScroll);
+        renderScrollbar(ctx, cardsY, list.size(), visibleRows(), scrollRow, maxScroll);
     }
 
     /** Bannière de la quête communautaire du serveur (progression globale). */
@@ -240,46 +238,50 @@ public class QuetesScreen extends Screen {
             community.completed() ? C_GREEN : C_MID, false);
     }
 
-    private void renderAvailableCard(DrawContext ctx, QuestData q, int x, int y, boolean hover, int mx, int my) {
-        ctx.fill(x, y, x + cardW, y + CARD_H, hover ? C_HOVER : C_SURFACE);
-        ctx.fill(x, y, x + 3, y + CARD_H, diffColor(q));
-        ctx.fill(x, y + CARD_H - 1, x + cardW, y + CARD_H, C_BORDER);
+    /** Cadre commun a toutes les lignes : fond, accent de gauche, separation. */
+    private void rowFrame(DrawContext ctx, int x, int y, boolean hover, int accent) {
+        ctx.fill(x, y, x + rowW, y + ROW_H, hover ? C_HOVER : C_SURFACE);
+        ctx.fill(x, y, x + 3, y + ROW_H, accent);
+        ctx.fill(x, y + ROW_H - 1, x + rowW, y + ROW_H, C_BORDER);
+    }
 
-        renderItemIcon(ctx, q.target(), x + cardW - 22, y + 7);
+    /** Bouton aligne a droite d'une ligne ; renvoie son bord gauche. */
+    private int rowButton(DrawContext ctx, String label, int right, int y, int mx, int my,
+                          int couleur, int fondInactif, int id, int action) {
+        int bw = textRenderer.getWidth(label) + 14;
+        int bx = right - bw;
+        int by = y + (ROW_H - BTN_H) / 2;
+        boolean hov = mx >= bx && mx < bx + bw && my >= by && my < by + BTN_H;
+        ctx.fill(bx, by, bx + bw, by + BTN_H, hov ? couleur : fondInactif);
+        ctx.fill(bx, by, bx + bw, by + 1, couleur);
+        ctx.drawText(textRenderer, label, bx + 7, by + 5, C_WHITE, false);
+        cardBounds.add(new int[]{bx, by, bw, BTN_H, id, action});
+        return bx;
+    }
 
-        List<String> filteredTags = q.tags().stream()
-            .filter(t -> "SOLO".equals(t) || "GROUPE".equals(t) || "JOURNALIÈRE".equals(t)
-                      || "KILL".equals(t) || "HARVEST".equals(t) || "DELIVERY".equals(t))
-            .toList();
-        int cy = renderTagsCompact(ctx, filteredTags, x + 6, y + 8);
+    private void renderAvailableRow(DrawContext ctx, QuestData q, int x, int y, boolean hover, int mx, int my) {
+        rowFrame(ctx, x, y, hover, diffColor(q));
+        renderIcon(ctx, q.type(), q.target(), x + 12, y + (ROW_H - 16) / 2);
 
-        String objectif = truncate(targetName(q.type(), q.target()), cardW - 50);
-        ctx.drawText(textRenderer, objectif, x + 6, cy, C_WHITE, false);
-        ctx.drawText(textRenderer, " ×" + q.quantity(), x + 6 + textRenderer.getWidth(objectif), cy, C_MID, false);
-        cy += 11;
+        int tx = x + 36;
+        String objectif = targetName(q.type(), q.target()) + " \u00d7" + q.quantity();
+        ctx.drawText(textRenderer, truncate(objectif, rowW - 220), tx, y + 8, C_WHITE, false);
 
-        renderReward(ctx, q, x + 6, cy);
+        // Ligne secondaire : portee, recompense, cout, places de groupe
+        StringBuilder sub = new StringBuilder();
+        for (String t : q.tags())
+            if ("SOLO".equals(t) || "GROUPE".equals(t) || "JOURNALI\u00c8RE".equals(t))
+                sub.append(t.charAt(0)).append(t.substring(1).toLowerCase()).append(" \u00b7 ");
+        sub.append(q.rewardShards() > 0 ? "+" + q.rewardShards() + " \u25c6" : "recompense objet");
+        if (q.rewardXp() > 0)   sub.append("  +").append(q.rewardXp()).append(" XP");
+        if (q.costShards() > 0) sub.append("  \u00a7c\u2212").append(q.costShards()).append(" \u25c6");
+        if (q.maxPlayers() > 1) sub.append("  \u00a7b\ud83d\udc65 ")
+            .append(groupPending.getOrDefault(q.id(), 0)).append("/").append(q.maxPlayers());
+        ctx.drawText(textRenderer, truncate(sub.toString(), rowW - 220), tx, y + 24, C_MID, false);
 
-        if (q.costShards() > 0) {
-            cy += 11;
-            ctx.drawText(textRenderer, "§c−" + q.costShards() + " ◆", x + 6, cy, C_RED, false);
-        }
-
-        if (q.maxPlayers() > 1) {
-            int accepted = groupPending.getOrDefault(q.id(), 0);
-            ctx.drawText(textRenderer, "§b👥 " + accepted + "/" + q.maxPlayers(),
-                    x + 6, y + CARD_H - BTN_H - 22, C_BLUE, false);
-        }
-
-        String btnLabel = q.maxPlayers() > 1 ? "Rejoindre" : "Accepter";
-        int bw = textRenderer.getWidth(btnLabel) + 12;
-        int bx = x + cardW - bw - 4;
-        int by = y + CARD_H - BTN_H - 4;
-        boolean bhov = mx >= bx && mx < bx + bw && my >= by && my < by + BTN_H;
-        ctx.fill(bx, by, bx + bw, by + BTN_H, bhov ? C_GOLD : 0xFF5A3F10);
-        ctx.fill(bx, by, bx + bw, by + 1, C_GOLD);
-        ctx.drawText(textRenderer, btnLabel, bx + (bw - textRenderer.getWidth(btnLabel)) / 2, by + 5, C_WHITE, false);
-        cardBounds.add(new int[]{bx, by, bw, BTN_H, q.id(), QuestNetworking.ACTION_ACCEPT});
+        String btn = q.maxPlayers() > 1 ? "Rejoindre" : "Accepter";
+        rowButton(ctx, btn, x + rowW - 8, y, mx, my, C_GOLD, 0xFF5A3F10,
+                  q.id(), QuestNetworking.ACTION_ACCEPT);
     }
 
     // ── Onglet En cours ───────────────────────────────────────────────────────
@@ -287,77 +289,56 @@ public class QuetesScreen extends Screen {
     private void renderActive(DrawContext ctx, int mx, int my, int startY) {
         List<ActiveQuestData> inProgress = getInProgress();
         if (inProgress.isEmpty()) { drawCentered(ctx, "Aucune quête en cours.", startY + 60); return; }
-        int rows = (inProgress.size() + COLS - 1) / COLS;
-        int maxScroll = Math.max(0, rows - visibleRows());
+        int maxScroll = Math.max(0, inProgress.size() - visibleRows());
         scrollRow = Math.min(scrollRow, maxScroll);
 
         for (int row = 0; row < visibleRows(); row++) {
-            for (int col = 0; col < COLS; col++) {
-                int idx = (scrollRow + row) * COLS + col;
-                if (idx >= inProgress.size()) continue;
-                ActiveQuestData aq = inProgress.get(idx);
-                int cx = px + PAD + col * (cardW + GAP);
-                int cy = startY + PAD + row * (CARD_H + GAP);
-                boolean hover = mx >= cx && mx < cx + cardW && my >= cy && my < cy + CARD_H;
-                renderActiveCard(ctx, aq, cx, cy, hover, mx, my);
-            }
+            int idx = scrollRow + row;
+            if (idx >= inProgress.size()) break;
+            int rx = px + PAD;
+            int ry = startY + PAD + row * (ROW_H + ROW_GAP);
+            boolean hover = mx >= rx && mx < rx + rowW && my >= ry && my < ry + ROW_H;
+            renderActiveRow(ctx, inProgress.get(idx), rx, ry, hover, mx, my);
         }
-        renderScrollbar(ctx, startY, rows, visibleRows(), scrollRow, maxScroll);
+        renderScrollbar(ctx, startY, inProgress.size(), visibleRows(), scrollRow, maxScroll);
     }
 
-    private void renderActiveCard(DrawContext ctx, ActiveQuestData aq, int x, int y, boolean hover, int mx, int my) {
+    private void renderActiveRow(DrawContext ctx, ActiveQuestData aq, int x, int y, boolean hover, int mx, int my) {
         QuestData q = aq.snapshot();
         if (q == null) return;
+        rowFrame(ctx, x, y, hover, diffColor(q));
+        renderIcon(ctx, q.type(), q.target(), x + 12, y + (ROW_H - 16) / 2);
 
-        ctx.fill(x, y, x + cardW, y + CARD_H, hover ? C_HOVER : C_SURFACE);
-        ctx.fill(x, y, x + 3, y + CARD_H, diffColor(q));
-        ctx.fill(x, y + CARD_H - 1, x + cardW, y + CARD_H, C_BORDER);
+        int tx = x + 36;
+        String objectif = targetName(q.type(), q.target()) + " \u00d7" + q.quantity();
+        ctx.drawText(textRenderer, truncate(objectif, rowW - 230), tx, y + 7, C_WHITE, false);
 
-        renderItemIcon(ctx, q.target(), x + cardW - 22, y + 7);
-        List<String> filteredTags = q.tags().stream()
-            .filter(t -> "SOLO".equals(t) || "GROUPE".equals(t) || "JOURNALIÈRE".equals(t)
-                      || "KILL".equals(t) || "HARVEST".equals(t) || "DELIVERY".equals(t))
-            .toList();
-        int cy = renderTagsCompact(ctx, filteredTags, x + 6, y + 8);
-        String objectif = truncate(targetName(q.type(), q.target()), cardW - 50);
-        ctx.drawText(textRenderer, objectif, x + 6, cy, C_WHITE, false);
-        ctx.drawText(textRenderer, " ×" + q.quantity(), x + 6 + textRenderer.getWidth(objectif), cy, C_MID, false);
-        cy += 11;
-
-        int cancelBtnY = y + CARD_H - BTN_H - 4;
-        int claimBtnY  = cancelBtnY - BTN_H - 4;
+        int droite = x + rowW - 8;
+        droite = rowButton(ctx, "Annuler", droite, y, mx, my, C_RED, 0xFF3D0A16,
+                           aq.questId(), QuestNetworking.ACTION_CANCEL) - 6;
 
         if ("DELIVERY".equals(q.type())) {
             boolean hasItems = hasItemsInInventory(q.target(), q.quantity());
-            ctx.drawText(textRenderer, (hasItems ? "§a✓ " : "§c✗ ") + fmtItem(q.target()), x + 6, cy,
-                    hasItems ? C_GREEN : C_RED, false);
-            if (hasItems && !aq.turnedIn()) {
-                int bw = textRenderer.getWidth("Remettre") + 12;
-                int bx = x + cardW - bw - 4;
-                boolean bhov = mx >= bx && mx < bx + bw && my >= claimBtnY && my < claimBtnY + BTN_H;
-                ctx.fill(bx, claimBtnY, bx + bw, claimBtnY + BTN_H, bhov ? C_GREEN : 0xFF1A6645);
-                ctx.fill(bx, claimBtnY, bx + bw, claimBtnY + 1, C_GREEN);
-                ctx.drawText(textRenderer, "Remettre", bx + 6, claimBtnY + 5, C_WHITE, false);
-                cardBounds.add(new int[]{bx, claimBtnY, bw, BTN_H, aq.questId(), QuestNetworking.ACTION_CLAIM});
-            } else if (aq.turnedIn()) {
-                ctx.drawText(textRenderer, "→ À Réclamer", x + 6, cy + 11, C_GOLD, false);
+            if (aq.turnedIn()) {
+                ctx.drawText(textRenderer, "\u2192 \u00c0 R\u00e9clamer", tx, y + 24, C_GOLD, false);
+            } else {
+                ctx.drawText(textRenderer, (hasItems ? "\u00a7a\u2713 " : "\u00a7c\u2717 ") + fmtItem(q.target())
+                    + " en inventaire", tx, y + 24, hasItems ? C_GREEN : C_RED, false);
+                if (hasItems) rowButton(ctx, "Remettre", droite, y, mx, my, C_GREEN, 0xFF1A6645,
+                                        aq.questId(), QuestNetworking.ACTION_CLAIM);
             }
         } else {
+            // Barre de progression : occupe la largeur restante avant les boutons
             int prog = aq.progress(), total = q.quantity();
             float pct = total > 0 ? Math.min(1f, (float) prog / total) : 0f;
-            int barW2 = cardW - 12;
-            ctx.fill(x + 6, cy, x + 6 + barW2, cy + 4, C_BORDER);
-            ctx.fill(x + 6, cy, x + 6 + (int)(barW2 * pct), cy + 4, pct >= 1f ? C_GREEN : C_GOLD);
-            ctx.drawText(textRenderer, prog + "/" + total, x + 6, cy + 6, C_MID, false);
-            // Réclamer bouton jamais affiché ici : les quêtes 100% passent dans "À Réclamer"
+            String txt = prog + " / " + total;
+            int txtW = textRenderer.getWidth(txt);
+            int barW2 = Math.max(40, droite - tx - txtW - 12);
+            ctx.fill(tx, y + 26, tx + barW2, y + 31, C_BORDER);
+            if (pct > 0) ctx.fill(tx, y + 26, tx + (int) (barW2 * pct), y + 31,
+                pct >= 1f ? C_GREEN : C_GOLD);
+            ctx.drawText(textRenderer, txt, tx + barW2 + 8, y + 24, C_MID, false);
         }
-
-        int cw2 = textRenderer.getWidth("Annuler") + 10;
-        boolean chov = mx >= x + 6 && mx < x + 6 + cw2 && my >= cancelBtnY && my < cancelBtnY + BTN_H;
-        ctx.fill(x + 6, cancelBtnY, x + 6 + cw2, cancelBtnY + BTN_H, chov ? C_RED : 0xFF3D0A16);
-        ctx.fill(x + 6, cancelBtnY, x + 6 + cw2, cancelBtnY + 1, C_RED);
-        ctx.drawText(textRenderer, "Annuler", x + 11, cancelBtnY + 5, C_WHITE, false);
-        cardBounds.add(new int[]{x + 6, cancelBtnY, cw2, BTN_H, aq.questId(), QuestNetworking.ACTION_CANCEL});
     }
 
     // ── Onglet À Réclamer ─────────────────────────────────────────────────────
@@ -366,90 +347,58 @@ public class QuetesScreen extends Screen {
         List<ActiveQuestData> completed = getCompleted();
         int total = completed.size() + pending.size();
         if (total == 0) { drawCentered(ctx, "Aucune récompense en attente.", startY + 60); return; }
-        int rows = (total + COLS - 1) / COLS;
-        int maxScroll = Math.max(0, rows - visibleRows());
+        int maxScroll = Math.max(0, total - visibleRows());
         scrollRow = Math.min(scrollRow, maxScroll);
 
         for (int row = 0; row < visibleRows(); row++) {
-            for (int col = 0; col < COLS; col++) {
-                int idx = (scrollRow + row) * COLS + col;
-                if (idx >= total) continue;
-                int cx = px + PAD + col * (cardW + GAP);
-                int cy = startY + PAD + row * (CARD_H + GAP);
-                boolean hover = mx >= cx && mx < cx + cardW && my >= cy && my < cy + CARD_H;
-                if (idx < completed.size()) {
-                    renderClaimableCard(ctx, completed.get(idx), cx, cy, hover, mx, my);
-                } else {
-                    renderPendingCard(ctx, pending.get(idx - completed.size()), cx, cy, hover, mx, my, idx - completed.size());
-                }
-            }
+            int idx = scrollRow + row;
+            if (idx >= total) break;
+            int rx = px + PAD;
+            int ry = startY + PAD + row * (ROW_H + ROW_GAP);
+            boolean hover = mx >= rx && mx < rx + rowW && my >= ry && my < ry + ROW_H;
+            if (idx < completed.size())
+                renderClaimableRow(ctx, completed.get(idx), rx, ry, hover, mx, my);
+            else
+                renderPendingRow(ctx, pending.get(idx - completed.size()), rx, ry, hover, mx, my,
+                                 idx - completed.size());
         }
-        renderScrollbar(ctx, startY, rows, visibleRows(), scrollRow, maxScroll);
+        renderScrollbar(ctx, startY, total, visibleRows(), scrollRow, maxScroll);
     }
 
-    private void renderClaimableCard(DrawContext ctx, ActiveQuestData aq, int x, int y, boolean hover, int mx, int my) {
+    private void renderClaimableRow(DrawContext ctx, ActiveQuestData aq, int x, int y, boolean hover, int mx, int my) {
         QuestData q = aq.snapshot();
         if (q == null) return;
-        ctx.fill(x, y, x + cardW, y + CARD_H, hover ? C_HOVER : C_SURFACE);
-        ctx.fill(x, y, x + 3, y + CARD_H, C_GREEN);
-        ctx.fill(x, y + CARD_H - 1, x + cardW, y + CARD_H, C_BORDER);
+        rowFrame(ctx, x, y, hover, C_GREEN);
+        renderIcon(ctx, q.type(), q.target(), x + 12, y + (ROW_H - 16) / 2);
 
-        renderItemIcon(ctx, q.target(), x + cardW - 22, y + 7);
-        ctx.drawText(textRenderer, "✅ Terminée", x + 6, y + 8, C_GREEN, false);
-        String objectif = truncate(targetName(q.type(), q.target()), cardW - 50);
-        ctx.drawText(textRenderer, objectif, x + 6, y + 20, C_WHITE, false);
-        ctx.drawText(textRenderer, " ×" + q.quantity(), x + 6 + textRenderer.getWidth(objectif), y + 20, C_MID, false);
-        renderReward(ctx, q, x + 6, y + 32);
+        int tx = x + 36;
+        ctx.drawText(textRenderer, truncate("\u2705 " + targetName(q.type(), q.target())
+            + " \u00d7" + q.quantity(), rowW - 230), tx, y + 8, C_WHITE, false);
+        String rec = q.rewardShards() > 0 ? "+" + q.rewardShards() + " \u25c6" : "recompense objet";
+        if (q.rewardXp() > 0) rec += "  +" + q.rewardXp() + " XP";
+        ctx.drawText(textRenderer, rec, tx, y + 24, C_GOLD, false);
 
-        int cancelBtnY = y + CARD_H - BTN_H - 4;
-        int claimBtnY  = cancelBtnY - BTN_H - 4;
-
-        int bw = textRenderer.getWidth("Réclamer") + 12;
-        int bx = x + cardW - bw - 4;
-        boolean bhov = mx >= bx && mx < bx + bw && my >= claimBtnY && my < claimBtnY + BTN_H;
-        ctx.fill(bx, claimBtnY, bx + bw, claimBtnY + BTN_H, bhov ? C_GREEN : 0xFF1A6645);
-        ctx.fill(bx, claimBtnY, bx + bw, claimBtnY + 1, C_GREEN);
-        ctx.drawText(textRenderer, "Réclamer", bx + 6, claimBtnY + 5, C_WHITE, false);
-        cardBounds.add(new int[]{bx, claimBtnY, bw, BTN_H, aq.questId(), QuestNetworking.ACTION_CLAIM});
-
-        int cw2 = textRenderer.getWidth("Annuler") + 10;
-        boolean chov = mx >= x + 6 && mx < x + 6 + cw2 && my >= cancelBtnY && my < cancelBtnY + BTN_H;
-        ctx.fill(x + 6, cancelBtnY, x + 6 + cw2, cancelBtnY + BTN_H, chov ? C_RED : 0xFF3D0A16);
-        ctx.fill(x + 6, cancelBtnY, x + 6 + cw2, cancelBtnY + 1, C_RED);
-        ctx.drawText(textRenderer, "Annuler", x + 11, cancelBtnY + 5, C_WHITE, false);
-        cardBounds.add(new int[]{x + 6, cancelBtnY, cw2, BTN_H, aq.questId(), QuestNetworking.ACTION_CANCEL});
+        int droite = x + rowW - 8;
+        droite = rowButton(ctx, "Annuler", droite, y, mx, my, C_RED, 0xFF3D0A16,
+                           aq.questId(), QuestNetworking.ACTION_CANCEL) - 6;
+        rowButton(ctx, "R\u00e9clamer", droite, y, mx, my, C_GREEN, 0xFF1A6645,
+                  aq.questId(), QuestNetworking.ACTION_CLAIM);
     }
 
-    private void renderPendingCard(DrawContext ctx, PendingRewardData pr, int x, int y,
-                                    boolean hover, int mx, int my, int idx) {
-        ctx.fill(x, y, x + cardW, y + CARD_H, hover ? C_HOVER : C_SURFACE);
-        ctx.fill(x, y, x + 3, y + CARD_H, C_GOLD);
-        ctx.fill(x, y + CARD_H - 1, x + cardW, y + CARD_H, C_BORDER);
+    private void renderPendingRow(DrawContext ctx, PendingRewardData pr, int x, int y,
+                                  boolean hover, int mx, int my, int idx) {
+        rowFrame(ctx, x, y, hover, C_GOLD);
+        renderItemIcon(ctx, pr.itemId(), x + 12, y + (ROW_H - 16) / 2);
 
-        ctx.drawText(textRenderer, "✨ Récompense", x + 6, y + 8, C_GOLD, false);
-        ctx.drawText(textRenderer, pr.label(), x + 6, y + 20, C_WHITE, false);
-        renderItemIcon(ctx, pr.itemId(), x + cardW / 2 - 8, y + 38);
-        String itemStr = pr.qty() + "× " + fmtItem(pr.itemId());
-        int iw = textRenderer.getWidth(itemStr);
-        ctx.drawText(textRenderer, itemStr, x + (cardW - iw) / 2, y + 58, C_GREEN, false);
+        int tx = x + 36;
+        ctx.drawText(textRenderer, truncate("\u2728 " + pr.label(), rowW - 230), tx, y + 8, C_WHITE, false);
+        ctx.drawText(textRenderer, pr.qty() + "\u00d7 " + fmtItem(pr.itemId()), tx, y + 24, C_GREEN, false);
 
-        int cancelBtnY  = y + CARD_H - BTN_H - 4;
-        int collectBtnY = cancelBtnY - BTN_H - 4;
-
-        int bw = textRenderer.getWidth("Récupérer") + 12;
-        int bx = x + (cardW - bw) / 2;
-        boolean bhov = mx >= bx && mx < bx + bw && my >= collectBtnY && my < collectBtnY + BTN_H;
-        ctx.fill(bx, collectBtnY, bx + bw, collectBtnY + BTN_H, bhov ? C_GREEN : 0xFF1A6645);
-        ctx.fill(bx, collectBtnY, bx + bw, collectBtnY + 1, C_GREEN);
-        ctx.drawText(textRenderer, "Récupérer", bx + 6, collectBtnY + 5, C_WHITE, false);
-        cardBounds.add(new int[]{bx, collectBtnY, bw, BTN_H, idx, QuestNetworking.ACTION_COLLECT});
-
-        int cw2 = textRenderer.getWidth("Annuler") + 10;
-        boolean chov = mx >= x + 6 && mx < x + 6 + cw2 && my >= cancelBtnY && my < cancelBtnY + BTN_H;
-        ctx.fill(x + 6, cancelBtnY, x + 6 + cw2, cancelBtnY + BTN_H, chov ? C_RED : 0xFF3D0A16);
-        ctx.fill(x + 6, cancelBtnY, x + 6 + cw2, cancelBtnY + 1, C_RED);
-        ctx.drawText(textRenderer, "Annuler", x + 11, cancelBtnY + 5, C_WHITE, false);
-        cardBounds.add(new int[]{x + 6, cancelBtnY, cw2, BTN_H, idx, QuestNetworking.ACTION_CANCEL_PENDING});
+        int droite = x + rowW - 8;
+        droite = rowButton(ctx, "Annuler", droite, y, mx, my, C_RED, 0xFF3D0A16,
+                           idx, QuestNetworking.ACTION_CANCEL_PENDING) - 6;
+        rowButton(ctx, "R\u00e9cup\u00e9rer", droite, y, mx, my, C_GREEN, 0xFF1A6645,
+                  idx, QuestNetworking.ACTION_COLLECT);
     }
 
     // ── Onglet Classements ────────────────────────────────────────────────────
@@ -548,7 +497,7 @@ public class QuetesScreen extends Screen {
             String tag = tags.get(i);
             ctx.drawText(textRenderer, tag, tx, y, tagColor(tag), false);
             tx += textRenderer.getWidth(tag);
-            if (tx > x + cardW - 20) break;
+            if (tx > x + rowW - 20) break;
         }
         return y + 10;
     }
@@ -586,10 +535,45 @@ public class QuetesScreen extends Screen {
             ctx.drawText(textRenderer, "§a+" + q.rewardItemQty() + "× " + fmtItem(q.rewardItem()) + "  §7+" + q.rewardXp() + " XP", x, y, C_GREEN, false);
     }
 
+    /**
+     * Têtes de mob disponibles en vanilla. Plus lisible qu'un œuf d'apparition
+     * quand elle existe — on la préfère donc systématiquement.
+     */
+    private static final Map<String, String> TETES_MOB = Map.of(
+        "minecraft:zombie",          "minecraft:zombie_head",
+        "minecraft:skeleton",        "minecraft:skeleton_skull",
+        "minecraft:wither_skeleton", "minecraft:wither_skeleton_skull",
+        "minecraft:creeper",         "minecraft:creeper_head",
+        "minecraft:piglin",          "minecraft:piglin_head",
+        "minecraft:ender_dragon",    "minecraft:dragon_head"
+    );
+
     private void renderItemIcon(DrawContext ctx, String itemId, int x, int y) {
-        if (itemId == null || itemId.isEmpty()) return;
+        renderIcon(ctx, null, itemId, x, y);
+    }
+
+    /**
+     * Icône d'une cible de quête.
+     *
+     * Une cible KILL est un <b>type d'entité</b> ({@code minecraft:skeleton}), pas un
+     * item : la chercher dans le registre des items renvoyait AIR et ne dessinait
+     * rien du tout. On passe donc par la tête du mob, ou à défaut son œuf
+     * d'apparition — tous les mobs vanilla en ont un.
+     */
+    private void renderIcon(DrawContext ctx, String type, String target, int x, int y) {
+        if (target == null || target.isEmpty()) return;
         try {
-            Item item = Registries.ITEM.get(new Identifier(itemId));
+            Item item = Registries.ITEM.get(new Identifier(target));
+            if (item == Items.AIR && "KILL".equals(type)) {
+                String tete = TETES_MOB.get(target);
+                if (tete != null) item = Registries.ITEM.get(new Identifier(tete));
+                if (item == Items.AIR) {
+                    Identifier id = Identifier.tryParse(target);
+                    if (id != null) item = Registries.ITEM.get(
+                        new Identifier(id.getNamespace(), id.getPath() + "_spawn_egg"));
+                }
+            }
+            if (item == Items.AIR) return;
             ctx.drawItem(new ItemStack(item), x, y);
         } catch (Exception ignored) {}
     }
@@ -598,7 +582,7 @@ public class QuetesScreen extends Screen {
         if (rows <= vis) return;
         int trackX = px + pw - 6;
         int trackY = startY + PAD;
-        int trackH = vis * (CARD_H + GAP) - GAP;
+        int trackH = vis * (ROW_H + ROW_GAP) - ROW_GAP;
         ctx.fill(trackX, trackY, trackX + 4, trackY + trackH, C_BORDER);
         float ratio  = (float) vis / rows;
         int   thumbH = Math.max(16, (int)(trackH * ratio));
@@ -625,7 +609,7 @@ public class QuetesScreen extends Screen {
     private int visibleRows() {
         int contentH = ph - TOP_H - 1 - PAD * 2;
         if (tab == Tab.DISPONIBLES && community != null) contentH -= BANNER_H + GAP;
-        return Math.max(1, contentH / (CARD_H + GAP));
+        return Math.max(1, contentH / (ROW_H + ROW_GAP));
     }
 
     private int currentRows() {
@@ -636,7 +620,7 @@ public class QuetesScreen extends Screen {
             case A_RECLAMER  -> pending.size() + getCompleted().size();
             default          -> 0;
         };
-        return (count + COLS - 1) / COLS;
+        return count;
     }
 
     private String fmtItem(String id) {

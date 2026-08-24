@@ -106,6 +106,7 @@ public class ServerShopScreen extends Screen {
             Text.literal("Rechercher"));
         searchField.setDrawsBackground(false);
         searchField.setPlaceholder(Text.literal("Rechercher..."));
+        qtyInput.setPlaceholder("Quantité...");
         searchField.setChangedListener(s -> scroll = 0);
         addSelectableChild(searchField);
         refreshSellable();
@@ -139,7 +140,7 @@ public class ServerShopScreen extends Screen {
         entries  = new ArrayList<>(newEntries);
         selected = null;
         qtyInput.setBounds(1, 1);
-        qtyInput.setValue(1);
+        qtyInput.clear();
         refreshSellable();
         toastMsg = msg.replaceAll("§[0-9a-fA-Fklmnor]", "");
         toastOk  = ok;
@@ -498,7 +499,7 @@ public class ServerShopScreen extends Screen {
         if (hovered != null) {
             selected = hovered;
             qtyInput.setBounds(1, modalMax());
-            qtyInput.setValue(1);
+            qtyInput.clear();
             qtyInput.setFocused(false);
         }
         return true;

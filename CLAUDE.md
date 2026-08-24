@@ -26,7 +26,10 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `1.4.1` (nettoyage — code mort retiré, aucun changement de gameplay)
+- Version actuelle : `1.5.0` (LeBonCube — annonces de services entre joueurs, /server-admin)
+  - 1.4.2 : prix vivants, taxe de fortune, répartition des richesses, quêtes en liste,
+    correctifs de saisie
+  - 1.4.1 : nettoyage — code mort retiré, aucun changement de gameplay
   - 1.4.0 : refonte UI (listes, saisie numérique, gestion du shop), coupures de monnaie,
     anti-exploit de production, fix enchantements perdus à l'achat
   - 1.3.3 : scroll de l'onglet Vendre du HDV
@@ -128,10 +131,24 @@ façon prévue de les débloquer au Shop.
   Indispensable — la rareté vanilla ne reflète pas la valeur : diamant et lingot de
   netherite sont `Rarity.COMMON`, d'où le diamant à 1-2 ◆. La rareté n'est plus qu'un repli.
   Exemples : netherite 900, diamant 120, émeraude 45, or 25, fer 12, charbon 3.
-- **Prix dynamiques (`ServerShopPriceManager`)** — `server-shop-prices.json`. Deux facteurs :
-  1. **Flux net du shop** (`unitsSold - unitsBought`) : le serveur vend → l'item se raréfie
-     et monte ; il rachète → il baisse. +100% à +2048 net, jusqu'à −40% à −1024 net.
-  2. **Abondance produite** (`ProductionTracker`, 1.3.2) : décote logarithmique
+- **Prix dynamiques (`ServerShopPriceManager`)** — `server-shop-prices.json`. Quatre facteurs
+  multiplicatifs, tous bornés (1.4.2) :
+  1. **Flux net cumulé** (`unitsSold - unitsBought`), **rapporté au seuil de l'item**
+     (`echelle()` = max(16, seuil)) et non plus en volumes absolus. Courbe continue
+     `1 + 0,25 × net/échelle`, bornée [0,60 ; 2,50].
+     ⚠ Avant la 1.4.2 les paliers étaient absolus (+10 % seulement à partir de 64 unités
+     nettes, ×2 à 2048) : un item cher ne bougeait quasiment jamais, d'où « le diamant
+     reste pas cher alors que tout le monde en achète ».
+  2. **Demande récente** (`demandeRecente`, demi-vie 3 j, amortie paresseusement dans
+     `amortir()`) : c'est ce facteur qui fait réagir le prix *tout de suite*. Le cumul seul
+     mettait des milliers d'unités à bouger. Bornée [0,75 ; 2,00].
+     `getPrice()` amortit aussi **à la lecture**, sinon un pic ne redescendrait jamais sans
+     nouvelle transaction.
+  3. **Inflation générale** (`multiplicateurInflation()`) : masse monétaire par joueur
+     rapportée à `MASSE_REFERENCE_PAR_JOUEUR` (3000 ◆), en racine carrée, bornée [0,80 ; 2,00].
+     C'est le facteur « tous objets confondus » — un serveur noyé sous les shards ne garde
+     pas des prix d'ouverture.
+  4. **Abondance produite** (`ProductionTracker`, 1.3.2) : décote logarithmique
      `0.10 × log10(production / max(seuil, 64))`, **plafonnée à −30 %** (`DECOTE_MAX`).
      - Rapportée au seuil de l'item, sinon minerai rare et bloc courant seraient incomparables.
      - Plancher de 64 au dénominateur : les items chers ont un seuil de 1 à 4 et
@@ -140,7 +157,21 @@ façon prévue de les débloquer au Shop.
        ce qui est consommé, posé ou perdu), donc sans lui tout finirait au prix plancher.
   `getPrice()` recalcule **à la lecture** : la production évolue en continu, un cache
   mis à jour à la dernière transaction serait périmé.
+- **Taxe de fortune (1.4.2, `taxeRichesse`)** : surcoût à l'achat au Shop Serveur, indexé sur
+  le **solde médian** du serveur. Exonéré jusqu'à 2× la médiane, puis croît jusqu'à +40 %.
+  ⚠ Médiane et **non moyenne** : quelques millionnaires suffisent à tirer une moyenne vers le
+  haut et taxeraient alors tout le monde — or c'est exactement la situation qu'on veut corriger
+  (« des millionnaires mais le reste pauvre »).
+  Appliquée dans `ServerShopActions.buy()`, et **incluse dans le prix envoyé au client**
+  (`getPricePour(itemId, pseudo)` dans `writeShopEntries`) : l'écran doit afficher ce que ce
+  joueur-là paiera, pas un tarif théorique. Le message d'achat détaille la part de taxe.
 - **Marge de rachat** : `RATIO_RACHAT = 0.55` — le serveur rachète à 55% de son prix de vente.
+  **Surcharge admin (1.5.0)** : `ShopThresholds.Entry.prixRachat` (0 = automatique), réglable
+  par item depuis `/production` (`ACTION_SET_RACHAT`).
+  ⚠ `getBuybackPrice()` **plafonne toujours le rachat au prix de vente courant**. Le prix de
+  vente bougeant en permanence (4 facteurs), un rachat fixe finirait tôt ou tard au-dessus :
+  acheter puis revendre deviendrait rentable en boucle. Le message de confirmation prévient
+  l'admin quand sa valeur a été ramenée au plafond.
   Sans cette marge, acheter puis revendre serait neutre et toute variation de prix
   transformerait le shop en machine à shards.
 - Le serveur ne rachète **que les piles vierges** (ni NBT, ni dégâts) : impossible d'évaluer
@@ -166,6 +197,84 @@ façon prévue de les débloquer au Shop.
   Production, Registre, Conflit et Wiki.
   Les écrans à onglets mémorisent `tabsStartX` au rendu au lieu de recalculer l'offset dans
   `mouseClicked` — le HDV avait déjà 4 px de dérive avant l'ajout de la flèche.
+
+## Architecture LeBonCube (services entre joueurs, 1.5.0)
+
+Petites annonces de **services** RP — ce qui ne se vend ni au HDV ni au Shop parce que
+ça ne se livre pas en items : un stand pour un événement équestre, une prestation de
+minage, un transport. Le HDV échange des objets, LeBonCube des engagements.
+
+- Données : `leboncube.json` (`ServiceManager`) — annonces, commandes, notes.
+- `ServiceAnnonce` : titre, description, image, prix, contact (Chat/Oral/Courrier),
+  catégorie, date. `ServiceCommande` : le contrat, avec son fil de discussion.
+- **Catégories créées par les joueurs** : pas de liste figée dans le code.
+  `ServiceManager.categories()` les déduit des annonces **actives** — le premier qui
+  propose du minage crée « Mineur », les suivants la retrouvent dans la liste, et une
+  catégorie disparaît d'elle-même avec la dernière annonce qui l'utilisait.
+  Le formulaire affiche les existantes en pastilles **plus** un champ libre ; la saisie
+  libre prime sur la pastille sélectionnée. Côté client, `couleurCategorie()` dérive la
+  teinte d'un **hachage du nom** : impossible d'associer des couleurs à l'avance à des
+  catégories inconnues, et le hachage garantit la même teinte sur tous les clients.
+- Le **titre et le prix sont recopiés** dans la commande : l'annonce peut être retirée
+  ou modifiée ensuite, un contrat déjà conclu ne doit pas bouger sous les deux parties.
+
+### Circuit de l'argent
+À la commande, le client règle **le prix complet** :
+- la moitié part immédiatement au prestataire (l'acompte — il commence à travailler) ;
+- l'autre moitié est retenue par le compte système **`$Sequestre`**.
+
+Le solde n'est libéré qu'à la **double validation** (le prestataire déclare terminé,
+puis le client valide). ⚠ Retenir le solde dès la commande est indispensable : sinon un
+client fauché au moment de valider bloquerait une prestation déjà réalisée.
+
+- **Annulation** : chacun peut la demander ; quand les deux l'ont fait, le client est
+  remboursé **intégralement, acompte compris** — le prestataire y consent en acceptant.
+  Le remboursement de l'acompte passe par `forceDeduct` : le prestataire a pu le dépenser
+  entre-temps, ça ne doit pas bloquer le remboursement.
+- **Arbitrage op** (`/server-admin`) : rembourser le client, ou payer le prestataire.
+- **Taxe de publication** : `max(5, prix/50)` versée à `$Serveur`, prélevée à la
+  publication pour décourager les annonces jetables.
+
+### Images (`ServiceImages` + `RemoteImage`)
+**Aucune restriction d'hébergeur** : n'importe quelle URL est acceptée, seuls les GIF et
+les vidéos sont refusés (`EXTENSIONS_REFUSEES`). C'est un choix d'exploitation assumé par
+l'administrateur du serveur, après une première version à liste d'hôtes fermée qui bloquait
+trop de liens légitimes.
+⚠ Contrepartie connue : une annonce est vue par tous, et chaque client télécharge l'URL
+qu'elle contient — une annonce pointant vers un serveur maison permet donc de relever l'IP
+des curieux. **Ne pas resserrer sans que ce soit demandé.**
+
+⚠ `ServiceImages.verifier()` fait un **découpage manuel** de l'URL, surtout pas
+`java.net.URI` : celui-ci lève une exception au moindre caractère non encodé, et un lien
+Discord vers « Capture d'écran.png » en contient (apostrophe, accents, espaces). Le refus
+était alors incompréhensible — seules les URL 100 % ASCII passaient.
+La méthode renvoie le **motif** du refus, pas un booléen : le joueur doit savoir ce qui coince.
+
+⚠ `RemoteImage` envoie un **User-Agent de navigateur**. Le CDN de Discord répond `403` à un
+agent inconnu : avec l'ancien `User-Agent: NouvelleTerreBridge`, *toutes* les images
+échouaient silencieusement, y compris celles dont l'URL était parfaitement valide. Le code
+HTTP est désormais journalisé en cas de refus.
+Le `.webp` passe la validation mais ne s'affichera pas : le décodeur d'images du jeu (STB)
+ne le gère pas.
+⚠ Ne pas l'ouvrir à une URL libre : une annonce est vue par tous, donc chaque client
+téléchargerait l'URL — une annonce piégée récolterait l'IP de tous les curieux.
+La comparaison d'hôte accepte l'égalité ou un vrai sous-domaine (`.` + hôte), sinon
+`cdn.discordapp.com.pirate.fr` passerait pour Discord.
+Côté client, `RemoteImage` télécharge sur un pool de threads démon (jamais dans la boucle
+de rendu), plafonne à 2 Mo, et enregistre la texture via `client.execute` — le gestionnaire
+de textures n'accepte que le fil client. L'URL est **revalidée côté client** avant l'appel
+réseau : la vérification serveur ne fait pas autorité pour ce que le client télécharge.
+
+### Notes
+Le client note le prestataire de 1 à 5 étoiles à la validation (facultatif). Stockées par
+prestataire dans `leboncube.json`, la moyenne s'affiche sur ses annonces.
+
+## Architecture /server-admin (1.5.0)
+Écran de monitoring réservé au **niveau op 4** (`ServiceNetworkHandler.NIVEAU_ADMIN`) :
+trésorerie `$Serveur`, argent retenu en `$Sequestre`, masse monétaire, solde médian,
+inflation appliquée aux prix du shop, volumes d'annonces, et **litiges à arbitrer**.
+Le niveau maximum est volontaire : l'écran expose toute l'économie et déplace de l'argent
+entre joueurs.
 
 ## Architecture crédits
 - Crédits + propositions : `nouvelle-terre-credits.json` sur le serveur (`LoanManager.java`, clés `loans` + `requests`)
@@ -216,6 +325,8 @@ façon prévue de les débloquer au Shop.
 | `/registre` | Ouvre le GUI Registre des personnages (screen client Fabric) |
 | `/production` | Ouvre le GUI Production naturelle (tous les joueurs ; boutons admin si op 2, pas de sous-commandes) |
 | `/shop` | Ouvre le GUI Shop Serveur (achat / revente) |
+| `/leboncube` | Ouvre LeBonCube — annonces de services entre joueurs |
+| `/server-admin` | Monitoring économique + arbitrage des litiges (op 4 uniquement) |
 
 > Toutes les opérations marché (vendre, acheter, retirer) se font **uniquement via `/hdv`**.
 > Virements, crédits et historique se gèrent via `/bank`.
@@ -247,6 +358,14 @@ commands/
 economy/
   LocalEconomy.java        → Singleton shards.json
                              API : getBalance/addShards/removeShards/forceDeduct/transfer/estConnu/getSoldesKeys
+                             + masseMonetaire() / nombreJoueursConnus() / soldeMedian()
+                             (comptes système `$…` exclus) — servent aux prix dynamiques et à
+                             la répartition des richesses.
+                             ⚠ **`addShards(pseudo, montant, raison)` exige une raison** depuis
+                             la 1.4.2. Avant, la méthode journalisait un « Récompense » générique
+                             *en plus* du log de l'appelant : chaque gain apparaissait **en
+                             double** dans /bank, dont une ligne sans provenance.
+                             `depositShards` ne journalise plus du tout — l'appelant le fait.
   TransactionLog.java      → In-memory 50 dernières transactions/joueur (non persisté, reset au restart)
                              Types : BUY/SELL/TRANSFER_IN/TRANSFER_OUT/REWARD/LOAN_OUT/LOAN_IN/LOAN_REPAY_OUT/LOAN_REPAY_IN/LOAN_PENALTY
   KillRewards.java         → Récompenses ◆ par kill mob (map Class → shards)
@@ -366,7 +485,7 @@ network/
   RegistreNetworking.java  → Canal : REGISTRE_OPEN (S→C, ouvre RegistreScreen)
   ProductionNetworking.java → Canaux : PROD_OPEN (S→C, ouvre GUI) / PROD_ACTION (C→S) / PROD_RESULT (S→C)
                              Actions (op only, revalidées serveur) : RESET(0) / RECHECK(1) / RELOAD(2)
-                                       / SET_PRICE(3) / TOGGLE(4) / DELETE(5)   (1.4.0)
+                                       / SET_PRICE(3) / TOGGLE(4) / DELETE(5) / SET_RACHAT(6)
                              PROD_ACTION porte toujours (int action, string itemId, int valeur),
                              même quand l'action n'en a pas besoin : un format unique évite de
                              faire dépendre la lecture du buffer de la valeur de l'action.
@@ -379,17 +498,22 @@ network/
                              Actions : ACTION_BUY(0) / ACTION_SELL(1) / ACTION_CLAIM_PARCHEMIN(2)
 
 client/                    ← @Environment(CLIENT) uniquement
-  NumberInput.java         → **Champ numérique partagé (1.4.0)** — prix, quantités, montants.
-                             Deux saisies complémentaires, aucune ne suffit seule : paliers
-                             (Min/-64/-32/-1/+1/+32/+64/Max) pour ajuster à la souris, et frappe
-                             clavier directe pour les gros montants. `keyPressed` traite
-                             explicitement GLFW KP_0..KP_9 (320-329) : selon la disposition
-                             clavier, `charTyped` ne remonte pas toujours le pavé numérique.
-                             Bornes via `setBounds(min,max)` (re-clampe la valeur), position
-                             mémorisée au rendu (`lastX/Y/W`) et relue par `mouseClicked`.
-                             Hauteur totale = `NumberInput.H` (42 px).
+  NumberInput.java         → **Champ numérique partagé** — prix, quantités, montants.
+                             Saisie clavier (pavé numérique compris) + boutons **Min / Max**.
+                             **1.4.2** : les paliers ±1/±32/±64 ont été retirés (inutiles dès
+                             qu'on peut taper le nombre), et deux bugs corrigés :
+                             - **Double chiffre** : le pavé numérique était traité dans
+                               `keyPressed` (GLFW 320-329) **et** dans `charTyped`, donc taper
+                               « 1 » écrivait « 11 » — champ inutilisable. Les chiffres passent
+                               désormais uniquement par `charTyped` ; `keyPressed` ne garde que
+                               retour arrière / suppr / entrée.
+                             - **Valeur pré-remplie** : l'état interne est une `String` et non
+                               un `int`, seul moyen de représenter un champ *vide* (0 étant une
+                               valeur légitime). `clear()` vide, le placeholder s'affiche.
+                             Bornes via `setBounds(min,max)`, position mémorisée au rendu
+                             (`lastX/Y/W`) et relue par `mouseClicked`. Hauteur = `NumberInput.H`.
                              ⚠ L'écran hôte doit relayer `keyPressed`/`charTyped`, sinon la
-                             frappe clavier ne marche pas (les paliers, eux, fonctionnent seuls).
+                             frappe clavier ne marche pas.
   HdvScreen.java           → Screen marché : 4 onglets (Marché / Vendre / Mon Shop / Boutiques)
                              - **Marché** : annonces des joueurs uniquement
                              - **Vendre** : créer une annonce (variantes NBT distinctes)
@@ -421,8 +545,28 @@ client/                    ← @Environment(CLIENT) uniquement
                              la liste est décalée de BANNER_H pour ne pas passer dessous
   HubScreen.java           → Hub du Parchemin, DA carte électronique, 8 puces cliquables
   BankScreen.java          → Screen banque : 5 onglets (Compte / Economie / Classement / Credits / Virements)
-  QuetesScreen.java        → Screen quêtes : 2 onglets (Disponibles / Mes Quêtes), PW=420 PH=300,
-                             cards avec barre de progression, boutons Accepter/Réclamer.
+                             **Compte (1.4.2)** : transactions en **deux colonnes** —
+                             `estAvecJoueur(type)` sépare les échanges entre joueurs
+                             (virements, crédits) des flux serveur (récompenses, shop, dépôts).
+                             Mélangées, les récompenses automatiques noyaient les virements.
+                             **Economie (1.4.2)** : histogramme des tranches de richesse +
+                             barre de concentration du patrimoine (50/40/10 %). Rampe **or
+                             séquentielle** (`RAMPE_OR`, une seule teinte) et non des teintes
+                             distinctes : les tranches sont des catégories *ordonnées*, et
+                             or/vert échouaient la séparation daltonienne (ΔE 7,5 en protanopie).
+                             Chaque barre porte son compte en clair — l'identité ne repose
+                             jamais sur la seule couleur.
+                             **Classement (1.4.2)** : le scroll **n'existait pas** — toutes les
+                             lignes étaient dessinées sans offset ni scissor, débordant hors du
+                             panneau. Ajout scroll molette + scissor + scrollbar + barre de
+                             recherche. Le rang affiché reste celui du classement complet même
+                             en filtrant, sinon un joueur filtré se croirait premier.
+  QuetesScreen.java        → Screen quêtes : PW_MAX=620 PH_MAX=440.
+                             **Liste (1.4.2)** : une quête par ligne (ROW_H=46) au lieu d'une
+                             grille de 3 cards — icône à gauche, objectif et progression au
+                             centre, boutons à droite. Le scroll se compte donc en quêtes.
+                             Helpers partagés `rowFrame()` / `rowButton()` ; `rowButton` renvoie
+                             son bord gauche pour chaîner les boutons de droite à gauche.
                              Objectifs affichés avec le nom localisé de la cible (targetName(type,target) :
                              ENTITY_TYPE pour KILL, ITEM sinon) — plus de labels poétiques côté UI
   ProductionScreen.java    → Screen production : liste scrollable (icône + nom FR + compteur + barre + statut),
@@ -522,8 +666,11 @@ HUB_ACTION : int action
 ### Bank
 ```
 BANK_OPEN  : int balance | int ticksReward | txs[] | int totalShards | int playerCount
-             | leaderboard[] | loansAsLender[] | loansAsBorrower[]
+             | wealth | leaderboard[] | loansAsLender[] | loansAsBorrower[]
              | requestsAsLender[] | requestsAsBorrower[] | known[] | recurring[]
+wealth        : (int × 5 tranches) | int partBasse | int partMoyenne | int partHaute | int median
+                Répartition calculée **serveur** : le classement envoyé est limité au top 10,
+                le client ne pourrait pas reconstituer une distribution.
 BANK_RESULT: bool ok | string msg | [même contenu que BANK_OPEN]
 txs[]         : int count → (int type, string label, int amount, long timestamp) × count
 leaderboard[] : int count → (string name, int balance) × count
@@ -536,8 +683,12 @@ recurring[]   : int count → (int id, string to, int amount, int intervalTicks,
 
 ### Quêtes
 ```
-QUEST_OPEN  : int level | int xp | int xpToNext | available[] | active[] | pending[]
+QUEST_OPEN  : bool ouvrir | int level | int xp | int xpToNext | available[] | active[] | pending[]
               | groupPending[] | lbCompleted[] | lbLevel[] | community
+              ouvrir=true  → sendQuestOpen()   : /quetes, hub → le client ouvre l'écran
+              ouvrir=false → sendQuestUpdate() : rafraîchissement de fond (connexion, quête
+              de groupe activée, rollover). Sans ce drapeau, l'écran des quêtes s'ouvrait
+              tout seul au lancement du jeu.
 QUEST_ACTION: int action | int param (questId ou index selon l'action)
 QUEST_RESULT: bool ok | string msg | [même contenu que QUEST_OPEN]
 community   : bool has → (string label, string type, string target, int quantity,
@@ -558,7 +709,9 @@ PROD_ACTION: int action | string itemId | int valeur
              itemId = "" et valeur = 0 pour les actions globales
 PROD_RESULT: bool ok | string msg | bool isOp | entries[]
 entries[]  : int count → (string itemId, long count, long seuil, int prix, int quantite,
-                          bool enVente, bool desactive) × count
+                          bool enVente, bool desactive, int prixRachat, bool rachatImpose) × count
+             prixRachat = valeur effective (déjà plafonnée) ; rachatImpose distingue une
+             valeur choisie par un admin d'un calcul automatique
              enVente = ServerShopActions.estDebloque() (seuil atteint ET non désactivé)
 ```
 

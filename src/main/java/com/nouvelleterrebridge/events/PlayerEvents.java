@@ -55,7 +55,7 @@ public class PlayerEvents {
             boolean premiereFois = !FirstJoinTracker.getInstance().hasReceived(pseudo);
             if (premiereFois) {
                 NouvelleTerreBridge.LOGGER.info("[PlayerEvents] Première connexion MC de {}", pseudo);
-                LocalEconomy.getInstance().addShards(pseudo, 500);
+                LocalEconomy.getInstance().addShards(pseudo, 500, "Pécule de départ");
                 FirstJoinTracker.getInstance().markReceived(pseudo);
                 joueur.sendMessage(Text.literal(
                     "§6[Nouvelle Terre] §f✨ Bienvenue ! Tu reçois §e§l500 ◆ §fde départ. Bonne aventure !"));
@@ -63,7 +63,8 @@ public class PlayerEvents {
 
             // Bonus quotidien : +25 ◆ créés à la première connexion de chaque jour réel
             if (!premiereFois && com.nouvelleterrebridge.economy.DailyBonusTracker.claimToday(pseudo)) {
-                LocalEconomy.getInstance().addShards(pseudo, com.nouvelleterrebridge.economy.DailyBonusTracker.BONUS);
+                LocalEconomy.getInstance().addShards(pseudo, com.nouvelleterrebridge.economy.DailyBonusTracker.BONUS,
+                    "Bonus quotidien de connexion");
                 joueur.sendMessage(Text.literal(
                     "§6[Banque] §fBonus quotidien de connexion : §a+"
                     + com.nouvelleterrebridge.economy.DailyBonusTracker.BONUS + " ◆"));

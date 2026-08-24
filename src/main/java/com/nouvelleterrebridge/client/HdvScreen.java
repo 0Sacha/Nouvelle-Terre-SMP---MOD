@@ -185,6 +185,8 @@ public class HdvScreen extends Screen {
         addSelectableChild(searchField);
 
         sellPriceInput.setPlaceholder("Prix/u...");
+        sellQtyInput.setPlaceholder("Quantité...");
+        buyQtyInput.setPlaceholder("Quantité...");
 
         refreshSellInv();
     }
@@ -212,8 +214,8 @@ public class HdvScreen extends Screen {
         buyingListing    = null;
         selectedSellItem = null;
         sellQtyInput.setBounds(1, 1);
-        sellQtyInput.setValue(1);
-        sellPriceInput.setValue(0);
+        sellQtyInput.clear();
+        sellPriceInput.clear();
         refreshSellInv();
         toast(msg, ok);
     }
@@ -958,7 +960,7 @@ public class HdvScreen extends Screen {
     private void openBuyModal(ListingData l) {
         buyingListing = l;
         buyQtyInput.setBounds(1, Math.max(1, l.quantity()));
-        buyQtyInput.setValue(1);
+        buyQtyInput.clear();
         buyQtyInput.setFocused(false);
     }
 
@@ -995,8 +997,8 @@ public class HdvScreen extends Screen {
         if (hoveredSellItem != null) {
             selectedSellItem = hoveredSellItem;
             sellQtyInput.setBounds(1, hoveredSellItem.qty());
-            sellQtyInput.setValue(1);
-            sellPriceInput.setValue(0);
+            sellQtyInput.clear();
+            sellPriceInput.clear();
             return;
         }
 

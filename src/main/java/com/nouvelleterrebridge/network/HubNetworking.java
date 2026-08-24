@@ -19,6 +19,7 @@ public final class HubNetworking {
     public static final int ACTION_CONFLIT    = 5;
     public static final int ACTION_WIKI       = 6;
     public static final int ACTION_SHOP       = 7;
+    public static final int ACTION_MARCHE     = 8;  // LeBonCube — services entre joueurs
 
     private HubNetworking() {}
 }

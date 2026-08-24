@@ -14,6 +14,7 @@ public final class ProductionNetworking {
     public static final int ACTION_SET_PRICE = 3;  // op : change le prix d'un item (itemId, prix)
     public static final int ACTION_TOGGLE    = 4;  // op : active/désactive la vente d'un item (itemId)
     public static final int ACTION_DELETE    = 5;  // op : supprime l'entrée du catalogue (itemId)
+    public static final int ACTION_SET_RACHAT = 6; // op : prix de rachat imposé (itemId, prix ; 0 = auto)
 
     private ProductionNetworking() {}
 }

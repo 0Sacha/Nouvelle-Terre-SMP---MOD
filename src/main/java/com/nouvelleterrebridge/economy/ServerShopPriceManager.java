@@ -34,11 +34,27 @@ public class ServerShopPriceManager {
      */
     private static final double DECOTE_MAX = 0.30;
 
+    /**
+     * Demi-vie de la demande récente. Une razzia sur un item fait monter son prix
+     * tout de suite, puis la pression retombe si elle ne se répète pas.
+     */
+    private static final double DEMI_VIE_MS = 3 * 24 * 3600 * 1000.0;
+
+    /** Masse monétaire par joueur considérée comme « normale » (référence d'inflation). */
+    private static final double MASSE_REFERENCE_PAR_JOUEUR = 3000.0;
+
     public static class PriceEntry {
         public int  basePrice    = 1;
-        public long unitsSold    = 0;   // vendues par le serveur aux joueurs
-        public long unitsBought  = 0;   // rachetées par le serveur aux joueurs
+        public long unitsSold    = 0;   // vendues par le serveur aux joueurs (cumul)
+        public long unitsBought  = 0;   // rachetées par le serveur aux joueurs (cumul)
         public int  dynamicPrice = 1;
+
+        /**
+         * Pression d'achat récente, amortie dans le temps (voir {@link #DEMI_VIE_MS}).
+         * Positive = on achète, négative = on revend au serveur.
+         */
+        public double demandeRecente = 0.0;
+        public long   dernierAmortissement = 0;
     }
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -109,7 +125,9 @@ public class ServerShopPriceManager {
     /** Le serveur a vendu des unités au joueur : l'item se raréfie, le prix monte. */
     public static synchronized void recordSale(String itemId, int quantity) {
         PriceEntry e = getOrCreate(itemId);
-        e.unitsSold += quantity;
+        amortir(e);
+        e.unitsSold      += quantity;
+        e.demandeRecente += quantity;
         e.dynamicPrice = calculatePrice(itemId, e);
         save();
     }
@@ -117,37 +135,106 @@ public class ServerShopPriceManager {
     /** Le serveur a racheté des unités au joueur : l'item devient abondant, le prix baisse. */
     public static synchronized void recordPurchase(String itemId, int quantity) {
         PriceEntry e = getOrCreate(itemId);
-        e.unitsBought += quantity;
+        amortir(e);
+        e.unitsBought    += quantity;
+        e.demandeRecente -= quantity;
         e.dynamicPrice = calculatePrice(itemId, e);
         save();
     }
 
     /**
-     * Prix d'achat (ce que paie le joueur) : prix de référence, corrigé par le
-     * flux net du shop puis par l'abondance de l'item sur le serveur.
+     * Fait décroître la demande récente selon le temps écoulé (décroissance
+     * exponentielle de demi-vie {@link #DEMI_VIE_MS}). Appliqué paresseusement :
+     * pas de tâche périodique à maintenir, le calcul se fait à la lecture.
+     */
+    private static void amortir(PriceEntry e) {
+        long now = System.currentTimeMillis();
+        if (e.dernierAmortissement == 0) { e.dernierAmortissement = now; return; }
+        long dt = now - e.dernierAmortissement;
+        if (dt <= 0) return;
+        e.demandeRecente *= Math.pow(0.5, dt / DEMI_VIE_MS);
+        e.dernierAmortissement = now;
+        if (Math.abs(e.demandeRecente) < 0.01) e.demandeRecente = 0;
+    }
+
+    /**
+     * Prix d'achat (ce que paie le joueur) : prix de référence corrigé par
+     * quatre facteurs — flux net cumulé, demande récente, abondance produite,
+     * et inflation générale du serveur.
      */
     private static int calculatePrice(String itemId, PriceEntry entry) {
-        double prix = entry.basePrice * multiplicateurFlux(entry);
+        double echelle = echelle(itemId);
+        double prix = entry.basePrice
+            * multiplicateurFlux(entry, echelle)
+            * multiplicateurDemandeRecente(entry, echelle)
+            * multiplicateurInflation();
         prix *= (1.0 - decoteAbondance(itemId));
         return Math.max(1, (int) Math.round(prix));
     }
 
     /**
-     * Pression sur la boutique : plus le serveur a vendu, plus c'est cher ;
-     * plus il a racheté, moins ça l'est.
+     * Volume de référence d'un item, au-delà duquel les échanges pèsent vraiment
+     * sur son prix.
+     *
+     * Rapporté au seuil de déblocage : 256 diamants échangés n'ont rien à voir
+     * avec 256 blocs de terre. L'ancienne version comparait des volumes absolus,
+     * si bien qu'un item cher ne bougeait pratiquement jamais de prix.
      */
-    private static float multiplicateurFlux(PriceEntry entry) {
-        long net = entry.unitsSold - entry.unitsBought;
-        if      (net >= 2048) return 2.00f;
-        else if (net >= 1024) return 1.75f;
-        else if (net >=  512) return 1.50f;
-        else if (net >=  256) return 1.25f;
-        else if (net >=   64) return 1.10f;
-        else if (net >   -64) return 1.00f;
-        else if (net >  -256) return 0.90f;
-        else if (net >  -512) return 0.80f;
-        else if (net > -1024) return 0.70f;
-        else                  return 0.60f;
+    private static double echelle(String itemId) {
+        ShopThresholds.Entry seuil = ShopThresholds.get(itemId);
+        return Math.max(16, seuil != null ? seuil.seuil : 64);
+    }
+
+    /**
+     * Pression cumulée sur la boutique : plus le serveur a vendu, plus c'est cher ;
+     * plus il a racheté, moins ça l'est. Courbe continue, bornée à [0,60 ; 2,50].
+     */
+    private static double multiplicateurFlux(PriceEntry entry, double echelle) {
+        double net = (entry.unitsSold - entry.unitsBought) / echelle;
+        return borner(1.0 + 0.25 * net, 0.60, 2.50);
+    }
+
+    /**
+     * Réaction à la demande des derniers jours — c'est ce facteur qui fait bouger
+     * le prix tout de suite quand un item part en masse, là où le cumul seul
+     * mettait des milliers d'unités à réagir.
+     */
+    private static double multiplicateurDemandeRecente(PriceEntry entry, double echelle) {
+        return borner(1.0 + 0.50 * (entry.demandeRecente / echelle), 0.75, 2.00);
+    }
+
+    /**
+     * Inflation : si la masse monétaire par joueur dépasse la référence, tout
+     * coûte plus cher. C'est le facteur « tous objets confondus » — il évite
+     * qu'un serveur débordant de shards garde des prix d'ouverture.
+     */
+    public static double multiplicateurInflation() {
+        LocalEconomy eco = LocalEconomy.getInstance();
+        int joueurs = eco.nombreJoueursConnus();
+        if (joueurs <= 0) return 1.0;
+        double parJoueur = (double) eco.masseMonetaire() / joueurs;
+        return borner(Math.sqrt(parJoueur / MASSE_REFERENCE_PAR_JOUEUR), 0.80, 2.00);
+    }
+
+    /**
+     * Surcoût appliqué aux joueurs fortunés, en pourcentage du prix.
+     *
+     * Indexé sur la <b>médiane</b> et non la moyenne : quand une poignée de
+     * millionnaires côtoie des joueurs pauvres, la moyenne est tirée vers le haut
+     * et taxerait tout le monde. Un joueur au niveau de la médiane ne paie rien ;
+     * au-delà, la surtaxe croît jusqu'à +40 %.
+     */
+    public static double taxeRichesse(String pseudo) {
+        LocalEconomy eco = LocalEconomy.getInstance();
+        int median = eco.soldeMedian();
+        if (median <= 0) return 0.0;
+        double ratio = (double) eco.getBalance(pseudo) / median;
+        if (ratio <= 2.0) return 0.0;               // jusqu'à 2× la médiane : exonéré
+        return Math.min(0.40, 0.10 * Math.log10(ratio / 2.0) * 4.0);
+    }
+
+    private static double borner(double v, double min, double max) {
+        return Math.max(min, Math.min(v, max));
     }
 
     /**
@@ -181,12 +268,40 @@ public class ServerShopPriceManager {
      * en cache lors de la dernière transaction serait périmée.
      */
     public static synchronized int getPrice(String itemId) {
-        return calculatePrice(itemId, getOrCreate(itemId));
+        PriceEntry e = getOrCreate(itemId);
+        // Amortir ici aussi : sans transaction nouvelle, un pic de demande ne
+        // retomberait jamais et le prix resterait figé en haut.
+        amortir(e);
+        return calculatePrice(itemId, e);
     }
 
-    /** Prix auquel le serveur rachète l'item au joueur (prix d'achat diminué de la marge). */
+    /** Prix payé par un joueur donné, surtaxe de fortune comprise. */
+    public static synchronized int getPricePour(String itemId, String pseudo) {
+        double prix = getPrice(itemId) * (1.0 + taxeRichesse(pseudo));
+        return Math.max(1, (int) Math.round(prix));
+    }
+
+    /**
+     * Prix auquel le serveur rachète l'item au joueur.
+     *
+     * Par défaut, une part du prix de vente ({@link #RATIO_RACHAT}). Un admin peut
+     * imposer un montant fixe via /production ; il est alors **plafonné au prix de
+     * vente courant**. Ce plafond n'est pas une précaution de principe : le prix de
+     * vente bouge en permanence, et un rachat fixe finirait tôt ou tard au-dessus,
+     * transformant l'aller-retour achat/revente en machine à shards.
+     */
     public static synchronized int getBuybackPrice(String itemId) {
-        return Math.max(1, Math.round(getPrice(itemId) * RATIO_RACHAT));
+        int vente = getPrice(itemId);
+        ShopThresholds.Entry seuil = ShopThresholds.get(itemId);
+        if (seuil != null && seuil.prixRachat > 0)
+            return Math.max(1, Math.min(seuil.prixRachat, vente));
+        return Math.max(1, Math.round(vente * RATIO_RACHAT));
+    }
+
+    /** Vrai si le rachat de cet item est imposé par un admin plutôt que calculé. */
+    public static synchronized boolean rachatImpose(String itemId) {
+        ShopThresholds.Entry seuil = ShopThresholds.get(itemId);
+        return seuil != null && seuil.prixRachat > 0;
     }
 
     public static synchronized Map<String, PriceEntry> all() {

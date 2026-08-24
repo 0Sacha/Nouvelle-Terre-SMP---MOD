@@ -46,6 +46,11 @@ public class ShopThresholds {
          * sans que les joueurs perdent leur progression.
          */
         public boolean desactive = false;
+        /**
+         * Prix de rachat imposé par un admin, en ◆/unité. {@code 0} = automatique
+         * (part du prix de vente, voir {@code ServerShopPriceManager.RATIO_RACHAT}).
+         */
+        public int prixRachat = 0;
     }
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -280,6 +285,23 @@ public class ShopThresholds {
     }
 
     /** Active/désactive la vente d'un item. @return le nouvel état, ou null si absent. */
+    /**
+     * Fixe le prix de rachat d'un item, ou le remet en automatique avec {@code 0}.
+     *
+     * La valeur n'est pas garantie telle quelle à l'achat : le prix de vente étant
+     * dynamique, {@code ServerShopPriceManager.getBuybackPrice()} plafonne le rachat
+     * au prix de vente courant. Sans ce plafond, une baisse de prix suffirait à
+     * rendre le rachat plus cher que la vente, et le shop deviendrait une machine
+     * à shards.
+     */
+    public static synchronized boolean setPrixRachat(String itemId, int prix) {
+        Entry e = thresholds.get(itemId);
+        if (e == null) return false;
+        e.prixRachat = Math.max(0, prix);
+        save();
+        return true;
+    }
+
     public static synchronized Boolean toggleDesactive(String itemId) {
         Entry e = thresholds.get(itemId);
         if (e == null) return null;

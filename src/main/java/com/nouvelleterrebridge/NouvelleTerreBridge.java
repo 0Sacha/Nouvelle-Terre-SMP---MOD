@@ -11,6 +11,8 @@ import com.nouvelleterrebridge.commands.ProductionCommand;
 import com.nouvelleterrebridge.commands.QuetesCommand;
 import com.nouvelleterrebridge.commands.RegistreCommand;
 import com.nouvelleterrebridge.commands.ShopCommand;
+import com.nouvelleterrebridge.commands.MarcheCommand;
+import com.nouvelleterrebridge.commands.ServerAdminCommand;
 import com.nouvelleterrebridge.network.RegistreNetworking;
 import com.nouvelleterrebridge.commands.WikiCommand;
 import com.nouvelleterrebridge.economy.FirstJoinTracker;
@@ -85,6 +87,9 @@ public class NouvelleTerreBridge implements ModInitializer {
      * (compteurs de production, par exemple). Null tant que le serveur n'a pas démarré.
      */
     public static volatile MinecraftServer serveur;
+
+    /** Bornes basses des tranches de richesse affichées dans /bank → Economie. */
+    public static final int[] TRANCHES_MIN = {0, 100, 1_000, 10_000, 100_000};
 
     // ── Monnaie physique : coupures de 1 à 100 ◆ ──────────────────────────────
     // Purement du rangement : retirer 5 000 ◆ en pièces de 1 remplissait 78 piles.
@@ -214,8 +219,11 @@ public class NouvelleTerreBridge implements ModInitializer {
             QuetesCommand.register(dispatcher);
             RegistreCommand.register(dispatcher);
             WikiCommand.register(dispatcher);
+            MarcheCommand.register(dispatcher);
+            ServerAdminCommand.register(dispatcher);
         });
 
+        com.nouvelleterrebridge.service.ServiceNetworkHandler.register();
         registerHdvNetworking();
         registerBankNetworking();
         registerQuestNetworking();
@@ -358,11 +366,11 @@ public class NouvelleTerreBridge implements ModInitializer {
     public static PacketByteBuf buildShopOpenPacket(ServerPlayerEntity player) {
         PacketByteBuf buf = PacketByteBufs.create();
         buf.writeInt(LocalEconomy.getInstance().getBalance(player.getName().getString()));
-        writeShopEntries(buf);
+        writeShopEntries(buf, player.getName().getString());
         return buf;
     }
 
-    private static void writeShopEntries(PacketByteBuf buf) {
+    private static void writeShopEntries(PacketByteBuf buf, String pseudo) {
         // Seuls les items dont la production naturelle a atteint le seuil sont
         // au catalogue : c'est ce qui rend le shop dépendant de l'activité du serveur.
         var debloques = ShopThresholds.all().entrySet().stream()
@@ -375,7 +383,9 @@ public class NouvelleTerreBridge implements ModInitializer {
         for (String itemId : debloques) {
             var pe = ServerShopPriceManager.getOrCreate(itemId);
             buf.writeString(itemId);
-            buf.writeInt(ServerShopPriceManager.getPrice(itemId));
+            // Prix taxe de fortune comprise : le client doit afficher ce que ce
+            // joueur-là paiera réellement, pas un tarif théorique.
+            buf.writeInt(ServerShopPriceManager.getPricePour(itemId, pseudo));
             buf.writeInt(ServerShopPriceManager.getBuybackPrice(itemId));
             buf.writeLong(pe.unitsSold - pe.unitsBought);
         }
@@ -399,7 +409,7 @@ public class NouvelleTerreBridge implements ModInitializer {
                 resp.writeBoolean(!result.contains("§c"));
                 resp.writeString(result);
                 resp.writeInt(LocalEconomy.getInstance().getBalance(player.getName().getString()));
-                writeShopEntries(resp);
+                writeShopEntries(resp, player.getName().getString());
                 ServerPlayNetworking.send(player, ShopNetworking.SHOP_RESULT, resp);
                 sendBalanceToPlayer(player);
             });
@@ -417,6 +427,8 @@ public class NouvelleTerreBridge implements ModInitializer {
                         ServerPlayNetworking.send(player, BankNetworking.BANK_OPEN, buildBankOpenPacket(player, server));
                     case HubNetworking.ACTION_SHOP ->
                         ServerPlayNetworking.send(player, ShopNetworking.SHOP_OPEN, buildShopOpenPacket(player));
+                    case HubNetworking.ACTION_MARCHE ->
+                        com.nouvelleterrebridge.service.ServiceNetworkHandler.ouvrir(player);
                     case HubNetworking.ACTION_QUETES     -> sendQuestOpen(player);
                     case HubNetworking.ACTION_PRODUCTION -> sendProductionOpen(player);
                     case HubNetworking.ACTION_REGISTRE   -> RegistreCommand.open(player);
@@ -677,6 +689,39 @@ public class NouvelleTerreBridge implements ModInitializer {
         buf.writeInt(totalShards);
         buf.writeInt((int) allBalances.keySet().stream().filter(k -> !k.startsWith("$")).count());
 
+        // ── Répartition des richesses ──
+        // Calculée serveur : le classement envoyé au client est limité au top 10,
+        // il ne permettrait pas de reconstituer une distribution.
+        List<Integer> soldes = allBalances.entrySet().stream()
+            .filter(e -> !e.getKey().startsWith("$"))
+            .map(Map.Entry::getValue)
+            .map(v -> Math.max(0, v))
+            .sorted()
+            .collect(Collectors.toList());
+
+        int[] tranches = new int[TRANCHES_MIN.length];
+        for (int solde : soldes) {
+            for (int i = TRANCHES_MIN.length - 1; i >= 0; i--) {
+                if (solde >= TRANCHES_MIN[i]) { tranches[i]++; break; }
+            }
+        }
+        for (int t : tranches) buf.writeInt(t);
+
+        // Part du patrimoine détenue par les 50 % les plus pauvres / 40 % du milieu / 10 % les plus riches
+        long somme = soldes.stream().mapToLong(Integer::longValue).sum();
+        int n = soldes.size();
+        long partBasse = 0, partHaute = 0;
+        int iBas = n / 2, iTop = (int) Math.ceil(n * 0.9);
+        for (int i = 0; i < n; i++) {
+            if (i < iBas)       partBasse += soldes.get(i);
+            else if (i >= iTop) partHaute += soldes.get(i);
+        }
+        long milieu = somme - partBasse - partHaute;
+        buf.writeInt(somme > 0 ? (int) Math.round(partBasse * 100.0 / somme) : 0);
+        buf.writeInt(somme > 0 ? (int) Math.round(milieu    * 100.0 / somme) : 0);
+        buf.writeInt(somme > 0 ? (int) Math.round(partHaute * 100.0 / somme) : 0);
+        buf.writeInt(eco.soldeMedian());
+
         // Classement top 10 (hors comptes système)
         Map<String, String> casing = buildCasingMap(server, eco);
         List<Map.Entry<String, Integer>> top = allBalances.entrySet().stream()
@@ -761,8 +806,26 @@ public class NouvelleTerreBridge implements ModInitializer {
 
     // ── Quest networking ─────────────────────────────────────────────────────
 
+    /** Ouvre le GUI Quêtes chez le joueur (/quetes, hub du Parchemin). */
     public static void sendQuestOpen(ServerPlayerEntity player) {
+        sendQuestData(player, true);
+    }
+
+    /**
+     * Rafraîchit les données de quêtes sans ouvrir le GUI.
+     *
+     * Indispensable : ces envois partent en arrière-plan (connexion, activation
+     * d'une quête de groupe, rollover de minuit). Avec l'ancien paquet unique, le
+     * client ouvrait l'écran à chaque fois — les quêtes s'ouvraient toutes seules
+     * au lancement du jeu.
+     */
+    public static void sendQuestUpdate(ServerPlayerEntity player) {
+        sendQuestData(player, false);
+    }
+
+    private static void sendQuestData(ServerPlayerEntity player, boolean ouvrir) {
         PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeBoolean(ouvrir);
         writeFullQuestData(buf, player.getName().getString());
         ServerPlayNetworking.send(player, QuestNetworking.QUEST_OPEN, buf);
     }
@@ -885,6 +948,10 @@ public class NouvelleTerreBridge implements ModInitializer {
             // vente effective est celle du Shop Serveur, seuil et désactivation compris.
             buf.writeBoolean(ServerShopActions.estDebloque(e.getKey()));
             buf.writeBoolean(e.getValue().desactive);
+            // Rachat effectif (plafonné au prix de vente) + drapeau « imposé par un
+            // admin », pour que l'écran distingue une valeur choisie d'un calcul.
+            buf.writeInt(ServerShopPriceManager.getBuybackPrice(e.getKey()));
+            buf.writeBoolean(ServerShopPriceManager.rachatImpose(e.getKey()));
         }
     }
 
@@ -920,6 +987,25 @@ public class NouvelleTerreBridge implements ModInitializer {
                         // la correction resterait sans effet sur un item déjà échangé.
                         ServerShopPriceManager.resyncBasePrices();
                         ok = true; msg = "§a✅ " + nomItem + " : prix fixé à " + valeur + " ◆.";
+                    } else {
+                        ok = false; msg = "§cItem absent du catalogue.";
+                    }
+                } else if (action == ProductionNetworking.ACTION_SET_RACHAT) {
+                    if (valeur < 0) {
+                        ok = false; msg = "§cPrix invalide.";
+                    } else if (ShopThresholds.setPrixRachat(itemId, valeur)) {
+                        int effectif = ServerShopPriceManager.getBuybackPrice(itemId);
+                        ok = true;
+                        if (valeur == 0) {
+                            msg = "§a✅ " + nomItem + " : rachat repassé en automatique ("
+                                + effectif + " ◆).";
+                        } else if (effectif < valeur) {
+                            // Plafonné : le dire, sinon l'admin croirait sa valeur retenue
+                            msg = "§e⚠ " + nomItem + " : rachat ramené à " + effectif
+                                + " ◆ (plafonné au prix de vente).";
+                        } else {
+                            msg = "§a✅ " + nomItem + " : rachat fixé à " + effectif + " ◆.";
+                        }
                     } else {
                         ok = false; msg = "§cItem absent du catalogue.";
                     }

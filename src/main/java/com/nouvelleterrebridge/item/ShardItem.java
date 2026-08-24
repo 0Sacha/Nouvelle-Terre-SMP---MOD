@@ -2,6 +2,7 @@ package com.nouvelleterrebridge.item;
 
 import com.nouvelleterrebridge.NouvelleTerreBridge;
 import com.nouvelleterrebridge.economy.LocalEconomy;
+import com.nouvelleterrebridge.economy.TransactionLog;
 import net.minecraft.client.item.TooltipContext;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.Item;
@@ -41,6 +42,8 @@ public class ShardItem extends Item {
             int montant = stack.getCount() * valeur;
             String pseudo = sp.getName().getString();
             LocalEconomy.getInstance().depositShards(pseudo, montant);
+            TransactionLog.log(pseudo, TransactionLog.TYPE_TRANSFER_IN,
+                "Dépôt de Shards physiques", montant);
             user.setStackInHand(hand, ItemStack.EMPTY);
             sp.sendMessage(Text.literal("§a+" + montant + " ◆ §fdéposés sur ton compte §7— solde : §e"
                 + LocalEconomy.getInstance().getBalance(pseudo) + " ◆"), true);

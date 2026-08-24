@@ -8,7 +8,9 @@ import com.nouvelleterrebridge.client.HdvScreen;
 import com.nouvelleterrebridge.client.HudEditorScreen;
 import com.nouvelleterrebridge.client.ConflitScreen;
 import com.nouvelleterrebridge.client.NotificationHud;
+import com.nouvelleterrebridge.client.MarcheScreen;
 import com.nouvelleterrebridge.client.ProductionScreen;
+import com.nouvelleterrebridge.client.ServerAdminScreen;
 import com.nouvelleterrebridge.client.RegistreScreen;
 import com.nouvelleterrebridge.client.hud.BalanceWidget;
 import com.nouvelleterrebridge.client.hud.BiomeWidget;
@@ -27,6 +29,7 @@ import com.nouvelleterrebridge.network.ConflitNetworking;
 import com.nouvelleterrebridge.network.HdvNetworking;
 import com.nouvelleterrebridge.network.ProductionNetworking;
 import com.nouvelleterrebridge.network.QuestNetworking;
+import com.nouvelleterrebridge.network.ServiceNetworking;
 import com.nouvelleterrebridge.network.RegistreNetworking;
 import com.nouvelleterrebridge.network.WikiNetworking;
 import net.fabricmc.api.ClientModInitializer;
@@ -165,6 +168,62 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             });
         });
 
+        ClientPlayNetworking.registerGlobalReceiver(ServiceNetworking.MARCHE_OPEN,
+            (client, handler, buf, responseSender) -> {
+                // ouvrir = false : simple rafraîchissement (message reçu, commande
+                // validée…). Ouvrir l'écran d'office ferait surgir LeBonCube
+                // par-dessus le jeu à chaque notification.
+                boolean ouvrir = buf.readBoolean();
+                MarcheEtat e = lireMarche(buf);
+                client.execute(() -> {
+                    if (client.currentScreen instanceof MarcheScreen ms)
+                        ms.maj(e.balance, e.categories, e.annonces, e.prestations, e.commandes, e.archives);
+                    else if (ouvrir)
+                        client.setScreen(new MarcheScreen(e.balance, e.categories, e.annonces,
+                            e.prestations, e.commandes, e.archives));
+                });
+            });
+
+        ClientPlayNetworking.registerGlobalReceiver(ServiceNetworking.MARCHE_RESULT,
+            (client, handler, buf, responseSender) -> {
+                boolean ok  = buf.readBoolean();
+                String  msg = buf.readString();
+                MarcheEtat e = lireMarche(buf);
+                client.execute(() -> {
+                    if (client.currentScreen instanceof MarcheScreen ms)
+                        ms.handleResult(ok, msg, e.balance, e.categories, e.annonces,
+                                        e.prestations, e.commandes, e.archives);
+                });
+            });
+
+        ClientPlayNetworking.registerGlobalReceiver(ServiceNetworking.ADMIN_OPEN,
+            (client, handler, buf, responseSender) -> {
+                int soldeServeur   = buf.readInt();
+                int soldeSequestre = buf.readInt();
+                long masse         = buf.readLong();
+                int joueursConnus  = buf.readInt();
+                int median         = buf.readInt();
+                int enLigne        = buf.readInt();
+                int annoncesHdv    = buf.readInt();
+                int annoncesMarche = buf.readInt();
+                double inflation   = buf.readDouble();
+                int n = buf.readInt();
+                List<ServerAdminScreen.LitigeData> litiges = new ArrayList<>(n);
+                for (int i = 0; i < n; i++)
+                    litiges.add(new ServerAdminScreen.LitigeData(buf.readInt(), buf.readString(),
+                        buf.readString(), buf.readString(), buf.readInt(), buf.readInt(),
+                        buf.readString()));
+                client.execute(() -> {
+                    if (client.currentScreen instanceof ServerAdminScreen sa)
+                        sa.maj(soldeServeur, soldeSequestre, masse, joueursConnus, median,
+                               enLigne, annoncesHdv, annoncesMarche, inflation, litiges);
+                    else
+                        client.setScreen(new ServerAdminScreen(soldeServeur, soldeSequestre, masse,
+                            joueursConnus, median, enLigne, annoncesHdv, annoncesMarche,
+                            inflation, litiges));
+                });
+            });
+
         ClientPlayNetworking.registerGlobalReceiver(
             com.nouvelleterrebridge.network.HubNetworking.HUB_OPEN,
             (client, handler, buf, responseSender) ->
@@ -229,6 +288,7 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             List<BankScreen.TxData>           txs       = readBankTxs(buf);
             int totalShards  = buf.readInt();
             int playerCount  = buf.readInt();
+            BankScreen.WealthData wealth = readWealth(buf);
             List<BankScreen.LeaderboardEntry> lb        = readLeaderboard(buf);
             List<BankScreen.LoanData>         asLender  = readLoans(buf);
             List<BankScreen.LoanData>         asBorrow  = readLoans(buf);
@@ -239,7 +299,7 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             client.execute(() -> {
                 if (client.currentScreen instanceof BankScreen screen) {
                     screen.handleResult(ok, message, balance, ticksReward, txs,
-                        totalShards, playerCount, lb, asLender, asBorrow, reqLender, reqBorrow, known, recurring);
+                        totalShards, playerCount, wealth, lb, asLender, asBorrow, reqLender, reqBorrow, known, recurring);
                 }
             });
         });
@@ -258,6 +318,10 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
         });
 
         ClientPlayNetworking.registerGlobalReceiver(QuestNetworking.QUEST_OPEN, (client, handler, buf, responseSender) -> {
+            // ouvrir = false pour les rafraîchissements de fond (connexion, quête de
+            // groupe activée, rollover) : sans ce drapeau, l'écran des quêtes
+            // s'ouvrait tout seul au lancement du jeu.
+            boolean ouvrir = buf.readBoolean();
             int level = buf.readInt(), xp = buf.readInt(), xpNext = buf.readInt();
             List<QuetesScreen.QuestData>         av  = readQuestList(buf);
             List<QuetesScreen.ActiveQuestData>   ac  = readActiveQuests(buf);
@@ -270,7 +334,7 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
                 updateQuestWidget(ac);
                 if (client.currentScreen instanceof QuetesScreen s)
                     s.update(level, xp, xpNext, av, ac, pe, gp, lbC, lbL, cm);
-                else
+                else if (ouvrir)
                     client.setScreen(new QuetesScreen(level, xp, xpNext, av, ac, pe, gp, lbC, lbL, cm));
             });
         });
@@ -355,6 +419,58 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
 
     // ── Helpers lecture paquets ───────────────────────────────────────────────
 
+    /** État complet du LeBonCube tel qu'envoyé par le serveur. */
+    private record MarcheEtat(int balance,
+                              List<String> categories,
+                              List<MarcheScreen.AnnonceData> annonces,
+                              List<MarcheScreen.CommandeData> prestations,
+                              List<MarcheScreen.CommandeData> commandes,
+                              List<MarcheScreen.CommandeData> archives) {}
+
+    private static MarcheEtat lireMarche(PacketByteBuf buf) {
+        int balance = buf.readInt();
+        int nc = buf.readInt();
+        List<String> categories = new ArrayList<>(nc);
+        for (int i = 0; i < nc; i++) categories.add(buf.readString());
+        int n = buf.readInt();
+        List<MarcheScreen.AnnonceData> annonces = new ArrayList<>(n);
+        for (int i = 0; i < n; i++)
+            annonces.add(new MarcheScreen.AnnonceData(
+                buf.readInt(), buf.readString(), buf.readString(), buf.readString(),
+                buf.readString(), buf.readInt(), buf.readString(), buf.readString(),
+                buf.readLong(), buf.readFloat(), buf.readInt()));
+        return new MarcheEtat(balance, categories, annonces,
+            lireCommandes(buf), lireCommandes(buf), lireCommandes(buf));
+    }
+
+    private static List<MarcheScreen.CommandeData> lireCommandes(PacketByteBuf buf) {
+        int n = buf.readInt();
+        List<MarcheScreen.CommandeData> out = new ArrayList<>(n);
+        for (int i = 0; i < n; i++) {
+            int id = buf.readInt();
+            String titre = buf.readString();
+            String client = buf.readString();
+            String prestataire = buf.readString();
+            int prix = buf.readInt();
+            int acompte = buf.readInt();
+            int sequestre = buf.readInt();
+            String statut = buf.readString();
+            boolean vp = buf.readBoolean();
+            boolean vc = buf.readBoolean();
+            String annulPar = buf.readString();
+            long creeLe = buf.readLong();
+            int note = buf.readInt();
+            String avis = buf.readString();
+            int nm = buf.readInt();
+            List<MarcheScreen.MessageData> msgs = new ArrayList<>(nm);
+            for (int j = 0; j < nm; j++)
+                msgs.add(new MarcheScreen.MessageData(buf.readString(), buf.readString(), buf.readLong()));
+            out.add(new MarcheScreen.CommandeData(id, titre, client, prestataire, prix, acompte,
+                sequestre, statut, vp, vc, annulPar, creeLe, note, avis, msgs));
+        }
+        return out;
+    }
+
     private static List<HdvScreen.ListingData> readListings(PacketByteBuf buf) {
         int count = buf.readInt();
         List<HdvScreen.ListingData> list = new ArrayList<>(count);
@@ -386,6 +502,7 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
         List<BankScreen.TxData>           txs       = readBankTxs(buf);
         int totalShards  = buf.readInt();
         int playerCount  = buf.readInt();
+        BankScreen.WealthData wealth = readWealth(buf);
         List<BankScreen.LeaderboardEntry> lb        = readLeaderboard(buf);
         List<BankScreen.LoanData>         asLender  = readLoans(buf);
         List<BankScreen.LoanData>         asBorrow  = readLoans(buf);
@@ -393,8 +510,19 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
         List<BankScreen.LoanRequestData>  reqBorrow = readLoanRequests(buf);
         List<String>                      known     = readStringList(buf);
         List<BankScreen.RecurringData>    recurring = readBankRecurring(buf);
-        return new BankScreen(balance, ticksReward, txs, totalShards, playerCount,
+        return new BankScreen(balance, ticksReward, txs, totalShards, playerCount, wealth,
             lb, asLender, asBorrow, reqLender, reqBorrow, known, recurring);
+    }
+
+    /** Répartition des richesses : 5 tranches + parts détenues + médiane. */
+    private static BankScreen.WealthData readWealth(PacketByteBuf buf) {
+        int[] tranches = new int[5];
+        for (int i = 0; i < tranches.length; i++) tranches[i] = buf.readInt();
+        int partBasse = buf.readInt();
+        int partMoyenne = buf.readInt();
+        int partHaute = buf.readInt();
+        int median = buf.readInt();
+        return new BankScreen.WealthData(tranches, partBasse, partMoyenne, partHaute, median);
     }
 
     private static List<BankScreen.LoanRequestData> readLoanRequests(PacketByteBuf buf) {
@@ -446,7 +574,8 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
         for (int i = 0; i < count; i++)
             list.add(new ProductionScreen.ProdEntry(
                 buf.readString(), buf.readLong(), buf.readLong(),
-                buf.readInt(), buf.readInt(), buf.readBoolean(), buf.readBoolean()));
+                buf.readInt(), buf.readInt(), buf.readBoolean(), buf.readBoolean(),
+                buf.readInt(), buf.readBoolean()));
         return list;
     }
 
