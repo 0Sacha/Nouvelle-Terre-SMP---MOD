@@ -504,25 +504,6 @@ public class BankScreen extends Screen {
 
     // ── Onglet Economie ────────────────────────────────────────────────────────
 
-    /**
-     * Rampe or, du plus sombre au plus clair — reprise de la palette du Shard.
-     *
-     * Une seule teinte, en variation de clarté : les tranches de richesse sont des
-     * catégories <b>ordonnées</b>, pas des identités. Des teintes différentes
-     * (or/vert/bleu) échouaient d'ailleurs la séparation daltonienne, l'or et le
-     * vert n'étant pas distinguables en protanopie.
-     */
-    private static final int[] RAMPE_OR = {
-        0xFF6B4A0E, 0xFF9A6A12, 0xFFB57614, 0xFFE8A838, 0xFFFFD97A
-    };
-
-    /** En dessous, une « répartition » ne veut rien dire — on affiche un état vide explicite. */
-    private static final int MIN_JOUEURS_REPARTITION = 4;
-
-    private static final String[] TRANCHES_LABELS = {
-        "< 100 ◆", "100 – 1k ◆", "1k – 10k ◆", "10k – 100k ◆", "> 100k ◆"
-    };
-
     private void renderEconomyTab(DrawContext ctx, int mx, int my, int cy, int ch) {
         int px = winX + PAD, pw = winW - PAD * 2;
         int cardH = 64, cardW = (pw - GAP) / 2;
@@ -538,78 +519,6 @@ public class BankScreen extends Screen {
             "SOLDE MEDIAN", fmt(wealth.median()) + " ◆", C_GREEN);
         renderStatCard(ctx, px + cardW + GAP, cy, cardW, cardH, C_MID,
             "SOLDE MOYEN", fmt(avg) + " ◆", C_MID);
-        cy += cardH + GAP;
-
-        renderRepartition(ctx, mx, my, px, cy, pw);
-    }
-
-    /**
-     * Répartition des joueurs par tranche de richesse.
-     *
-     * Volontairement une seule lecture : « combien de joueurs ont combien ». La
-     * version précédente empilait un histogramme et une barre de concentration
-     * 50/40/10 % ; à quelques joueurs, elle affichait quatre barres vides et un
-     * « 40 % milieu = 100 % » que personne ne pouvait interpréter.
-     *
-     * En dessous de {@link #MIN_JOUEURS_REPARTITION} joueurs, aucune distribution
-     * n'a de sens : on le dit, au lieu de dessiner un graphique trompeur.
-     */
-    private void renderRepartition(DrawContext ctx, int mx, int my, int px, int cy, int pw) {
-        int[] tranches = wealth.tranches();
-        int total = 0, maxCount = 1;
-        for (int t : tranches) { total += t; maxCount = Math.max(maxCount, t); }
-
-        int panelH = 116;
-        ctx.fill(px, cy, px + pw, cy + panelH, C_PANEL);
-        ctx.fill(px, cy, px + 3, cy + panelH, C_GOLD);
-        ctx.fill(px, cy + panelH - 1, px + pw, cy + panelH, C_BORDER);
-        ctx.drawText(textRenderer, "COMBIEN DE JOUEURS ONT COMBIEN ?", px + 12, cy + 8, C_DIM, false);
-
-        if (total < MIN_JOUEURS_REPARTITION) {
-            ctx.drawCenteredTextWithShadow(textRenderer,
-                "Pas encore assez de joueurs pour une répartition",
-                px + pw / 2, cy + panelH / 2 - 8, C_MID);
-            ctx.drawCenteredTextWithShadow(textRenderer,
-                "§8(" + total + " joueur" + (total > 1 ? "s" : "") + " sur "
-                + MIN_JOUEURS_REPARTITION + " minimum)",
-                px + pw / 2, cy + panelH / 2 + 4, C_DIM);
-            return;
-        }
-
-        // Une ligne par tranche : libellé à gauche, barre proportionnelle, puis le
-        // nombre de joueurs ET sa part en clair — l'information ne dépend jamais
-        // de la seule couleur.
-        int labelW = 88;
-        int valueW = 74;
-        int barX   = px + 12 + labelW;
-        int barW   = pw - 24 - labelW - valueW;
-        int barH   = 13;
-        int y      = cy + 26;
-
-        for (int i = 0; i < tranches.length; i++) {
-            int by = y + i * (barH + 3);
-            ctx.drawText(textRenderer, TRANCHES_LABELS[i], px + 12, by + 3, C_MID, false);
-
-            ctx.fill(barX, by, barX + barW, by + barH, C_BG);
-            if (tranches[i] > 0) {
-                int w = (int) Math.round(barW * (tranches[i] / (double) maxCount));
-                ctx.fill(barX, by, barX + Math.max(3, w), by + barH, RAMPE_OR[i]);
-            }
-
-            int pct = (int) Math.round(tranches[i] * 100.0 / total);
-            String val = tranches[i] + (tranches[i] > 1 ? " joueurs" : " joueur");
-            ctx.drawText(textRenderer, val, barX + barW + 8, by + 3,
-                tranches[i] > 0 ? C_WHITE : C_DIM, false);
-            ctx.drawText(textRenderer, "§8" + pct + " %",
-                barX + barW + 8 + textRenderer.getWidth(val) + 4, by + 3, C_DIM, false);
-        }
-
-        // Une phrase de conclusion vaut mieux qu'une barre empilée illisible :
-        // la part détenue par les plus riches est le seul chiffre qui compte ici.
-        int cby = y + tranches.length * (barH + 3) + 4;
-        String phrase = "Les 10 % les plus riches détiennent §6" + wealth.partHaute()
-            + " %§7 du total  ·  les 50 % les plus modestes, §6" + wealth.partBasse() + " %";
-        ctx.drawText(textRenderer, "§7" + phrase, px + 12, cby, C_MID, false);
     }
 
     private void renderStatCard(DrawContext ctx, int x, int y, int w, int h,

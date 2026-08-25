@@ -104,7 +104,7 @@ public class ServerAdminScreen extends Screen {
         ctx.fill(px, py, px + pw, py + TOP_H, C_PANEL);
         ctx.fill(px, py + TOP_H, px + pw, py + TOP_H + 1, C_BORDER);
         ctx.drawText(textRenderer, "⚙  Administration serveur", px + PAD, py + 9, C_RED, false);
-        ctx.drawText(textRenderer, "§8Monitoring économique — réservé aux administrateurs",
+        ctx.drawText(textRenderer, "§8Retenu = prestations LeBonCube commandées, pas encore validées",
             px + PAD, py + 23, C_DIM, false);
 
         int cy = py + TOP_H + PAD;
@@ -112,8 +112,11 @@ public class ServerAdminScreen extends Screen {
         int cardH = 54;
 
         carte(ctx, px + PAD, cy, cardW, cardH, C_GOLD, "TRÉSORERIE $Serveur", fmt(soldeServeur) + " ◆");
-        carte(ctx, px + PAD + cardW + GAP, cy, cardW, cardH, C_BLUE, "EN SÉQUESTRE",
-            fmt(soldeSequestre) + " ◆");
+        // « Séquestre » : l'argent des prestations commandées mais pas encore
+        // validées. Il n'appartient ni au client ni au prestataire tant que les
+        // deux n'ont pas validé — d'où le libellé explicite plutôt que le seul mot.
+        carte(ctx, px + PAD + cardW + GAP, cy, cardW, cardH, C_BLUE,
+            "RETENU (LEBONCUBE)", fmt(soldeSequestre) + " ◆");
         carte(ctx, px + PAD + (cardW + GAP) * 2, cy, cardW, cardH, C_GREEN, "MASSE MONÉTAIRE",
             fmt((int) Math.min(Integer.MAX_VALUE, masseMonetaire)) + " ◆");
         cy += cardH + GAP;

@@ -23,6 +23,9 @@ public class PayCommand {
                 .collect(Collectors.toSet());
             online.forEach(builder::suggest);
             LocalEconomy.getInstance().getSoldesKeys().stream()
+                // Les comptes système ($Serveur, $Sequestre) ne sont pas des joueurs :
+                // les proposer laissait croire qu'on pouvait leur virer des shards.
+                .filter(k -> !k.startsWith("$"))
                 .filter(k -> online.stream().noneMatch(p -> p.equalsIgnoreCase(k)))
                 .forEach(builder::suggest);
             return builder.buildFuture();
@@ -53,6 +56,13 @@ public class PayCommand {
             NouvelleTerreBridge.sendToast(joueur, NouvelleTerreBridge.TOAST_ROUGE,
                 "✗  Virement refusé",
                 "Vous ne pouvez pas vous payer vous-même.");
+            return 0;
+        }
+
+        if (cible.startsWith("$")) {
+            NouvelleTerreBridge.sendToast(joueur, NouvelleTerreBridge.TOAST_ROUGE,
+                "✗  Destinataire invalide",
+                cible + " est un compte système.");
             return 0;
         }
 

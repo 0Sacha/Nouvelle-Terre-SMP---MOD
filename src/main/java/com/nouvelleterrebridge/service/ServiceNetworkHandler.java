@@ -155,11 +155,24 @@ public final class ServiceNetworkHandler {
 
     private static void prevenirMessage(MinecraftServer server, ServiceManager m,
                                         int commandeId, String auteur) {
-        m.commande(commandeId).ifPresent(c -> prevenirAutrePartie(server, c, auteur,
-            NouvelleTerreBridge.TOAST_VERT,
-            "✉  Nouveau message", auteur + " · " + c.titre,
-            "§6[LeBonCube] §b✉ §f" + auteur + " §avous a écrit à propos de §f"
-                + c.titre + " §a— §e/leboncube"));
+        m.commande(commandeId).ifPresent(c -> {
+            // Aperçu du message : savoir qu'on a reçu quelque chose sans savoir
+            // quoi oblige à ouvrir l'écran pour rien.
+            String dernier = c.messages.isEmpty() ? ""
+                : c.messages.get(c.messages.size() - 1).texte;
+            prevenirAutrePartie(server, c, auteur,
+                NouvelleTerreBridge.TOAST_VERT,
+                "✉  " + auteur, apercu(dernier, 38),
+                "§6[LeBonCube] §b✉ §f" + auteur + " §7(" + c.titre + ") §f: "
+                    + apercu(dernier, 120) + " §8— §e/leboncube");
+        });
+    }
+
+    /** Tronque un message pour l'afficher en aperçu. */
+    private static String apercu(String texte, int max) {
+        if (texte == null || texte.isBlank()) return "…";
+        String t = texte.replace('\n', ' ').trim();
+        return t.length() <= max ? t : t.substring(0, max - 1) + "…";
     }
 
     /** Suivi d'une commande : livraison, validation, demande d'annulation. */
@@ -288,6 +301,7 @@ public final class ServiceNetworkHandler {
             buf.writeBoolean(c.valideParClient);
             buf.writeString(c.annulationDemandeePar == null ? "" : c.annulationDemandeePar);
             buf.writeLong(c.creeLe);
+            buf.writeLong(c.termineeLe);
             buf.writeInt(c.note);
             buf.writeString(c.avis == null ? "" : c.avis);
             buf.writeInt(c.messages.size());

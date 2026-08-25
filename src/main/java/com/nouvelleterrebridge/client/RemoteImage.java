@@ -31,8 +31,9 @@ import java.util.concurrent.Executors;
 @Environment(EnvType.CLIENT)
 public final class RemoteImage {
 
-    /** Au-delà, on refuse : une annonce ne justifie pas de télécharger 8 Mo. */
-    private static final int TAILLE_MAX = 2 * 1024 * 1024;
+    /** Plafond de téléchargement — une photo de téléphone dépasse souvent 2 Mo. */
+    private static final int TAILLE_MAX = 8 * 1024 * 1024;
+    /** Côté maximal après réduction : au-delà, la texture pèse pour rien. */
     private static final int LARGEUR_MAX = 512;
 
     private enum Etat { EN_COURS, PRETE, ECHEC }
@@ -117,12 +118,10 @@ public final class RemoteImage {
             }
             if (donnees.length > TAILLE_MAX) { echouer(url); return; }
 
-            NativeImage image = NativeImage.read(new java.io.ByteArrayInputStream(donnees));
-            if (image.getWidth() > LARGEUR_MAX * 4 || image.getHeight() > LARGEUR_MAX * 4) {
-                image.close();
-                echouer(url);
-                return;
-            }
+            // Une photo de téléphone fait couramment 2160×2880 : la rejeter revenait
+            // à refuser le cas d'usage normal. On la réduit plutôt, ce qui garde la
+            // mémoire vidéo raisonnable — 2160×2880 en RGBA pèse ~25 Mo par annonce.
+            NativeImage image = reduire(NativeImage.read(new java.io.ByteArrayInputStream(donnees)));
 
             MinecraftClient.getInstance().execute(() -> {
                 try {
@@ -140,6 +139,24 @@ public final class RemoteImage {
             NouvelleTerreBridge.LOGGER.warn("[LeBonCube] Image non chargée ({}) : {}", url, e.getMessage());
             echouer(url);
         }
+    }
+
+    /**
+     * Ramène l'image dans {@link #LARGEUR_MAX} sur son plus grand côté, en gardant
+     * ses proportions. Une image déjà assez petite est renvoyée telle quelle.
+     */
+    private static NativeImage reduire(NativeImage source) {
+        int l = source.getWidth(), h = source.getHeight();
+        if (l <= LARGEUR_MAX && h <= LARGEUR_MAX) return source;
+
+        float ratio = Math.min(LARGEUR_MAX / (float) l, LARGEUR_MAX / (float) h);
+        int nl = Math.max(1, Math.round(l * ratio));
+        int nh = Math.max(1, Math.round(h * ratio));
+
+        NativeImage reduite = new NativeImage(nl, nh, false);
+        source.resizeSubRectTo(0, 0, l, h, reduite);
+        source.close();
+        return reduite;
     }
 
     private static void echouer(String url) {

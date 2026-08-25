@@ -26,7 +26,8 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `1.5.0` (LeBonCube — annonces de services entre joueurs, /server-admin)
+- Version actuelle : `1.5.1` (correctif d'exploit achat/revente au Shop, archives LeBonCube)
+  - 1.5.0 : LeBonCube — annonces de services entre joueurs, /server-admin
   - 1.4.2 : prix vivants, taxe de fortune, répartition des richesses, quêtes en liste,
     correctifs de saisie
   - 1.4.1 : nettoyage — code mort retiré, aucun changement de gameplay
@@ -174,6 +175,14 @@ façon prévue de les débloquer au Shop.
   l'admin quand sa valeur a été ramenée au plafond.
   Sans cette marge, acheter puis revendre serait neutre et toute variation de prix
   transformerait le shop en machine à shards.
+- ⚠ **`ServerShopActions.sell()` enregistre le rachat AVANT de calculer le prix.**
+  L'ordre inverse rendait l'aller-retour achat/revente rentable : l'achat faisait monter
+  le prix, et la revente était payée à ce prix gonflé par l'achat du joueur lui-même.
+  Au-delà de +82 % — les facteurs peuvent doubler — la marge de 55 % ne suffisait plus et
+  la boucle imprimait des shards (50 000 → millions en quelques minutes).
+  En enregistrant d'abord, le vendeur encaisse son propre impact : un aller-retour revient
+  toujours à payer `P` puis récupérer `0,55 × P`, quels que soient les multiplicateurs.
+  **Ne jamais remettre le calcul du prix avant `recordPurchase`.**
 - Le serveur ne rachète **que les piles vierges** (ni NBT, ni dégâts) : impossible d'évaluer
   équitablement un objet enchanté ou abîmé.
 - L'argent d'achat va sur `$Serveur` ; le rachat le déduit via `forceDeduct` (compte système
@@ -236,10 +245,10 @@ client fauché au moment de valider bloquerait une prestation déjà réalisée.
   publication pour décourager les annonces jetables.
 
 ### Images (`ServiceImages` + `RemoteImage`)
-**Aucune restriction d'hébergeur** : n'importe quelle URL est acceptée, seuls les GIF et
-les vidéos sont refusés (`EXTENSIONS_REFUSEES`). C'est un choix d'exploitation assumé par
-l'administrateur du serveur, après une première version à liste d'hôtes fermée qui bloquait
-trop de liens légitimes.
+**Aucune restriction** : n'importe quelle URL http(s) est acceptée, quel que soit l'hébergeur
+et le format. Deux versions précédentes filtraient les hôtes puis les extensions et bloquaient
+trop de liens légitimes. Les formats que le décodeur du jeu ne lit pas (vidéo, WebP) sont
+publiés mais n'affichent rien — l'écran retombe sur sa vignette de repli.
 ⚠ Contrepartie connue : une annonce est vue par tous, et chaque client télécharge l'URL
 qu'elle contient — une annonce pointant vers un serveur maison permet donc de relever l'IP
 des curieux. **Ne pas resserrer sans que ce soit demandé.**
@@ -249,6 +258,13 @@ des curieux. **Ne pas resserrer sans que ce soit demandé.**
 Discord vers « Capture d'écran.png » en contient (apostrophe, accents, espaces). Le refus
 était alors incompréhensible — seules les URL 100 % ASCII passaient.
 La méthode renvoie le **motif** du refus, pas un booléen : le joueur doit savoir ce qui coince.
+
+⚠ `RemoteImage` **réduit** les images trop grandes au lieu de les refuser. Une photo de
+téléphone fait couramment 2160×2880 : l ancien garde-fou (rejet au-delà de 2048 px) écartait
+donc le cas d usage le plus courant, sans rien dire. `resizeSubRectTo` la ramène à 512 px sur
+le plus grand côté — une texture 2160×2880 en RGBA pèserait ~25 Mo par annonce.
+L affichage conserve les proportions : une photo portrait étirée dans un cadre paysage
+devient méconnaissable.
 
 ⚠ `RemoteImage` envoie un **User-Agent de navigateur**. Le CDN de Discord répond `403` à un
 agent inconnu : avec l'ancien `User-Agent: NouvelleTerreBridge`, *toutes* les images
@@ -268,6 +284,14 @@ réseau : la vérification serveur ne fait pas autorité pour ce que le client t
 ### Notes
 Le client note le prestataire de 1 à 5 étoiles à la validation (facultatif). Stockées par
 prestataire dans `leboncube.json`, la moyenne s'affiche sur ses annonces.
+
+### Archives
+Cliquer une prestation close ouvre son **dossier complet** : les deux parties, le prix et
+l'acompte, les dates de commande et de clôture (avec l'année), l'avis et ses étoiles daté,
+et **toute la conversation** en lecture seule.
+⚠ Le bouton de chat disparaît quand la commande se clôt : sans cette vue, l'historique
+existait toujours dans `leboncube.json` mais n'était plus consultable par les joueurs.
+`termineeLe` est transmis au client uniquement pour cet écran.
 
 ## Architecture /server-admin (1.5.0)
 Écran de monitoring réservé au **niveau op 4** (`ServiceNetworkHandler.NIVEAU_ADMIN`) :
@@ -549,13 +573,10 @@ client/                    ← @Environment(CLIENT) uniquement
                              `estAvecJoueur(type)` sépare les échanges entre joueurs
                              (virements, crédits) des flux serveur (récompenses, shop, dépôts).
                              Mélangées, les récompenses automatiques noyaient les virements.
-                             **Economie (1.4.2)** : histogramme des tranches de richesse +
-                             barre de concentration du patrimoine (50/40/10 %). Rampe **or
-                             séquentielle** (`RAMPE_OR`, une seule teinte) et non des teintes
-                             distinctes : les tranches sont des catégories *ordonnées*, et
-                             or/vert échouaient la séparation daltonienne (ΔE 7,5 en protanopie).
-                             Chaque barre porte son compte en clair — l'identité ne repose
-                             jamais sur la seule couleur.
+                             **Economie** : 4 cartes de statistiques (circulation, joueurs,
+                             solde médian, solde moyen). L'histogramme des tranches de richesse
+                             a été **retiré sur demande** en 1.5.0 — il n'apportait rien de
+                             lisible à l'échelle du serveur. `WealthData.median()` reste utilisé.
                              **Classement (1.4.2)** : le scroll **n'existait pas** — toutes les
                              lignes étaient dessinées sans offset ni scissor, débordant hors du
                              panneau. Ajout scroll molette + scissor + scrollbar + barre de
@@ -674,6 +695,8 @@ wealth        : (int × 5 tranches) | int partBasse | int partMoyenne | int part
 BANK_RESULT: bool ok | string msg | [même contenu que BANK_OPEN]
 txs[]         : int count → (int type, string label, int amount, long timestamp) × count
 leaderboard[] : int count → (string name, int balance) × count
+commandes[]   : … | long creeLe | long termineeLe | int note | string avis | messages[]
+                termineeLe = 0 tant que la commande est en cours
 loansAs*[]    : int count → (int id, string other, int principal, long dueMs,
                              int daysOverdue, int totalPenalty, int nextPenalty, bool repaid) × count
 requestsAs*[] : int count → (int id, string other, int principal, int durationDays, int penaltyBase) × count

@@ -459,6 +459,7 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             boolean vc = buf.readBoolean();
             String annulPar = buf.readString();
             long creeLe = buf.readLong();
+            long termineeLe = buf.readLong();
             int note = buf.readInt();
             String avis = buf.readString();
             int nm = buf.readInt();
@@ -466,7 +467,7 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             for (int j = 0; j < nm; j++)
                 msgs.add(new MarcheScreen.MessageData(buf.readString(), buf.readString(), buf.readLong()));
             out.add(new MarcheScreen.CommandeData(id, titre, client, prestataire, prix, acompte,
-                sequestre, statut, vp, vc, annulPar, creeLe, note, avis, msgs));
+                sequestre, statut, vp, vc, annulPar, creeLe, termineeLe, note, avis, msgs));
         }
         return out;
     }

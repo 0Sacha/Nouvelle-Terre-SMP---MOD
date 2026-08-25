@@ -95,6 +95,19 @@ public final class ServerShopActions {
             return String.format("§cTu n'as que §f%d§c exemplaire(s) de §f%s§c en état d'être vendu(s). "
                 + "§7(objets enchantés, renommés ou abîmés non rachetés)", disponible, nomItem);
 
+        // ⚠ Enregistrer le rachat AVANT de calculer le prix.
+        //
+        // L'ordre inverse rendait l'aller-retour achat/revente rentable : acheter
+        // faisait monter le prix, et la revente était payée à ce prix gonflé par
+        // l'achat du joueur lui-même. Au-delà de +82 % (les facteurs peuvent
+        // doubler), la marge de 55 % ne suffisait plus et la boucle imprimait des
+        // shards — 50 000 devenaient des millions en quelques minutes.
+        //
+        // En enregistrant d'abord, le vendeur encaisse son propre impact sur le
+        // marché : un aller-retour revient toujours à payer P puis récupérer
+        // 0,55 × P, soit une perte garantie, quels que soient les multiplicateurs.
+        ServerShopPriceManager.recordPurchase(itemId, qty);
+
         int prixUnite = ServerShopPriceManager.getBuybackPrice(itemId);
         int total     = prixUnite * qty;
 
@@ -113,7 +126,6 @@ public final class ServerShopActions {
         eco.forceDeduct(COMPTE_SERVEUR, total);
         eco.addShards(pseudo, total, "Revente au Shop Serveur");
 
-        ServerShopPriceManager.recordPurchase(itemId, qty);
         TransactionLog.log(pseudo, TransactionLog.TYPE_SELL, qty + "x " + nomItem + " (Shop Serveur)", total);
 
         return String.format("§a✅ §f%dx %s §avendu pour §f%s ◆§a. Solde : §f%s ◆§a.",

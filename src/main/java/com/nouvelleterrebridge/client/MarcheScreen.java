@@ -37,7 +37,7 @@ public class MarcheScreen extends Screen {
     public record CommandeData(int id, String titre, String client, String prestataire,
                                int prix, int acompte, int sequestre, String statut,
                                boolean valideParPrestataire, boolean valideParClient,
-                               String annulationDemandeePar, long creeLe,
+                               String annulationDemandeePar, long creeLe, long termineeLe,
                                int note, String avis, List<MessageData> messages) {}
 
     // ── Couleurs ──────────────────────────────────────────────────────────────
@@ -103,11 +103,16 @@ public class MarcheScreen extends Screen {
     private static final int CLIC_ANNULER   = 5;
     private static final int CLIC_OUVRIR_CHAT = 6;
     private static final int CLIC_CATEGORIE = 7;
+    private static final int CLIC_ARCHIVE   = 8;
 
     /** Annonce ouverte en détail (null = liste). */
     private AnnonceData detail = null;
     /** Commande dont le chat est ouvert (null = aucun). */
     private CommandeData chatOuvert = null;
+    /** Prestation archivée consultée en détail (null = liste). */
+    private CommandeData archiveOuverte = null;
+    /** Défilement de la conversation dans le détail d'archive. */
+    private int scrollArchive = 0;
 
     // Formulaire de publication
     private boolean formOuvert = false;
@@ -269,6 +274,7 @@ public class MarcheScreen extends Screen {
 
         if (formOuvert)                  renderFormulaire(ctx, mx, my, contentY, contentH);
         else if (validationEnCours != null) renderValidation(ctx, mx, my, contentY, contentH);
+        else if (archiveOuverte != null) renderArchiveDetail(ctx, mx, my, contentY, contentH);
         else if (chatOuvert != null)     renderChat(ctx, mx, my, contentY, contentH);
         else if (detail != null)         renderDetail(ctx, mx, my, contentY, contentH);
         else switch (tab) {
@@ -471,7 +477,14 @@ public class MarcheScreen extends Screen {
         if (url != null && !url.isEmpty()) {
             Identifier tex = RemoteImage.texture(url);
             if (tex != null) {
-                ctx.drawTexture(tex, x, y, 0, 0, w, h, w, h);
+                // Proportions conservées : une photo de téléphone (portrait) étirée
+                // dans un cadre paysage devient méconnaissable.
+                int iw = Math.max(1, RemoteImage.largeur(url));
+                int ih = Math.max(1, RemoteImage.hauteur(url));
+                float k = Math.min(w / (float) iw, h / (float) ih);
+                int dw = Math.max(1, Math.round(iw * k));
+                int dh = Math.max(1, Math.round(ih * k));
+                ctx.drawTexture(tex, x + (w - dw) / 2, y + (h - dh) / 2, 0, 0, dw, dh, dw, dh);
                 return;
             }
             if (RemoteImage.enCours(url)) {
@@ -644,9 +657,21 @@ public class MarcheScreen extends Screen {
             String annulLbl = c.annulationDemandeePar().isEmpty() ? "Annuler"
                 : (c.annulationDemandeePar().equalsIgnoreCase(moi()) ? "Demandé…" : "Accepter l'annulation");
             bouton(ctx, annulLbl, droite, y + (rh - BTN_H) / 2, mx, my, C_RED, CLIC_ANNULER, c.id());
-        } else if (c.note() > 0) {
-            String e = etoiles(c.note());
-            ctx.drawText(textRenderer, e, x + rowW - textRenderer.getWidth(e) - 12, y + 8, C_GOLD, false);
+        } else {
+            // Archive : la ligne entière ouvre le dossier complet
+            if (c.note() > 0) {
+                String e = etoiles(c.note());
+                ctx.drawText(textRenderer, e, x + rowW - textRenderer.getWidth(e) - 12, y + 8, C_GOLD, false);
+            }
+            String voir = "Consulter";
+            int vw = textRenderer.getWidth(voir) + 14;
+            int vx = x + rowW - vw - 12;
+            int vy = y + rh - BTN_H - 8;
+            boolean vhov = mx >= x && mx < x + rowW && my >= y && my < y + rh;
+            ctx.fill(vx, vy, vx + vw, vy + BTN_H, vhov ? C_GOLD : C_SURFACE);
+            ctx.fill(vx, vy, vx + vw, vy + 1, C_GOLD);
+            centre(ctx, voir, vx + vw / 2, vy + 5, vhov ? C_BG : C_MID);
+            bounds.add(new int[]{x, y, rowW, rh, CLIC_ARCHIVE, c.id()});
         }
     }
 
@@ -684,6 +709,127 @@ public class MarcheScreen extends Screen {
         };
     }
 
+    // ── Détail d'une prestation archivée ─────────────────────────────────────
+
+    /**
+     * Dossier complet d'une prestation close : ce qu'elle était, ce qu'elle a
+     * coûté, l'avis laissé, et toute la conversation.
+     *
+     * Le chat disparaissait avec la commande une fois close : l'historique
+     * existait toujours dans leboncube.json mais n'était plus consultable.
+     */
+    private void renderArchiveDetail(DrawContext ctx, int mx, int my, int cy, int ch) {
+        parquerChamps();
+        CommandeData c = archiveOuverte;
+        if (c == null) return;
+        int x = px + PAD, w = pw - PAD * 2;
+
+        renderBoutonRetour(ctx, mx, my, x, cy + 8);
+        boolean annulee = "ANNULEE".equals(c.statut());
+        ctx.drawText(textRenderer, tronquer(c.titre(), w - 200), x + 90, cy + 13, C_WHITE, false);
+        String etat = annulee ? "✖ Annulée" : "✅ Terminée";
+        ctx.drawText(textRenderer, etat, x + w - textRenderer.getWidth(etat) - 4, cy + 13,
+            annulee ? C_RED : C_GREEN, false);
+        cy += 32;
+
+        // ── Fiche : les deux parties, l'argent, les dates ──
+        int ficheH = 66;
+        ctx.fill(x, cy, x + w, cy + ficheH, C_PANEL);
+        ctx.fill(x, cy, x + 3, cy + ficheH, annulee ? C_RED : C_GREEN);
+
+        boolean jeSuisClient = c.client().equalsIgnoreCase(moi());
+        ctx.drawText(textRenderer, "§7Prestataire : §f" + c.prestataire(), x + 12, cy + 10, C_MID, false);
+        ctx.drawText(textRenderer, "§7Client : §f" + c.client(), x + 12, cy + 24, C_MID, false);
+        ctx.drawText(textRenderer, "§8" + (jeSuisClient ? "Vous étiez le client"
+                                                       : "Vous étiez le prestataire"),
+            x + 12, cy + 38, C_DIM, false);
+
+        int cx2 = x + w / 2 + 10;
+        ctx.drawText(textRenderer, "§7Prix : §6" + c.prix() + " ◆", cx2, cy + 10, C_GOLD, false);
+        ctx.drawText(textRenderer, "§8Acompte versé : " + c.acompte() + " ◆", cx2, cy + 24, C_DIM, false);
+        ctx.drawText(textRenderer, "§8Commandée le " + dateComplete(c.creeLe()), cx2, cy + 38, C_DIM, false);
+        ctx.drawText(textRenderer, "§8" + (annulee ? "Annulée le " : "Terminée le ")
+            + dateComplete(c.termineeLe()), cx2, cy + 50, C_DIM, false);
+        cy += ficheH + 6;
+
+        // ── L'avis, s'il y en a un ──
+        if (c.note() > 0) {
+            List<String> lignes = c.avis().isBlank() ? List.of() : decouper(c.avis(), w - 24);
+            int avisH = 26 + lignes.size() * 11;
+            ctx.fill(x, cy, x + w, cy + avisH, C_SURFACE);
+            ctx.fill(x, cy, x + 3, cy + avisH, C_GOLD);
+            String note = etoiles(c.note()) + " §8· laissé par " + c.client()
+                + " le " + dateComplete(c.termineeLe());
+            ctx.drawText(textRenderer, note, x + 12, cy + 8, C_GOLD, false);
+            int ay = cy + 22;
+            for (String l : lignes) {
+                ctx.drawText(textRenderer, "§f" + l, x + 12, ay, C_WHITE, false);
+                ay += 11;
+            }
+            cy += avisH + 6;
+        } else {
+            ctx.drawText(textRenderer, "§8Aucun avis laissé sur cette prestation.", x + 12, cy + 2, C_DIM, false);
+            cy += 16;
+        }
+
+        // ── La conversation, en lecture seule ──
+        int zoneH = py + ph - PAD - cy;
+        if (zoneH < 40) return;
+        ctx.fill(x, cy, x + w, cy + zoneH, C_PANEL);
+        ctx.drawText(textRenderer, "CONVERSATION (" + c.messages().size() + ")", x + 12, cy + 6, C_DIM, false);
+
+        List<MessageData> msgs = c.messages();
+        if (msgs.isEmpty()) {
+            centre(ctx, "Aucun message échangé.", x + w / 2, cy + zoneH / 2, C_DIM);
+            return;
+        }
+
+        // Du plus récent vers le haut, comme le chat vivant ; la molette remonte
+        int haut = cy + 20;
+        int y = cy + zoneH - 6;
+        int ignores = scrollArchive;
+        ctx.enableScissor(x, haut, x + w, cy + zoneH);
+        for (int i = msgs.size() - 1; i >= 0; i--) {
+            MessageData m = msgs.get(i);
+            if (ignores > 0) { ignores--; continue; }
+            boolean deMoi = m.auteur().equalsIgnoreCase(moi());
+            List<String> lignes = decouper(m.texte(), w - 60);
+            int blocH = lignes.size() * 11 + 22;
+            y -= blocH + 3;
+            if (y < haut - blocH) break;
+
+            int bulleW = textRenderer.getWidth(m.auteur() + "  " + dateCourte(m.envoyeLe()));
+            for (String l : lignes) bulleW = Math.max(bulleW, textRenderer.getWidth(l));
+            bulleW = Math.min(w - 40, bulleW + 16);
+            int bx = deMoi ? x + w - bulleW - 10 : x + 10;
+
+            ctx.fill(bx, y, bx + bulleW, y + blocH, deMoi ? 0xFF23343F : C_SURFACE);
+            ctx.fill(bx, y, bx + 2, y + blocH, deMoi ? C_BLUE : C_GOLD);
+            ctx.drawText(textRenderer, "§8" + m.auteur() + "  " + dateCourte(m.envoyeLe()),
+                bx + 8, y + 4, C_DIM, false);
+            int ly = y + 16;
+            for (String l : lignes) {
+                ctx.drawText(textRenderer, "§f" + l, bx + 8, ly, C_WHITE, false);
+                ly += 11;
+            }
+        }
+        ctx.disableScissor();
+        maxScroll = Math.max(0, msgs.size() - 1);
+    }
+
+    /** « 19 août 2026 » — l'année compte dans une archive. */
+    private String dateComplete(long ms) {
+        if (ms <= 0) return "—";
+        return new java.text.SimpleDateFormat("d MMMM yyyy", java.util.Locale.FRENCH)
+            .format(new java.util.Date(ms));
+    }
+
+    /** « 19/08 14:32 » — pour horodater un message sans encombrer la bulle. */
+    private String dateCourte(long ms) {
+        if (ms <= 0) return "";
+        return new java.text.SimpleDateFormat("dd/MM HH:mm").format(new java.util.Date(ms));
+    }
+
     // ── Chat ──────────────────────────────────────────────────────────────────
 
     private void renderChat(DrawContext ctx, int mx, int my, int cy, int ch) {
@@ -712,7 +858,9 @@ public class MarcheScreen extends Screen {
             y -= blocH + 3;
             if (y < cy + 4) break;
 
-            int bulleW = 0;
+            // La largeur doit tenir compte du pseudo, écrit au-dessus du texte :
+            // ne mesurer que les lignes du message le laissait déborder de la bulle.
+            int bulleW = textRenderer.getWidth(m.auteur());
             for (String l : lignes) bulleW = Math.max(bulleW, textRenderer.getWidth(l));
             bulleW = Math.min(w - 40, bulleW + 16);
             int bx = deMoi ? x + w - bulleW - 10 : x + 10;
@@ -1033,12 +1181,18 @@ public class MarcheScreen extends Screen {
                 if (fAvis != null) fAvis.setText("");
             }
             case CLIC_OUVRIR_CHAT -> { chatOuvert = retrouver(id); detail = null; }
+            case CLIC_ARCHIVE -> {
+                archives.stream().filter(a -> a.id() == id).findFirst()
+                    .ifPresent(a -> { archiveOuverte = a; scrollArchive = 0; });
+                detail = null; chatOuvert = null;
+            }
             case CLIC_CATEGORIE -> {
                 List<String> cats = filtresDisponibles();
                 if (id < cats.size()) { categorieFiltre = cats.get(id); scroll = 0; }
             }
             case 100 -> { viderFormulaire(); formOuvert = true; detail = null; chatOuvert = null; }
-            case 101 -> { detail = null; chatOuvert = null; formOuvert = false; validationEnCours = null; }
+            case 101 -> { detail = null; chatOuvert = null; formOuvert = false;
+                          validationEnCours = null; archiveOuverte = null; }
             case 102 -> {
                 if (fMessage != null && !fMessage.getText().isBlank())
                     envoyer(ServiceNetworking.ACTION_MESSAGE, fMessage.getText(), "", "", "", "", id, 0);
@@ -1078,6 +1232,11 @@ public class MarcheScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mx, double my, double amount) {
+        if (archiveOuverte != null) {
+            scrollArchive = Math.max(0, Math.min(scrollArchive + (int) Math.signum(amount),
+                Math.max(0, archiveOuverte.messages().size() - 1)));
+            return true;
+        }
         scroll = Math.max(0, Math.min(scroll - (int) Math.signum(amount), maxScroll));
         return true;
     }
@@ -1086,6 +1245,7 @@ public class MarcheScreen extends Screen {
     public boolean keyPressed(int key, int scan, int mod) {
         if (key == 256) {   // Échap ferme d'abord la vue courante
             if (validationEnCours != null) { validationEnCours = null; return true; }
+            if (archiveOuverte != null)    { archiveOuverte = null; return true; }
             if (chatOuvert != null)        { chatOuvert = null; return true; }
             if (formOuvert)                { formOuvert = false; return true; }
             if (detail != null)            { detail = null; return true; }
