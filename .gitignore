@@ -13,3 +13,16 @@ Thumbs.db
 
 # Le wrapper JAR est volontairement inclus dans le repo
 # (ne pas ajouter gradle-wrapper.jar ici)
+
+# Données de serveur copiées en local pour analyse (jamais commitées)
+/shards.json
+/seuils-shop.json
+/server-shop-prices.json
+/production.json
+/marche.json
+/leboncube.json
+/quetes.json
+/player-levels.json
+/nouvelle-terre-*.json
+/economy-starters.json
+/backup-economie-*/

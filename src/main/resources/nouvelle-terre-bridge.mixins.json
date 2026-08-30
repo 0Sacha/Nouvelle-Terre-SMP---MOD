@@ -10,7 +10,8 @@
     "ServerPlayerEntityMixin",
     "CraftingResultSlotMixin",
     "BlockItemMixin",
-    "ParcheminDropMixin"
+    "ParcheminDropMixin",
+    "PlayerManagerMixin"
   ],
   "client": [
     "InGameHudMixin",

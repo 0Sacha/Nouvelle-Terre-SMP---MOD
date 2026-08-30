@@ -40,8 +40,12 @@ public class ServerShopPriceManager {
      */
     private static final double DEMI_VIE_MS = 3 * 24 * 3600 * 1000.0;
 
-    /** Masse monétaire par joueur considérée comme « normale » (référence d'inflation). */
-    private static final double MASSE_REFERENCE_PAR_JOUEUR = 3000.0;
+    /**
+     * Solde médian considéré comme « normal ». L'inflation se mesure par rapport
+     * à lui : 3 000 ◆ était très en dessous du serveur réel et clouait le
+     * multiplicateur au plafond en permanence.
+     */
+    private static final double SOLDE_MEDIAN_REFERENCE = 20_000.0;
 
     public static class PriceEntry {
         public int  basePrice    = 1;
@@ -204,16 +208,22 @@ public class ServerShopPriceManager {
     }
 
     /**
-     * Inflation : si la masse monétaire par joueur dépasse la référence, tout
-     * coûte plus cher. C'est le facteur « tous objets confondus » — il évite
-     * qu'un serveur débordant de shards garde des prix d'ouverture.
+     * Inflation générale : si les joueurs s'enrichissent, tout coûte plus cher.
+     *
+     * ⚠ Indexée sur le <b>solde médian</b> et non sur la moyenne. Avec la moyenne,
+     * quatre comptes gonflés par un exploit suffisaient à clouer le multiplicateur
+     * au plafond, si bien que <i>tous</i> les autres joueurs payaient le double —
+     * alors qu'ils n'y étaient pour rien. C'est le même raisonnement que pour la
+     * taxe de fortune : une moyenne ment dès qu'il existe des fortunes extrêmes.
+     *
+     * Ne mesure que l'argent <b>bancarisé</b> : les Shards physiques gardés en
+     * coffre échappent au calcul. C'est acceptable, ils sont inertes — aucun achat
+     * ne les accepte tant qu'ils ne sont pas redéposés.
      */
     public static double multiplicateurInflation() {
-        LocalEconomy eco = LocalEconomy.getInstance();
-        int joueurs = eco.nombreJoueursConnus();
-        if (joueurs <= 0) return 1.0;
-        double parJoueur = (double) eco.masseMonetaire() / joueurs;
-        return borner(Math.sqrt(parJoueur / MASSE_REFERENCE_PAR_JOUEUR), 0.80, 2.00);
+        int median = LocalEconomy.getInstance().soldeMedian();
+        if (median <= 0) return 1.0;
+        return borner(Math.sqrt(median / SOLDE_MEDIAN_REFERENCE), 0.80, 2.00);
     }
 
     /**
@@ -295,7 +305,20 @@ public class ServerShopPriceManager {
         ShopThresholds.Entry seuil = ShopThresholds.get(itemId);
         if (seuil != null && seuil.prixRachat > 0)
             return Math.max(1, Math.min(seuil.prixRachat, vente));
-        return Math.max(1, Math.round(vente * RATIO_RACHAT));
+
+        int rachat = Math.max(1, Math.round(vente * RATIO_RACHAT));
+
+        // ⚠ Écart asymétrique sur les minerais. Leur prix de VENTE est calé sur le
+        // rendement maximal sous Fortune III, pour qu'en acheter ne soit jamais
+        // rentable. Appliquer la marge de 55 % à ce prix ferait racheter un minerai
+        // de diamant 290 ◆ alors qu'il rend en moyenne 145 ◆ de diamants : la Silk
+        // Touch deviendrait deux fois plus payante que la Fortune. Le serveur
+        // n'achète donc que sur ce qu'il est *sûr* d'obtenir.
+        Integer garanti = PrixDeriveur.valeurGarantie(itemId, ShopThresholds::prixReference);
+        if (garanti != null)
+            rachat = Math.min(rachat, Math.max(1, Math.round(garanti * RATIO_RACHAT)));
+
+        return rachat;
     }
 
     /** Vrai si le rachat de cet item est imposé par un admin plutôt que calculé. */
@@ -308,9 +331,18 @@ public class ServerShopPriceManager {
         return new HashMap<>(prices);
     }
 
+    /**
+     * Efface l'état du marché : flux cumulés et demande récente.
+     *
+     * Nécessaire après un exploit : le flux cumulé n'a <b>aucun amortissement</b>,
+     * il resterait au plafond pour toujours. Ne touche ni les soldes, ni les
+     * compteurs de production, ni les seuils — uniquement les compteurs de
+     * transactions. Une copie du fichier est gardée avant effacement.
+     */
     public static synchronized void reset() {
+        SauvegardeFichier.sauver("server-shop-prices.json", "avant-purge");
         prices.clear();
         save();
-        NouvelleTerreBridge.LOGGER.info("[ServerShopPriceManager] Prix réinitialisés.");
+        NouvelleTerreBridge.LOGGER.info("[ServerShopPriceManager] Etat du marche purge.");
     }
 }

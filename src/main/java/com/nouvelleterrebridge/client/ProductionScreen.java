@@ -83,6 +83,8 @@ public class ProductionScreen extends Screen {
 
     // Confirmation du Reset : premier clic arme, second clic (dans les 3 s) exécute
     private long resetConfirmUntil = 0;
+    /** Même garde pour la purge du marché : elle est irréversible sans la sauvegarde. */
+    private long purgeConfirmUntil = 0;
 
     // Bounds boutons admin : {x, y, w, h, action}
     private final List<int[]> adminBtnBounds = new ArrayList<>();
@@ -216,22 +218,33 @@ public class ProductionScreen extends Screen {
     }
 
     private void renderAdminButtons(DrawContext ctx, int mx, int my) {
-        String[] labels  = {"Rafraîchir", "Recharger", "Reset"};
-        int[]    actions = {ProductionNetworking.ACTION_RECHECK, ProductionNetworking.ACTION_RELOAD, ProductionNetworking.ACTION_RESET};
-        boolean resetArmed = System.currentTimeMillis() < resetConfirmUntil;
+        String[] labels  = {"Rafraîchir", "Recharger", "Purger marché", "Reset"};
+        int[]    actions = {ProductionNetworking.ACTION_RECHECK, ProductionNetworking.ACTION_RELOAD,
+                            ProductionNetworking.ACTION_PURGE_MARCHE, ProductionNetworking.ACTION_RESET};
+        long now = System.currentTimeMillis();
+        boolean resetArmed = now < resetConfirmUntil;
+        boolean purgeArmed = now < purgeConfirmUntil;
         int bx = px + pw - PAD;
         for (int i = labels.length - 1; i >= 0; i--) {
             boolean danger = actions[i] == ProductionNetworking.ACTION_RESET;
-            String  label  = danger && resetArmed ? "Confirmer ?" : labels[i];
+            // La purge n'efface ni les soldes ni la production : avertissement, pas danger
+            boolean attention = actions[i] == ProductionNetworking.ACTION_PURGE_MARCHE;
+            boolean arme = (danger && resetArmed) || (attention && purgeArmed);
+            String  label  = arme ? "Confirmer ?" : labels[i];
             int bw = textRenderer.getWidth(label) + 14;
             bx -= bw;
             int by = py + 11;
             boolean hov = mx >= bx && mx < bx + bw && my >= by && my < by + 18;
-            int base  = danger ? (resetArmed ? C_RED : 0xFF3D0A16) : C_SURFACE;
-            int hover = danger ? C_RED : C_HOVER;
+            int accent = danger ? C_RED : (attention ? C_GOLD : C_BORDER);
+            int base  = danger    ? (resetArmed ? C_RED : 0xFF3D0A16)
+                      : attention ? (purgeArmed ? C_GOLD : 0xFF3D2E0A)
+                      : C_SURFACE;
+            int hover = danger ? C_RED : (attention ? C_GOLD : C_HOVER);
             ctx.fill(bx, by, bx + bw, by + 18, hov ? hover : base);
-            ctx.fill(bx, by, bx + bw, by + 1, danger ? C_RED : C_BORDER);
-            ctx.drawText(textRenderer, label, bx + 7, by + 5, danger ? C_WHITE : C_MID, false);
+            ctx.fill(bx, by, bx + bw, by + 1, accent);
+            int couleurTexte = (danger || (attention && purgeArmed)) ? C_WHITE
+                             : attention ? C_GOLD : C_MID;
+            ctx.drawText(textRenderer, label, bx + 7, by + 5, couleurTexte, false);
             adminBtnBounds.add(new int[]{bx, by, bw, 18, actions[i]});
             bx -= 6;
         }
@@ -424,7 +437,13 @@ public class ProductionScreen extends Screen {
                     resetConfirmUntil = System.currentTimeMillis() + 3000;
                     return true;
                 }
+                if (b[4] == ProductionNetworking.ACTION_PURGE_MARCHE
+                        && System.currentTimeMillis() >= purgeConfirmUntil) {
+                    purgeConfirmUntil = System.currentTimeMillis() + 3000;
+                    return true;
+                }
                 resetConfirmUntil = 0;
+                purgeConfirmUntil = 0;
                 sendItemAction(b[4], "", 0);
                 return true;
             }

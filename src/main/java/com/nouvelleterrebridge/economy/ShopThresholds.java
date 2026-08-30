@@ -32,7 +32,7 @@ public class ShopThresholds {
      * prix de référence aux entrées déjà présentes dans seuils-shop.json, au
      * prochain démarrage et **sans toucher aux compteurs de production**.
      */
-    private static final int VERSION_PRIX = 1;
+    private static final int VERSION_PRIX = 4;
 
     public static class Entry {
         public long seuil    = 512;
@@ -73,7 +73,78 @@ public class ShopThresholds {
         } catch (Exception e) {
             NouvelleTerreBridge.LOGGER.error("[ShopThresholds] Erreur lecture : {}", e.getMessage());
         }
+        // ⚠ Ne migrer que si les prix dérivés sont disponibles.
+        // load() tourne à l'init du mod, bien avant SERVER_STARTED : les recettes
+        // n'existent pas encore, donc prixEffectifs est vide et prixDe() retombe
+        // sur la seule PRIX_REFERENCE. Migrer ici estampillait toutes les entrées
+        // à VERSION_PRIX avec ces prix incomplets — les minerais au plancher de
+        // 150 ◆ — et la vraie migration de deriverEtMigrer() les sautait toutes
+        // ensuite. La dérivation calculait juste, puis son résultat était perdu.
+        if (!prixEffectifs.isEmpty()) migrerPrix();
+    }
+
+    /**
+     * Prix dérivés des recettes du jeu, calculés au démarrage du serveur.
+     *
+     * Reste vide jusque-là : les recettes ne sont chargées qu'à ce moment. Tant
+     * qu'elle l'est, {@link #prixDe} retombe sur la table écrite à la main.
+     * Déclarée sans initialiseur référençant {@code PRIX_REFERENCE}, qui est
+     * défini plus bas dans le fichier.
+     */
+    private static Map<String, Integer> prixEffectifs = new HashMap<>();
+
+    /**
+     * Recalcule les prix dérivés puis réaligne le catalogue.
+     *
+     * Appelé au démarrage du serveur, seul moment où les recettes sont
+     * disponibles. Sauvegarde le fichier avant de le réécrire : la migration est
+     * irréversible et touche l'état réel du serveur.
+     */
+    public static synchronized void deriverEtMigrer(net.minecraft.server.MinecraftServer server) {
+        prixEffectifs = PrixDeriveur.deriver(server, PRIX_REFERENCE);
+        boolean aMigrer = thresholds.values().stream().anyMatch(e -> e.versionPrix < VERSION_PRIX);
+        if (aMigrer) SauvegardeFichier.sauver("seuils-shop.json", "avant-migration-v" + VERSION_PRIX);
         migrerPrix();
+        ServerShopPriceManager.resyncBasePrices();
+    }
+
+    /** Prix de référence d'un item : dérivation, table manuelle, puis plancher minerai. */
+    public static Integer prixReference(String itemId) {
+        return prixDe(itemId);
+    }
+
+    /**
+     * Recharge le fichier après une restauration, <b>sans le migrer</b>.
+     *
+     * ⚠ Un {@link #load()} ordinaire enchaînerait sur {@link #migrerPrix()}, qui
+     * réappliquerait aussitôt la table courante aux entrées restaurées : la
+     * restauration serait annulée dans la seconde. On estampille donc les entrées
+     * à la révision courante pour qu'elles soient laissées telles quelles — c'est
+     * bien l'ancien barème que l'admin a demandé à retrouver.
+     */
+    public static synchronized void rechargerRestaure() {
+        File f = FILE.toFile();
+        if (!f.exists()) return;
+        try (Reader r = new InputStreamReader(new FileInputStream(f), StandardCharsets.UTF_8)) {
+            Type type = new TypeToken<Map<String, Entry>>(){}.getType();
+            Map<String, Entry> loaded = GSON.fromJson(r, type);
+            if (loaded != null) thresholds = new HashMap<>(loaded);
+        } catch (Exception e) {
+            NouvelleTerreBridge.LOGGER.error("[ShopThresholds] Erreur relecture : {}", e.getMessage());
+            return;
+        }
+        for (Entry e : thresholds.values()) e.versionPrix = VERSION_PRIX;
+        save();
+        ServerShopPriceManager.resyncBasePrices();
+        NouvelleTerreBridge.LOGGER.info("[ShopThresholds] {} seuil(s) restauré(s), migration neutralisée.",
+            thresholds.size());
+    }
+
+    private static Integer prixDe(String itemId) {
+        Integer p = prixEffectifs.get(itemId);
+        if (p == null) p = PRIX_REFERENCE.get(itemId);
+        if (p != null) return p;
+        return PrixDeriveur.plancherMinerai(itemId);
     }
 
     /**
@@ -85,8 +156,6 @@ public class ShopThresholds {
      * catalogue jusqu'à ce que chaque item soit reproduit.
      *
      * Les compteurs de production ({@code production.json}) ne sont pas touchés.
-     * Une entrée déjà à jour est laissée telle quelle : les surcharges manuelles
-     * d'un admin survivent tant que {@link #VERSION_PRIX} n'est pas incrémenté.
      */
     private static void migrerPrix() {
         int migres = 0;
@@ -94,7 +163,9 @@ public class ShopThresholds {
             Entry entry = e.getValue();
             if (entry.versionPrix >= VERSION_PRIX) continue;
 
-            Integer reference = PRIX_REFERENCE.get(e.getKey());
+            Integer reference = prixDe(e.getKey());
+            // On ne descend jamais un prix imposé par un admin : seule une hausse
+            // (ou une entrée jamais réglée) est appliquée.
             if (reference != null) {
                 Entry neuf = fromPrix(reference);
                 NouvelleTerreBridge.LOGGER.info("[ShopThresholds] Prix mis à jour — {} : {}◆ → {}◆ (seuil {} → {})",
@@ -215,7 +286,7 @@ public class ShopThresholds {
         if (item == Items.AIR) return null;
 
         Entry e;
-        Integer reference = PRIX_REFERENCE.get(itemId);
+        Integer reference = prixDe(itemId);
         if (reference != null) {
             e = fromPrix(reference);
             NouvelleTerreBridge.LOGGER.info("[ShopThresholds] Nouveau seuil — {} (prix de référence) : seuil={} prix={}◆",

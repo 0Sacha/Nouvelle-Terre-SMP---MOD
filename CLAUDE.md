@@ -26,7 +26,11 @@ Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueu
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `1.5.1` (correctif d'exploit achat/revente au Shop, archives LeBonCube)
+- Version actuelle : `1.6.3` (correctif : boucle d'inflation des recettes réversibles)
+  - 1.6.2 : la dérivation des prix était perdue à la migration
+  - 1.6.1 : mode maintenance + sauvegardes restaurables
+  - 1.6.0 : refonte des prix de base — dérivation par les recettes
+  - 1.5.1 : correctif d'exploit achat/revente au Shop, archives LeBonCube
   - 1.5.0 : LeBonCube — annonces de services entre joueurs, /server-admin
   - 1.4.2 : prix vivants, taxe de fortune, répartition des richesses, quêtes en liste,
     correctifs de saisie
@@ -128,6 +132,92 @@ Deux boucles la contournaient, toutes deux fermées :
   du bloc et ne crédite rien → cycle neutre. Le compactage reste compté.
 ⚠ Ne pas « corriger » le compactage en le décomptant : fabriquer réellement des blocs est la
 façon prévue de les débloquer au Shop.
+### Mode maintenance (`MaintenanceMode`, 1.6.0)
+`/nt-maintenance on [message]` ferme le serveur à tout le monde sauf aux op ;
+`off` rouvre. Le refus est posé par `PlayerManagerMixin` sur **`checkCanJoin`**, le
+point de contrôle que le jeu utilise déjà pour la whitelist et les bannissements :
+le joueur est écarté **avant** d'entrer dans le monde (pas de chunk chargé, pas de
+message « a rejoint la partie », aucune donnée touchée) — un kick après connexion
+l'aurait fait charger le monde pour rien.
+⚠ **La whitelist ne peut pas servir à ça ici** : elle contient déjà tous les joueurs,
+donc l'activer n'isole personne, et la vider ferait courir le risque de perdre la
+liste. `whitelist.json` n'est jamais touché ; les deux filtres sont indépendants.
+⚠ **L'état est persisté** (`nouvelle-terre-maintenance.json`) : un drapeau en mémoire
+seule rouvrirait le serveur au redémarrage — or redémarrer est exactement ce qu'on
+fait pendant une maintenance (déploiement, migration des prix).
+`checkCanJoin` ne concernant que l'entrée, la commande **expulse aussi** les non-op
+déjà connectés.
+⚠ Ne protège pas d'un mod qui ne démarre pas : le mixin n'est alors jamais chargé et
+le serveur ouvre normalement. Le panel de l'hébergeur reste le filet indépendant.
+
+### Sauvegardes et retour arrière (`SauvegardeFichier`, 1.6.0)
+Toute opération irréversible copie d'abord son fichier dans `backups-economie/`, horodaté :
+migration des prix, purge du marché, et la restauration elle-même. `/nt-sauvegarde` liste
+les copies (cliquables) et `restaurer <fichier>` les remet en place puis **recharge en
+mémoire** — copier le fichier ne suffit pas, les gestionnaires travaillent sur leur copie
+chargée au démarrage.
+⚠ Restaurer `seuils-shop.json` passe par `ShopThresholds.rechargerRestaure()` et **non**
+par `load()` : ce dernier enchaîne sur `migrerPrix()`, qui réappliquerait aussitôt la table
+courante et annulerait la restauration dans la seconde. Les entrées restaurées sont
+estampillées à `VERSION_PRIX` pour être laissées telles quelles.
+
+### ⚠ Prix de base : la faille des « contenants » (corrigée en 1.6.0)
+
+`PRIX_REFERENCE` ne listait que ~60 matériaux **raffinés**. Les 1 337 autres entrées
+retombaient sur la rareté vanilla — `COMMON` pour presque tout — soit **1 à 2 ◆**.
+Conséquence : tout *contenant* était vendu au prix d'un caillou alors qu'il renferme
+des centaines de shards.
+
+`deepslate_diamond_ore` valait **2 ◆** et contient jusqu'à 4 diamants (480 ◆). Acheter
+du minerai, le miner, en faire des blocs et les revendre a créé **51,2 M de shards**
+(mesurés par le déficit de `$Serveur`). Rentable **même sans Fortune** : 9 minerais à
+28 ◆ = 252 ◆ contre 508 ◆ le bloc revendu. Même défaut sur `lapis_block`,
+`redstone_block`, `amethyst_cluster`, `glowstone`, `hay_block`…
+
+⚠ **Les multiplicateurs dynamiques plafonnent à ×10.** Ils ne peuvent pas rattraper un
+prix de base faux d'un facteur 250 — le prix de base doit être juste, le dynamique ne
+sert qu'à l'ajuster.
+
+**Correctif (`PrixDeriveur`)** : les prix se dérivent des **recettes du jeu**.
+`PRIX_REFERENCE` ne garde que les matières premières ; tout le reste vaut la somme de
+ses ingrédients × `MARGE` (1,10), en plusieurs passes puisqu'une recette peut dépendre
+d'une autre. Mods inclus, sans liste à maintenir.
+
+⚠ **Les prix de `PRIX_REFERENCE` et des minerais sont figés** (`Set figes`, 1.6.3) :
+aucune recette ne les recalcule. Sans ce verrou, les recettes **réversibles**
+s'auto-alimentent — `diamond_block` = 9 diamants × 1,10, et la recette inverse redonne
+un diamant à `bloc × 1,10 / 9`, soit **+21 % par passe**, six fois de suite. Observé en
+jeu : diamant à 1 296 ◆ (au lieu de 120), bloc à 14 678 ◆ (au lieu de 1 080), et un sac
+à dos en bout de chaîne d'améliorations à **2 537 431 ◆**. Le rachat du bloc dépassait
+alors largement le coût du minerai : acheter du minerai et revendre des blocs
+redevenait rentable.
+⚠ **`Math::max` était le piège** : le commentaire annonçait « une valeur écrite à la
+main reste prioritaire », mais `max` laisse justement une recette la dépasser.
+⚠ On retient désormais le **chemin de fabrication le moins cher** (`min`, pas `max`) :
+c'est celui que le joueur empruntera, et le rachat à 55 % le rend perdant
+(0,55 × 1,10 = 0,605 fois le coût). Aligner sur le chemin le plus coûteux ouvrait
+l'écart inverse. `min` est aussi **stable en cycle** : une boucle ne peut que faire
+remonter un prix, donc elle n'est jamais retenue.
+Miner n'étant pas un craft, les minerais passent par `CONTENU_MINERAIS` avec le
+rendement **maximal sous Fortune III** — un prix calculé sur le rendement moyen
+resterait exploitable les jours de chance. Tout `*_ore` inconnu reçoit un plancher de
+150 ◆, ce qui protège d'avance les minerais des mods.
+Calculé sur `SERVER_STARTED` (`deriverEtMigrer`) : les recettes ne sont pas chargées
+avant. `VERSION_PRIX = 4` réapplique la table aux entrées existantes, **sans toucher
+`production.json`**, après sauvegarde automatique du fichier.
+
+⚠ **`load()` ne doit migrer que si `prixEffectifs` est rempli** (corrigé en 1.6.2).
+`load()` tourne à l'init du mod, bien avant `SERVER_STARTED` : les recettes n'existent
+pas encore, la dérivation non plus. Migrer là estampillait **toutes** les entrées à
+`VERSION_PRIX` avec les seuls prix de `PRIX_REFERENCE` — les minerais retombant sur le
+plancher de 150 ◆ — et le `migrerPrix()` de `deriverEtMigrer()` les sautait ensuite
+toutes (`versionPrix >= VERSION_PRIX`). La dérivation calculait juste, puis son résultat
+était **jeté** : `deepslate_diamond_ore` restait à 150 ◆ de base au lieu de 528 ◆.
+Symptôme observé en jeu : 167 ◆ à l'achat au lieu des ~600 attendus, alors que
+`diamond_block` (présent dans `PRIX_REFERENCE`) affichait bien 1282 ◆.
+⚠ Corollaire : **incrémenter `VERSION_PRIX` en même temps** que ce genre de correctif,
+sinon les entrées déjà estampillées restent figées sur leurs mauvais prix.
+
 - **Prix de référence (`ShopThresholds.PRIX_REFERENCE`)** : table explicite ◆/unité.
   Indispensable — la rareté vanilla ne reflète pas la valeur : diamant et lingot de
   netherite sont `Rarity.COMMON`, d'où le diamant à 1-2 ◆. La rareté n'est plus qu'un repli.
@@ -145,10 +235,14 @@ façon prévue de les débloquer au Shop.
      mettait des milliers d'unités à bouger. Bornée [0,75 ; 2,00].
      `getPrice()` amortit aussi **à la lecture**, sinon un pic ne redescendrait jamais sans
      nouvelle transaction.
-  3. **Inflation générale** (`multiplicateurInflation()`) : masse monétaire par joueur
-     rapportée à `MASSE_REFERENCE_PAR_JOUEUR` (3000 ◆), en racine carrée, bornée [0,80 ; 2,00].
-     C'est le facteur « tous objets confondus » — un serveur noyé sous les shards ne garde
-     pas des prix d'ouverture.
+  3. **Inflation générale** (`multiplicateurInflation()`) : **solde médian** rapporté à
+     `SOLDE_MEDIAN_REFERENCE` (20 000 ◆), en racine carrée, bornée [0,80 ; 2,00].
+     ⚠ Médiane et **non moyenne** (corrigé en 1.6.0) : avec la moyenne, quatre comptes
+     gonflés par un exploit clouaient le multiplicateur au plafond, si bien que *tous* les
+     autres joueurs payaient le double sans y être pour rien. Même raisonnement que pour
+     la taxe de fortune.
+     Ne mesure que l'argent **bancarisé** — les Shards physiques gardés en coffre y
+     échappent. Acceptable : ils sont inertes, aucun achat ne les accepte.
   4. **Abondance produite** (`ProductionTracker`, 1.3.2) : décote logarithmique
      `0.10 × log10(production / max(seuil, 64))`, **plafonnée à −30 %** (`DECOTE_MAX`).
      - Rapportée au seuil de l'item, sinon minerai rare et bloc courant seraient incomparables.
@@ -351,6 +445,8 @@ entre joueurs.
 | `/shop` | Ouvre le GUI Shop Serveur (achat / revente) |
 | `/leboncube` | Ouvre LeBonCube — annonces de services entre joueurs |
 | `/server-admin` | Monitoring économique + arbitrage des litiges (op 4 uniquement) |
+| `/nt-sauvegarde` | Liste les copies de l'économie ; `restaurer <fichier>` revient en arrière (op 4) |
+| `/nt-maintenance [on [msg] \| off]` | Ferme le serveur aux non-op, état persistant (op 4) |
 
 > Toutes les opérations marché (vendre, acheter, retirer) se font **uniquement via `/hdv`**.
 > Virements, crédits et historique se gèrent via `/bank`.
@@ -363,6 +459,8 @@ NouvelleTerreBridge.java       → Point d'entrée serveur : init config, events
                                  + nomsRP : ConcurrentHashMap<String,String> (cache uuid→nom_rp partagé)
 NouvelleTerreBridgeClient.java → Point d'entrée client : récepteurs packets, init HUD
                                  + récepteur REGISTRE_OPEN → ouvre RegistreScreen
+MaintenanceMode.java           → État du mode maintenance (nouvelle-terre-maintenance.json)
+                                 estActif() / activer(msg) / desactiver(), persisté
 ModConfig.java                 → Config serveur (config/nouvelle-terre-bridge.json)
                                  Champs : botUrl, sharedSecret, activerEvenementServeur/Joueur, delaiVideFileAttente
 
@@ -378,6 +476,8 @@ commands/
                              en_ligne recalculé depuis server.getPlayerManager() (la DB bot peut être désync)
   ProductionCommand.java   → /production (ouvre GUI via PROD_OPEN, tous joueurs — GUI only, pas de sous-commandes)
   ShopCommand.java         → /shop : envoie SHOP_OPEN au client (Shop Serveur)
+  SauvegardeCommand.java   → /nt-sauvegarde : liste et restaure les copies de l'économie (op 4)
+  MaintenanceCommand.java  → /nt-maintenance on|off : bascule l'état + expulse les non-op (op 4)
 
 economy/
   LocalEconomy.java        → Singleton shards.json
@@ -485,6 +585,8 @@ mixin/
                                      1 du compteur du bloc → le cycle compacter/décompacter est neutre.
                                      Le compactage (9 → 1) reste compté : fabriquer des blocs est la
                                      façon prévue de les débloquer au Shop.
+  PlayerManagerMixin.java          → @Inject checkCanJoin HEAD → refuse les non-op quand le mode
+                                     maintenance est actif (même porte que la whitelist)
   LivingEntityMixin.java           → Intercepte les morts joueurs → event PLAYER_DEATH
   InGameHudMixin.java              → @Inject InGameHud.render HEAD → reset debugHudActive = false
   DebugHudMixin.java               → @Inject DebugHud.render HEAD → set debugHudActive = true (détection F3)
@@ -510,6 +612,11 @@ network/
   ProductionNetworking.java → Canaux : PROD_OPEN (S→C, ouvre GUI) / PROD_ACTION (C→S) / PROD_RESULT (S→C)
                              Actions (op only, revalidées serveur) : RESET(0) / RECHECK(1) / RELOAD(2)
                                        / SET_PRICE(3) / TOGGLE(4) / DELETE(5) / SET_RACHAT(6)
+                                       / PURGE_MARCHE(7)
+                             PURGE_MARCHE efface flux cumulés et demande récente. Nécessaire
+                             après un exploit : le flux cumulé n'a **aucun amortissement** et
+                             resterait au plafond pour toujours. Ne touche ni les soldes, ni
+                             la production, ni les seuils. Sauvegarde avant effacement.
                              PROD_ACTION porte toujours (int action, string itemId, int valeur),
                              même quand l'action n'en a pas besoin : un format unique évite de
                              faire dépendre la lecture du buffer de la valeur de l'action.

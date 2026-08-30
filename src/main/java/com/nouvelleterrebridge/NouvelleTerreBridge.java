@@ -150,6 +150,7 @@ public class NouvelleTerreBridge implements ModInitializer {
             .register(entries -> entries.add(PARCHEMIN));
 
         config = ModConfig.charger();
+        MaintenanceMode.load();
         LOGGER.info("[NouvelleTerreBridge] Configuration chargée : url={}", config.getBotUrl());
 
         EventQueue.getInstance().charger();
@@ -158,7 +159,12 @@ public class NouvelleTerreBridge implements ModInitializer {
         // Référence serveur partagée — enregistrée ici et non dans ServerEvents,
         // qui se désactive entièrement si les événements bot sont coupés en config.
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STARTED
-            .register(s -> serveur = s);
+            .register(s -> {
+                serveur = s;
+                // Les recettes ne sont chargées qu'au démarrage du serveur : c'est
+                // le seul moment où les prix dérivés peuvent être calculés.
+                ShopThresholds.deriverEtMigrer(s);
+            });
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPED
             .register(s -> serveur = null);
 
@@ -221,6 +227,8 @@ public class NouvelleTerreBridge implements ModInitializer {
             WikiCommand.register(dispatcher);
             MarcheCommand.register(dispatcher);
             ServerAdminCommand.register(dispatcher);
+            com.nouvelleterrebridge.commands.SauvegardeCommand.register(dispatcher);
+            com.nouvelleterrebridge.commands.MaintenanceCommand.register(dispatcher);
         });
 
         com.nouvelleterrebridge.service.ServiceNetworkHandler.register();
@@ -990,6 +998,15 @@ public class NouvelleTerreBridge implements ModInitializer {
                     } else {
                         ok = false; msg = "§cItem absent du catalogue.";
                     }
+                } else if (action == ProductionNetworking.ACTION_PURGE_MARCHE) {
+                    // Remet les compteurs de transactions a zero. Le flux cumule
+                    // n'a aucun amortissement : apres un exploit, il resterait au
+                    // plafond indefiniment sans cette purge.
+                    ServerShopPriceManager.reset();
+                    ServerShopPriceManager.resyncBasePrices();
+                    ok = true;
+                    msg = "§a✅ Marché purgé — flux et demande remis à zéro. "
+                        + "§7Soldes, production et seuils intacts. Sauvegarde conservée.";
                 } else if (action == ProductionNetworking.ACTION_SET_RACHAT) {
                     if (valeur < 0) {
                         ok = false; msg = "§cPrix invalide.";
