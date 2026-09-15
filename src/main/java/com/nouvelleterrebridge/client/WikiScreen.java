@@ -612,7 +612,7 @@ public class WikiScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mx, double my, double amount) {
+    public boolean mouseScrolled(double mx, double my, double horizontalAmount, double amount) {
         if (mx >= contentAreaX) {
             int maxScroll = Math.max(0, contentHeight - contentAreaH + 10);
             contentScrollY = Math.max(0, Math.min(contentScrollY - (int)(amount * 12), maxScroll));

@@ -224,7 +224,7 @@ public class QuestManager {
                 boolean delivered = false;
                 if (sp != null && pr.rewardItem != null && !pr.rewardItem.isEmpty()) {
                     try {
-                        var item = Registries.ITEM.get(new Identifier(pr.rewardItem));
+                        var item = Registries.ITEM.get(Identifier.of(pr.rewardItem));
                         ItemStack stack = new ItemStack(item, pr.rewardItemQty);
                         if (sp.getInventory().insertStack(stack) && stack.isEmpty()) {
                             delivered = true;
@@ -447,7 +447,7 @@ public class QuestManager {
         if (index < 0 || index >= d.pendingRewards.size()) return "Récompense introuvable.";
         PendingReward pr = d.pendingRewards.get(index);
 
-        ItemStack reward = new ItemStack(Registries.ITEM.get(new Identifier(pr.rewardItem)), pr.rewardItemQty);
+        ItemStack reward = new ItemStack(Registries.ITEM.get(Identifier.of(pr.rewardItem)), pr.rewardItemQty);
         serverPlayer.getInventory().insertStack(reward);
         if (!reward.isEmpty()) {
             serverPlayer.dropItem(reward, false);

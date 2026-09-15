@@ -1,9 +1,10 @@
 package com.nouvelleterrebridge.item;
 
+import com.nouvelleterrebridge.network.NtNet;
+
 import com.nouvelleterrebridge.network.HubNetworking;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.client.item.TooltipContext;
+import net.minecraft.item.tooltip.TooltipType;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
@@ -32,13 +33,13 @@ public class ParcheminItem extends Item {
     @Override
     public TypedActionResult<ItemStack> use(World world, PlayerEntity user, Hand hand) {
         if (!world.isClient && user instanceof ServerPlayerEntity sp) {
-            ServerPlayNetworking.send(sp, HubNetworking.HUB_OPEN, PacketByteBufs.empty());
+            NtNet.versClient(sp, HubNetworking.HUB_OPEN, PacketByteBufs.empty());
         }
         return TypedActionResult.success(user.getStackInHand(hand), world.isClient());
     }
 
     @Override
-    public void appendTooltip(ItemStack stack, World world, List<Text> tooltip, TooltipContext context) {
+    public void appendTooltip(ItemStack stack, Item.TooltipContext context, List<Text> tooltip, TooltipType type) {
         tooltip.add(Text.literal("§7Terminal portatif de Nouvelle Terre"));
         tooltip.add(Text.literal("§6Clic droit §7pour ouvrir le menu"));
         tooltip.add(Text.literal("§8Rendu automatiquement s'il vient à manquer"));

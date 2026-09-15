@@ -1,11 +1,12 @@
 package com.nouvelleterrebridge.client;
 
+import com.nouvelleterrebridge.network.NtNet;
+
 import com.nouvelleterrebridge.market.FrenchItemNames;
 import com.nouvelleterrebridge.network.ProductionNetworking;
 import io.netty.buffer.Unpooled;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
@@ -483,7 +484,7 @@ public class ProductionScreen extends Screen {
         buf.writeInt(action);
         buf.writeString(itemId);
         buf.writeInt(valeur);
-        ClientPlayNetworking.send(ProductionNetworking.PROD_ACTION, buf);
+        NtNet.versServeur(ProductionNetworking.PROD_ACTION, buf);
     }
 
     @Override
@@ -502,7 +503,7 @@ public class ProductionScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mx, double my, double amount) {
+    public boolean mouseScrolled(double mx, double my, double horizontalAmount, double amount) {
         if (expanded != null) return true;
         int maxScroll = Math.max(0, filtered().size() - visibleRows());
         scroll = Math.max(0, Math.min(scroll - (int) Math.signum(amount), maxScroll));

@@ -3,7 +3,7 @@ package com.nouvelleterrebridge.item;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
 import com.nouvelleterrebridge.economy.LocalEconomy;
 import com.nouvelleterrebridge.economy.TransactionLog;
-import net.minecraft.client.item.TooltipContext;
+import net.minecraft.item.tooltip.TooltipType;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
@@ -53,7 +53,7 @@ public class ShardItem extends Item {
     }
 
     @Override
-    public void appendTooltip(ItemStack stack, World world, List<Text> tooltip, TooltipContext context) {
+    public void appendTooltip(ItemStack stack, Item.TooltipContext context, List<Text> tooltip, TooltipType type) {
         tooltip.add(Text.literal("§7Monnaie physique de Nouvelle Terre — §e" + valeur + " ◆ §7l'unité"));
         if (stack.getCount() > 1)
             tooltip.add(Text.literal("§7Cette pile vaut §e" + (stack.getCount() * valeur) + " ◆"));

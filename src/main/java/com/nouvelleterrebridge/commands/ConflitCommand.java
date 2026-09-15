@@ -1,9 +1,10 @@
 package com.nouvelleterrebridge.commands;
 
+import com.nouvelleterrebridge.network.NtNet;
+
 import com.mojang.brigadier.CommandDispatcher;
 import com.nouvelleterrebridge.network.ConflitNetworking;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
@@ -44,6 +45,6 @@ public class ConflitCommand {
         PacketByteBuf buf = PacketByteBufs.create();
         buf.writeInt(enLigne.size());
         for (String name : enLigne) buf.writeString(name);
-        ServerPlayNetworking.send(player, ConflitNetworking.CONFLIT_OPEN, buf);
+        NtNet.versClient(player, ConflitNetworking.CONFLIT_OPEN, buf);
     }
 }

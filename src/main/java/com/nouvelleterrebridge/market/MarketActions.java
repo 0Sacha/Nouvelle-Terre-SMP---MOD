@@ -9,8 +9,8 @@ import com.nouvelleterrebridge.economy.TransactionLog;
 import com.nouvelleterrebridge.http.EventDispatcher;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.StringNbtReader;
 import net.minecraft.registry.Registries;
+import net.minecraft.registry.RegistryWrapper;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
@@ -81,13 +81,9 @@ public final class MarketActions {
             while (aDistrib > 0) {
                 int sz = Math.min(aDistrib, itemObj.getMaxCount());
                 ItemStack stack = new ItemStack(itemObj, sz);
-                // Restaurer les données NBT (enchantements, etc.) si présentes
-                if (ann.itemNBT != null && !ann.itemNBT.isEmpty()) {
-                    try {
-                        stack.setNbt(StringNbtReader.parse(ann.itemNBT));
-                    } catch (Exception e) {
-                        NouvelleTerreBridge.LOGGER.warn("[MarketActions] Erreur restauration NBT : {}", e.getMessage());
-                    }
+                // Restaurer les composants (enchantements, etc.) si présents
+                if (!ItemComponentCodec.appliquer(stack, ann.itemNBT, player.getServer().getRegistryManager())) {
+                    NouvelleTerreBridge.LOGGER.warn("[MarketActions] Échec restauration composants (annonce #{})", ann.id);
                 }
                 if (!player.getInventory().insertStack(stack)) player.dropItem(stack, false);
                 aDistrib -= sz;
@@ -142,9 +138,10 @@ public final class MarketActions {
         String wanted  = itemNBT == null ? "" : itemNBT;
 
         // Compter la quantité disponible dont le NBT correspond exactement
+        RegistryWrapper.WrapperLookup registries = player.getServer().getRegistryManager();
         int available = 0;
         for (ItemStack stack : player.getInventory().main) {
-            if (matchesListing(stack, itemId, wanted)) available += stack.getCount();
+            if (matchesListing(stack, itemId, wanted, registries)) available += stack.getCount();
         }
         if (available < qty)
             return String.format("§cTu n'as que §f%d§c exemplaire(s) de §f%s§c.", available, nomItem);
@@ -153,7 +150,7 @@ public final class MarketActions {
         int toRemove = qty;
         for (int i = 0; i < player.getInventory().main.size() && toRemove > 0; i++) {
             ItemStack stack = player.getInventory().main.get(i);
-            if (matchesListing(stack, itemId, wanted)) {
+            if (matchesListing(stack, itemId, wanted, registries)) {
                 int take = Math.min(toRemove, stack.getCount());
                 stack.decrement(take);
                 toRemove -= take;
@@ -176,10 +173,11 @@ public final class MarketActions {
     }
 
     /** Vrai si la pile est du bon item ET porte exactement le NBT attendu ("" = aucun NBT). */
-    private static boolean matchesListing(ItemStack stack, String itemId, String wantedNBT) {
+    private static boolean matchesListing(ItemStack stack, String itemId, String wantedNBT,
+                                          RegistryWrapper.WrapperLookup registries) {
         if (stack.isEmpty()) return false;
         if (!Registries.ITEM.getId(stack.getItem()).toString().equals(itemId)) return false;
-        String actual = stack.hasNbt() ? stack.getNbt().asString() : "";
+        String actual = ItemComponentCodec.capturer(stack, registries);
         return actual.equals(wantedNBT);
     }
 
@@ -205,13 +203,9 @@ public final class MarketActions {
         while (restant > 0) {
             int sz = Math.min(restant, item.getMaxCount());
             ItemStack stack = new ItemStack(item, sz);
-            // Restaurer les données NBT (enchantements, etc.) si présentes
-            if (ann.itemNBT != null && !ann.itemNBT.isEmpty()) {
-                try {
-                    stack.setNbt(StringNbtReader.parse(ann.itemNBT));
-                } catch (Exception e) {
-                    NouvelleTerreBridge.LOGGER.warn("[MarketActions] Erreur restauration NBT retrait : {}", e.getMessage());
-                }
+            // Restaurer les composants (enchantements, etc.) si présents
+            if (!ItemComponentCodec.appliquer(stack, ann.itemNBT, player.getServer().getRegistryManager())) {
+                NouvelleTerreBridge.LOGGER.warn("[MarketActions] Échec restauration composants retrait (annonce #{})", ann.id);
             }
             if (!player.getInventory().insertStack(stack)) player.dropItem(stack, false);
             restant -= sz;

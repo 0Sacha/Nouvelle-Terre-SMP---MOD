@@ -1,5 +1,7 @@
 package com.nouvelleterrebridge;
 
+import com.nouvelleterrebridge.network.NtNet;
+
 import com.nouvelleterrebridge.commands.BankCommand;
 import com.nouvelleterrebridge.commands.ConflitCommand;
 import com.nouvelleterrebridge.commands.EconomieCommand;
@@ -58,7 +60,6 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -121,19 +122,19 @@ public class NouvelleTerreBridge implements ModInitializer {
         LOGGER.info("[NouvelleTerreBridge] Initialisation du mod...");
 
         net.minecraft.registry.Registry.register(net.minecraft.registry.Registries.ITEM,
-            new net.minecraft.util.Identifier(MOD_ID, "shard"), SHARD);
+            net.minecraft.util.Identifier.of(MOD_ID, "shard"), SHARD);
         net.minecraft.registry.Registry.register(net.minecraft.registry.Registries.ITEM,
-            new net.minecraft.util.Identifier(MOD_ID, "shard_5"), SHARD_5);
+            net.minecraft.util.Identifier.of(MOD_ID, "shard_5"), SHARD_5);
         net.minecraft.registry.Registry.register(net.minecraft.registry.Registries.ITEM,
-            new net.minecraft.util.Identifier(MOD_ID, "shard_10"), SHARD_10);
+            net.minecraft.util.Identifier.of(MOD_ID, "shard_10"), SHARD_10);
         net.minecraft.registry.Registry.register(net.minecraft.registry.Registries.ITEM,
-            new net.minecraft.util.Identifier(MOD_ID, "shard_20"), SHARD_20);
+            net.minecraft.util.Identifier.of(MOD_ID, "shard_20"), SHARD_20);
         net.minecraft.registry.Registry.register(net.minecraft.registry.Registries.ITEM,
-            new net.minecraft.util.Identifier(MOD_ID, "shard_50"), SHARD_50);
+            net.minecraft.util.Identifier.of(MOD_ID, "shard_50"), SHARD_50);
         net.minecraft.registry.Registry.register(net.minecraft.registry.Registries.ITEM,
-            new net.minecraft.util.Identifier(MOD_ID, "shard_100"), SHARD_100);
+            net.minecraft.util.Identifier.of(MOD_ID, "shard_100"), SHARD_100);
         net.minecraft.registry.Registry.register(net.minecraft.registry.Registries.ITEM,
-            new net.minecraft.util.Identifier(MOD_ID, "parchemin"), PARCHEMIN);
+            net.minecraft.util.Identifier.of(MOD_ID, "parchemin"), PARCHEMIN);
         net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents
             .modifyEntriesEvent(net.minecraft.item.ItemGroups.INGREDIENTS)
             .register(entries -> {
@@ -258,7 +259,7 @@ public class NouvelleTerreBridge implements ModInitializer {
     }
 
     private void registerHdvNetworking() {
-        ServerPlayNetworking.registerGlobalReceiver(HdvNetworking.HDV_ACTION, (server, player, handler, buf, responseSender) -> {
+        NtNet.surServeur(HdvNetworking.HDV_ACTION, (server, player, buf) -> {
             // ── Lecture du paquet : obligatoirement ici ──
             // Le PacketByteBuf est libéré dès le retour de ce callback : tout doit être
             // extrait maintenant, et rien de ce qui suit ne doit retoucher au buffer.
@@ -309,7 +310,7 @@ public class NouvelleTerreBridge implements ModInitializer {
         int balance = LocalEconomy.getInstance().getBalance(player.getName().getString());
         PacketByteBuf buf = PacketByteBufs.create();
         buf.writeInt(balance);
-        ServerPlayNetworking.send(player, HdvNetworking.NT_BALANCE, buf);
+        NtNet.versClient(player, HdvNetworking.NT_BALANCE, buf);
     }
 
     // Couleurs des toasts NT_TOAST — dupliquées de NotificationHud exprès : le code
@@ -324,7 +325,7 @@ public class NouvelleTerreBridge implements ModInitializer {
         buf.writeInt(color);
         buf.writeInt(lines.length);
         for (String line : lines) buf.writeString(line);
-        ServerPlayNetworking.send(player, HdvNetworking.NT_TOAST, buf);
+        NtNet.versClient(player, HdvNetworking.NT_TOAST, buf);
     }
 
     public static void sendHdvResult(ServerPlayerEntity player, String message, MinecraftServer server) {
@@ -334,7 +335,7 @@ public class NouvelleTerreBridge implements ModInitializer {
         resp.writeString(message);
         resp.writeInt(LocalEconomy.getInstance().getBalance(player.getName().getString()));
         writeListings(resp);
-        ServerPlayNetworking.send(player, HdvNetworking.HDV_RESULT, resp);
+        NtNet.versClient(player, HdvNetworking.HDV_RESULT, resp);
     }
 
     public static PacketByteBuf buildHdvOpenPacket(ServerPlayerEntity player, MinecraftServer server) {
@@ -400,7 +401,7 @@ public class NouvelleTerreBridge implements ModInitializer {
     }
 
     private void registerShopNetworking() {
-        ServerPlayNetworking.registerGlobalReceiver(ShopNetworking.SHOP_ACTION, (server, player, handler, buf, responseSender) -> {
+        NtNet.surServeur(ShopNetworking.SHOP_ACTION, (server, player, buf) -> {
             int action    = buf.readInt();
             String itemId = buf.readString();
             int quantity  = buf.readInt();
@@ -418,23 +419,23 @@ public class NouvelleTerreBridge implements ModInitializer {
                 resp.writeString(result);
                 resp.writeInt(LocalEconomy.getInstance().getBalance(player.getName().getString()));
                 writeShopEntries(resp, player.getName().getString());
-                ServerPlayNetworking.send(player, ShopNetworking.SHOP_RESULT, resp);
+                NtNet.versClient(player, ShopNetworking.SHOP_RESULT, resp);
                 sendBalanceToPlayer(player);
             });
         });
     }
 
     private void registerHubNetworking() {
-        ServerPlayNetworking.registerGlobalReceiver(HubNetworking.HUB_ACTION, (server, player, handler, buf, responseSender) -> {
+        NtNet.surServeur(HubNetworking.HUB_ACTION, (server, player, buf) -> {
             int action = buf.readInt();
             server.execute(() -> {
                 switch (action) {
                     case HubNetworking.ACTION_HDV ->
-                        ServerPlayNetworking.send(player, HdvNetworking.HDV_OPEN, buildHdvOpenPacket(player, server));
+                        NtNet.versClient(player, HdvNetworking.HDV_OPEN, buildHdvOpenPacket(player, server));
                     case HubNetworking.ACTION_BANK ->
-                        ServerPlayNetworking.send(player, BankNetworking.BANK_OPEN, buildBankOpenPacket(player, server));
+                        NtNet.versClient(player, BankNetworking.BANK_OPEN, buildBankOpenPacket(player, server));
                     case HubNetworking.ACTION_SHOP ->
-                        ServerPlayNetworking.send(player, ShopNetworking.SHOP_OPEN, buildShopOpenPacket(player));
+                        NtNet.versClient(player, ShopNetworking.SHOP_OPEN, buildShopOpenPacket(player));
                     case HubNetworking.ACTION_MARCHE ->
                         com.nouvelleterrebridge.service.ServiceNetworkHandler.ouvrir(player);
                     case HubNetworking.ACTION_QUETES     -> sendQuestOpen(player);
@@ -442,8 +443,7 @@ public class NouvelleTerreBridge implements ModInitializer {
                     case HubNetworking.ACTION_REGISTRE   -> RegistreCommand.open(player);
                     case HubNetworking.ACTION_CONFLIT    -> ConflitCommand.open(player);
                     case HubNetworking.ACTION_WIKI ->
-                        ServerPlayNetworking.send(player, com.nouvelleterrebridge.network.WikiNetworking.WIKI_OPEN,
-                                                  PacketByteBufs.empty());
+                        NtNet.versClient(player, com.nouvelleterrebridge.network.WikiNetworking.WIKI_OPEN, PacketByteBufs.empty());
                     default -> LOGGER.warn("[Hub] Action inconnue : {}", action);
                 }
             });
@@ -453,11 +453,11 @@ public class NouvelleTerreBridge implements ModInitializer {
     // ── Bank networking ──────────────────────────────────────────────────────
 
     private void registerBankNetworking() {
-        ServerPlayNetworking.registerGlobalReceiver(BankNetworking.BANK_REQUEST, (server, player, handler, buf, responseSender) -> {
-            server.execute(() -> ServerPlayNetworking.send(player, BankNetworking.BANK_OPEN, buildBankOpenPacket(player, server)));
+        NtNet.surServeur(BankNetworking.BANK_REQUEST, (server, player, buf) -> {
+            server.execute(() -> NtNet.versClient(player, BankNetworking.BANK_OPEN, buildBankOpenPacket(player, server)));
         });
 
-        ServerPlayNetworking.registerGlobalReceiver(BankNetworking.BANK_ACTION, (server, player, handler, buf, responseSender) -> {
+        NtNet.surServeur(BankNetworking.BANK_ACTION, (server, player, buf) -> {
             int type = buf.readInt();
             final String result;
             switch (type) {
@@ -666,7 +666,7 @@ public class NouvelleTerreBridge implements ModInitializer {
         resp.writeBoolean(ok);
         resp.writeString(message);
         writeBankData(resp, player, server);
-        ServerPlayNetworking.send(player, BankNetworking.BANK_RESULT, resp);
+        NtNet.versClient(player, BankNetworking.BANK_RESULT, resp);
     }
 
     public static PacketByteBuf buildBankOpenPacket(ServerPlayerEntity player, MinecraftServer server) {
@@ -835,11 +835,11 @@ public class NouvelleTerreBridge implements ModInitializer {
         PacketByteBuf buf = PacketByteBufs.create();
         buf.writeBoolean(ouvrir);
         writeFullQuestData(buf, player.getName().getString());
-        ServerPlayNetworking.send(player, QuestNetworking.QUEST_OPEN, buf);
+        NtNet.versClient(player, QuestNetworking.QUEST_OPEN, buf);
     }
 
     private void registerQuestNetworking() {
-        ServerPlayNetworking.registerGlobalReceiver(QuestNetworking.QUEST_ACTION, (server, player, handler, buf, responseSender) -> {
+        NtNet.surServeur(QuestNetworking.QUEST_ACTION, (server, player, buf) -> {
             int action = buf.readInt();
             int param  = buf.readInt();   // questId or index depending on action
             String pName = player.getName().getString();
@@ -863,7 +863,7 @@ public class NouvelleTerreBridge implements ModInitializer {
         buf.writeBoolean(ok);
         buf.writeString(message);
         writeFullQuestData(buf, player.getName().getString());
-        ServerPlayNetworking.send(player, QuestNetworking.QUEST_RESULT, buf);
+        NtNet.versClient(player, QuestNetworking.QUEST_RESULT, buf);
     }
 
     private static void writeFullQuestData(PacketByteBuf buf, String playerName) {
@@ -939,7 +939,7 @@ public class NouvelleTerreBridge implements ModInitializer {
     public static void sendProductionOpen(ServerPlayerEntity player) {
         PacketByteBuf buf = PacketByteBufs.create();
         writeProductionData(buf, player);
-        ServerPlayNetworking.send(player, ProductionNetworking.PROD_OPEN, buf);
+        NtNet.versClient(player, ProductionNetworking.PROD_OPEN, buf);
     }
 
     private static void writeProductionData(PacketByteBuf buf, ServerPlayerEntity player) {
@@ -964,7 +964,7 @@ public class NouvelleTerreBridge implements ModInitializer {
     }
 
     private void registerProductionNetworking() {
-        ServerPlayNetworking.registerGlobalReceiver(ProductionNetworking.PROD_ACTION, (server, player, handler, buf, responseSender) -> {
+        NtNet.surServeur(ProductionNetworking.PROD_ACTION, (server, player, buf) -> {
             int action    = buf.readInt();
             String itemId = buf.readString();
             int valeur    = buf.readInt();
@@ -1048,7 +1048,7 @@ public class NouvelleTerreBridge implements ModInitializer {
                 resp.writeBoolean(ok);
                 resp.writeString(msg);
                 writeProductionData(resp, player);
-                ServerPlayNetworking.send(player, ProductionNetworking.PROD_RESULT, resp);
+                NtNet.versClient(player, ProductionNetworking.PROD_RESULT, resp);
             });
         });
     }
@@ -1056,7 +1056,7 @@ public class NouvelleTerreBridge implements ModInitializer {
     // ── Conflit networking ───────────────────────────────────────────────────
 
     private void registerConflitNetworking() {
-        ServerPlayNetworking.registerGlobalReceiver(ConflitNetworking.CONFLIT_ACTION, (server, player, handler, buf, responseSender) -> {
+        NtNet.surServeur(ConflitNetworking.CONFLIT_ACTION, (server, player, buf) -> {
             String cible  = buf.readString();
             String raison = buf.readString();
             server.execute(() -> {
@@ -1079,7 +1079,7 @@ public class NouvelleTerreBridge implements ModInitializer {
                 PacketByteBuf resp = PacketByteBufs.create();
                 resp.writeBoolean(ok);
                 resp.writeString(msg);
-                ServerPlayNetworking.send(player, ConflitNetworking.CONFLIT_RESULT, resp);
+                NtNet.versClient(player, ConflitNetworking.CONFLIT_RESULT, resp);
             });
         });
     }
@@ -1087,14 +1087,13 @@ public class NouvelleTerreBridge implements ModInitializer {
     // ── Registre networking ──────────────────────────────────────────────────
 
     private void registerRegistreNetworking() {
-        ServerPlayNetworking.registerGlobalReceiver(RegistreNetworking.REGISTRE_DETAIL_REQUEST,
-            (server, player, handler, buf, responseSender) -> {
+        NtNet.surServeur(RegistreNetworking.REGISTRE_DETAIL_REQUEST, (server, player, buf) -> {
                 String pseudo = buf.readString();
                 EventDispatcher.fetchPersonnageDetail(pseudo, server, detail -> {
                     PacketByteBuf resp = PacketByteBufs.create();
                     if (detail == null) {
                         resp.writeBoolean(false);
-                        ServerPlayNetworking.send(player, RegistreNetworking.REGISTRE_DETAIL, resp);
+                        NtNet.versClient(player, RegistreNetworking.REGISTRE_DETAIL, resp);
                         return;
                     }
                     resp.writeBoolean(true);
@@ -1111,7 +1110,7 @@ public class NouvelleTerreBridge implements ModInitializer {
                     resp.writeString(sVal(detail, "description_personnage"));
                     resp.writeString(sVal(detail, "objectifs"));
                     resp.writeString(sVal(detail, "citation"));
-                    ServerPlayNetworking.send(player, RegistreNetworking.REGISTRE_DETAIL, resp);
+                    NtNet.versClient(player, RegistreNetworking.REGISTRE_DETAIL, resp);
                 });
             });
     }

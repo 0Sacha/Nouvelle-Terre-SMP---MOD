@@ -1,6 +1,6 @@
 package com.nouvelleterrebridge.network;
 
-import net.minecraft.util.Identifier;
+import net.minecraft.network.packet.CustomPayload;
 
 /**
  * Canaux du Parchemin — hub d'accès aux différentes fenêtres du mod
@@ -8,8 +8,8 @@ import net.minecraft.util.Identifier;
  */
 public final class HubNetworking {
 
-    public static final Identifier HUB_OPEN   = new Identifier("nouvelle-terre-bridge", "hub_open");
-    public static final Identifier HUB_ACTION = new Identifier("nouvelle-terre-bridge", "hub_action");
+    public static final CustomPayload.Id<NtPayload> HUB_OPEN = NtNet.canal("hub_open");
+    public static final CustomPayload.Id<NtPayload> HUB_ACTION = NtNet.canal("hub_action");
 
     public static final int ACTION_HDV        = 0;
     public static final int ACTION_BANK       = 1;

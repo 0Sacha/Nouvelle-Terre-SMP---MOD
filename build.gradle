@@ -1,6 +1,6 @@
-// Build Gradle pour le mod NouvelleTerreBridge (Fabric 1.20.1)
+// Build Gradle pour le mod NouvelleTerreBridge (Fabric 1.21.1)
 plugins {
-	id 'fabric-loom' version '1.6.12'
+	id 'fabric-loom' version '1.10.5'
 	id 'maven-publish'
 }
 
@@ -22,8 +22,9 @@ dependencies {
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 	// modCompileOnly "com.terraformersmc:modmenu:7.2.2" // Serveur maven.terraformersmc.com down - réactiver quand disponible
 
-	// HTTP via java.net.http.HttpClient (Java 17 intégré - aucune dépendance externe)
-	// Note: Cadmus integration is handled via reflection at runtime (no compile-time dependency needed)
+	// HTTP via java.net.http.HttpClient (JDK intégré - aucune dépendance externe)
+	// Cadmus n'a pas de build 1.21.1 à ce jour : intégration par réflexion suspendue
+	// (voir NouvelleTerreBridge, recherche de FabricLoader.isModLoaded("cadmus")).
 }
 
 processResources {
@@ -36,12 +37,15 @@ processResources {
 }
 
 tasks.withType(JavaCompile).configureEach {
-	it.options.release = 17
+	it.options.release = 21
 }
 
 java {
-	sourceCompatibility = JavaVersion.VERSION_17
-	targetCompatibility = JavaVersion.VERSION_17
+	// Minecraft 1.21.1 exige Java 21, quel que soit le loader. La toolchain le
+	// fait récupérer par Gradle plutôt que de dépendre du JDK du poste (ici : 17).
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(21)
+	}
 }
 
 jar {

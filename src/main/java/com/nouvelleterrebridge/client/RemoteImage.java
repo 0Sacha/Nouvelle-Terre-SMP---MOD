@@ -125,8 +125,7 @@ public final class RemoteImage {
 
             MinecraftClient.getInstance().execute(() -> {
                 try {
-                    Identifier id = new Identifier("nouvelle-terre-bridge",
-                        "leboncube/" + Integer.toHexString(url.hashCode()));
+                    Identifier id = Identifier.of("nouvelle-terre-bridge", "leboncube/" + Integer.toHexString(url.hashCode()));
                     MinecraftClient.getInstance().getTextureManager()
                         .registerTexture(id, new NativeImageBackedTexture(image));
                     CACHE.put(url, new Entree(Etat.PRETE, id, image.getWidth(), image.getHeight()));

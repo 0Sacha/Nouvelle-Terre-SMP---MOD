@@ -8,3 +8,9 @@ pluginManagement {
         gradlePluginPortal()
     }
 }
+
+// Permet à Gradle de récupérer lui-même le JDK 21 qu'exige Minecraft 1.21.1,
+// sans installation manuelle sur le poste (voir la toolchain dans build.gradle).
+plugins {
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.8.0'
+}

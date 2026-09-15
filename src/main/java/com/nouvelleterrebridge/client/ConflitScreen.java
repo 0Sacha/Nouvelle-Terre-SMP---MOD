@@ -1,10 +1,11 @@
 package com.nouvelleterrebridge.client;
 
+import com.nouvelleterrebridge.network.NtNet;
+
 import com.nouvelleterrebridge.network.ConflitNetworking;
 import io.netty.buffer.Unpooled;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
@@ -181,7 +182,7 @@ public class ConflitScreen extends Screen {
                 PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
                 buf.writeString(players.get(selectedIdx));
                 buf.writeString(reason);
-                ClientPlayNetworking.send(ConflitNetworking.CONFLIT_ACTION, buf);
+                NtNet.versServeur(ConflitNetworking.CONFLIT_ACTION, buf);
             }
             return true;
         }
@@ -190,7 +191,7 @@ public class ConflitScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mx, double my, double amount) {
+    public boolean mouseScrolled(double mx, double my, double horizontalAmount, double amount) {
         int visRows = Math.max(1, listH / ROW_H);
         int maxScroll = Math.max(0, players.size() - visRows);
         scroll = Math.max(0, Math.min(scroll - (int) Math.signum(amount), maxScroll));

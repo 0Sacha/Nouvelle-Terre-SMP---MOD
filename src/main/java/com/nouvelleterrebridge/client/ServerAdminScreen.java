@@ -1,10 +1,11 @@
 package com.nouvelleterrebridge.client;
 
+import com.nouvelleterrebridge.network.NtNet;
+
 import com.nouvelleterrebridge.network.ServiceNetworking;
 import io.netty.buffer.Unpooled;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.network.PacketByteBuf;
@@ -214,7 +215,7 @@ public class ServerAdminScreen extends Screen {
                 PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
                 buf.writeInt(b[4]);
                 buf.writeInt(b[5]);
-                ClientPlayNetworking.send(ServiceNetworking.ADMIN_ACTION, buf);
+                NtNet.versServeur(ServiceNetworking.ADMIN_ACTION, buf);
                 return true;
             }
         }
@@ -222,7 +223,7 @@ public class ServerAdminScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mx, double my, double amount) {
+    public boolean mouseScrolled(double mx, double my, double horizontalAmount, double amount) {
         scroll = Math.max(0, scroll - (int) Math.signum(amount));
         return true;
     }

@@ -1,9 +1,10 @@
 package com.nouvelleterrebridge.client;
 
+import com.nouvelleterrebridge.network.NtNet;
+
 import com.nouvelleterrebridge.network.QuestNetworking;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.item.Item;
@@ -481,7 +482,7 @@ public class QuetesScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mx, double my, double amount) {
+    public boolean mouseScrolled(double mx, double my, double horizontalAmount, double amount) {
         int maxScroll = Math.max(0, currentRows() - visibleRows());
         if (maxScroll > 0)
             scrollRow = Math.max(0, Math.min(scrollRow - (int) Math.signum(amount), maxScroll));
@@ -563,14 +564,14 @@ public class QuetesScreen extends Screen {
     private void renderIcon(DrawContext ctx, String type, String target, int x, int y) {
         if (target == null || target.isEmpty()) return;
         try {
-            Item item = Registries.ITEM.get(new Identifier(target));
+            Item item = Registries.ITEM.get(Identifier.of(target));
             if (item == Items.AIR && "KILL".equals(type)) {
                 String tete = TETES_MOB.get(target);
-                if (tete != null) item = Registries.ITEM.get(new Identifier(tete));
+                if (tete != null) item = Registries.ITEM.get(Identifier.of(tete));
                 if (item == Items.AIR) {
                     Identifier id = Identifier.tryParse(target);
                     if (id != null) item = Registries.ITEM.get(
-                        new Identifier(id.getNamespace(), id.getPath() + "_spawn_egg"));
+                        Identifier.of(id.getNamespace(), id.getPath() + "_spawn_egg"));
                 }
             }
             if (item == Items.AIR) return;
@@ -626,7 +627,7 @@ public class QuetesScreen extends Screen {
     private String fmtItem(String id) {
         if (id == null || id.isEmpty()) return "?";
         try {
-            Item item = Registries.ITEM.get(new Identifier(id));
+            Item item = Registries.ITEM.get(Identifier.of(id));
             if (item != Items.AIR) return item.getName().getString();
         } catch (Exception ignored) {}
         String raw = id.contains(":") ? id.split(":")[1] : id;
@@ -686,7 +687,7 @@ public class QuetesScreen extends Screen {
         PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
         buf.writeInt(action);
         buf.writeInt(param);
-        ClientPlayNetworking.send(QuestNetworking.QUEST_ACTION, buf);
+        NtNet.versServeur(QuestNetworking.QUEST_ACTION, buf);
     }
 
     public void update(int level, int xp, int xpNext,

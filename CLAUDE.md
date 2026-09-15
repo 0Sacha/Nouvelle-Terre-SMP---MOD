@@ -1,7 +1,62 @@
-# Nouvelle Terre — Mod Fabric 1.20.1
+# Nouvelle Terre — Mod Fabric 1.21.1 (tourne sur serveur NeoForge via Sinytra Connector)
 
 Mod de bridge entre un serveur Minecraft SMP RP et un bot Discord (Railway).
 Lit ce fichier automatiquement pour avoir le contexte complet avant de coder.
+
+## Portage 1.20.1 → 1.21.1 (2.0.0)
+
+⚠ **Le mod reste Fabric** (Yarn, Fabric API) — c'est le *serveur* qui passe en
+NeoForge. Le pont entre les deux est **Sinytra Connector** + **Forgified Fabric
+API**, à installer côté serveur (et client). Décision explicite de Sacha :
+un portage natif NeoForge (Mojang mappings, event bus NeoForge) a été commencé
+puis abandonné au profit de cette voie — moins de travail de maintenance, et
+Connector sert aussi à faire tourner `cottonmod` sans le porter deux fois.
+Le brouillon natif NeoForge reste sur la branche `neoforge-1.21.1` (commit
+`wip`, non fusionné) au cas où Connector se révélerait insuffisant.
+
+Deux changements imposés par **Minecraft lui-même** (1.20.5+), indépendants du
+loader — c'est le seul vrai travail de ce portage, tout le reste est mécanique :
+- **Réseau typé** : `ServerPlayNetworking`/`ClientPlayNetworking` n'acceptent
+  plus un `PacketByteBuf` brut, il faut un `CustomPayload` enregistré via
+  `PayloadTypeRegistry`. Plutôt que réécrire les 34 canaux du mod en records
+  typés (aucun ne sérialise autre chose que des primitives), `network/NtPayload.java`
+  transporte le tampon brut et `network/NtNet.java` réexpose exactement l'ancienne
+  forme d'appel (`NtNet.surServeur/surClient/versServeur/versClient`). Les ~530
+  appels `readInt`/`writeString`/… du mod n'ont pas bougé.
+- **NBT d'item → composants de données** : `stack.getNbt()/setNbt()/hasNbt()`
+  n'existent plus. `MarketListing.itemNBT` reste une chaîne SNBT (schéma de
+  `marche.json` inchangé), mais encode désormais un `ComponentChanges` — le
+  strict équivalent conceptuel de l'ancien NBT (la différence entre une pile et
+  l'état par défaut de son item). Voir `market/ItemComponentCodec.java`, seul
+  point du mod qui touche à ça. ⚠ Encoder/décoder exige un
+  `RegistryWrapper.WrapperLookup` (`client.world.getRegistryManager()` côté
+  client, `player.getServer().getRegistryManager()` côté serveur) — absent en
+  1.20.1. `appliquer()` ne lève jamais : une annonce créée avant la migration
+  contient un ancien NBT brut, pas un `ComponentChanges`, et n'est plus
+  relisible — la pile livrée reste vierge plutôt que de planter.
+
+Autres correctifs, tous mécaniques (renommages/signatures vanilla, sans lien
+avec Fabric/NeoForge) :
+- `new Identifier(ns, path)` → `Identifier.of(ns, path)` (constructeur privé
+  depuis la 1.21).
+- `Item.appendTooltip` perd son paramètre `World` et gagne `TooltipType` en
+  dernier ; `TooltipContext` devient l'interface imbriquée `Item.TooltipContext`.
+- `Screen.mouseScrolled` gagne un paramètre `horizontalAmount` (défilement
+  horizontal, 1.21) — ignoré partout dans ce mod, aucun écran ne s'en sert.
+- `RecipeManager.values()` renvoie des `RecipeEntry<?>` (id + recette) et non
+  plus des `Recipe<?>` ; `Recipe.getOutput()` renommé `getResult()`.
+- `e.getEffectType()` (sur un `StatusEffectInstance`) renvoie désormais un
+  `RegistryEntry<StatusEffect>` — `.value()` pour retrouver l'ancien comportement.
+- `Scoreboard.addPlayerToTeam` renommé `addScoreHolderToTeam`.
+
+`gradle.properties` : Java 17 → 21 (imposé par 1.21.1, quel que soit le
+loader) via toolchain Gradle — aucun JDK 21 sur le poste de dev, `foojay-resolver`
+le récupère. `fabric-loom` 1.6.12 → 1.10.5, wrapper Gradle 8.8 → 8.14.5 (requis
+par Loom 1.10+). Yarn `1.21.1+build.3`, Loader `0.19.5`, Fabric API `0.116.17+1.21.1`.
+
+⚠ **Cadmus n'a pas de build 1.21.1** (dernier NeoForge en 1.20.4) — retiré de
+`suggests` dans `fabric.mod.json`, l'intégration par réflexion reste en place
+mais ne trouvera rien tant qu'un remplaçant n'est pas choisi.
 
 ## Repos
 - Mod : `https://github.com/0Sacha/Nouvelle-Terre-SMP---MOD.git`
@@ -18,15 +73,19 @@ Lit ce fichier automatiquement pour avoir le contexte complet avant de coder.
 .\gradlew.bat build          # Windows
 ./gradlew build              # Linux/Mac
 # JAR → build/libs/nouvelle-terre-bridge-{mod_version}.jar
-# Nécessite Java 17
+# Nécessite Java 21 (Minecraft 1.21.1) — récupéré automatiquement par Gradle
+# (toolchain + foojay-resolver) si absent du poste.
 ```
 GitHub Action crée une Release automatique à chaque push sur `main`.
 Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueurs doivent installer le JAR Fabric côté client pour le GUI HDV/Bank/Registre.
+⚠ Le serveur tourne en **NeoForge** (Sinytra Connector + Forgified Fabric API) :
+le JAR reste un mod Fabric ordinaire, rien de spécifique à générer pour NeoForge.
 
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `1.6.3` (correctif : boucle d'inflation des recettes réversibles)
+- Version actuelle : `2.0.0` (portage Minecraft 1.21.1 — voir « Portage 1.20.1 → 1.21.1 » ci-dessus)
+  - 1.6.3 : correctif de la boucle d'inflation des recettes réversibles
   - 1.6.2 : la dérivation des prix était perdue à la migration
   - 1.6.1 : mode maintenance + sauvegardes restaurables
   - 1.6.0 : refonte des prix de base — dérivation par les recettes

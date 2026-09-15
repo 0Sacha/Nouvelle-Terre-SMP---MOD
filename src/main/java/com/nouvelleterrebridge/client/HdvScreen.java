@@ -1,17 +1,18 @@
 package com.nouvelleterrebridge.client;
 
+import com.nouvelleterrebridge.network.NtNet;
+
 import com.nouvelleterrebridge.network.HdvNetworking;
 import com.nouvelleterrebridge.market.FrenchItemNames;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
-import net.minecraft.nbt.StringNbtReader;
+import com.nouvelleterrebridge.market.ItemComponentCodec;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.registry.Registries;
 import net.minecraft.text.Text;
@@ -199,7 +200,7 @@ public class HdvScreen extends Screen {
         for (ItemStack stack : client.player.getInventory().main) {
             if (stack.isEmpty()) continue;
             String id  = Registries.ITEM.getId(stack.getItem()).toString();
-            String nbt = stack.hasNbt() ? stack.getNbt().asString() : "";
+            String nbt = ItemComponentCodec.capturer(stack, client.world.getRegistryManager());
             byId.merge(id + "|" + nbt, new SellItem(stack.getItem(), id, stack.getCount(), nbt),
                 (a, b) -> new SellItem(a.item(), a.itemId(), a.qty() + b.qty(), a.nbt()));
         }
@@ -1049,7 +1050,7 @@ public class HdvScreen extends Screen {
     // ── Scroll ────────────────────────────────────────────────────────────────
 
     @Override
-    public boolean mouseScrolled(double mx, double my, double delta) {
+    public boolean mouseScrolled(double mx, double my, double horizontalAmount, double delta) {
         if (buyingListing != null) return true;
         int next = scrollOffset - (int) Math.signum(delta);
         scrollOffset = Math.max(0, Math.min(next, gridMaxScroll));
@@ -1105,7 +1106,7 @@ public class HdvScreen extends Screen {
         buf.writeString(itemId);
         buf.writeInt(qty);
         buf.writeString(nbt != null ? nbt : "");
-        ClientPlayNetworking.send(HdvNetworking.HDV_ACTION, buf);
+        NtNet.versServeur(HdvNetworking.HDV_ACTION, buf);
     }
 
     private void sendSell(String itemId, int qty, int price, String nbt) {
@@ -1115,14 +1116,14 @@ public class HdvScreen extends Screen {
         buf.writeInt(qty);
         buf.writeInt(price);
         buf.writeString(nbt != null ? nbt : "");
-        ClientPlayNetworking.send(HdvNetworking.HDV_ACTION, buf);
+        NtNet.versServeur(HdvNetworking.HDV_ACTION, buf);
     }
 
     private void sendWithdraw(int listingId) {
         PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
         buf.writeInt(HdvNetworking.ACTION_WITHDRAW);
         buf.writeInt(listingId);
-        ClientPlayNetworking.send(HdvNetworking.HDV_ACTION, buf);
+        NtNet.versServeur(HdvNetworking.HDV_ACTION, buf);
     }
 
     // ── Utilitaires ───────────────────────────────────────────────────────────
@@ -1149,9 +1150,7 @@ public class HdvScreen extends Screen {
     private ItemStack itemStack(ListingData l) {
         ItemStack stack = itemStack(l.itemId());
         if (l.hasNBT()) {
-            try {
-                stack.setNbt(StringNbtReader.parse(l.itemNBT()));
-            } catch (Exception ignored) {}
+            ItemComponentCodec.appliquer(stack, l.itemNBT(), client.world.getRegistryManager());
         }
         return stack;
     }
@@ -1160,9 +1159,7 @@ public class HdvScreen extends Screen {
     private ItemStack sellStack(SellItem si) {
         ItemStack stack = new ItemStack(si.item());
         if (si.hasNBT()) {
-            try {
-                stack.setNbt(StringNbtReader.parse(si.nbt()));
-            } catch (Exception ignored) {}
+            ItemComponentCodec.appliquer(stack, si.nbt(), client.world.getRegistryManager());
         }
         return stack;
     }

@@ -1,11 +1,12 @@
 package com.nouvelleterrebridge.client;
 
+import com.nouvelleterrebridge.network.NtNet;
+
 import com.nouvelleterrebridge.economy.ShardDenominations;
 import com.nouvelleterrebridge.network.BankNetworking;
 import io.netty.buffer.Unpooled;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
@@ -907,7 +908,7 @@ public class BankScreen extends Screen {
         PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
         buf.writeInt(BankNetworking.ACTION_WITHDRAW_SHARDS);
         buf.writeInt(amount);
-        ClientPlayNetworking.send(BankNetworking.BANK_ACTION, buf);
+        NtNet.versServeur(BankNetworking.BANK_ACTION, buf);
     }
 
     // ── Modal dépôt de Shards physiques ─────────────────────────────────────────
@@ -960,7 +961,7 @@ public class BankScreen extends Screen {
         PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
         buf.writeInt(BankNetworking.ACTION_DEPOSIT_SHARDS);
         buf.writeInt(amount);
-        ClientPlayNetworking.send(BankNetworking.BANK_ACTION, buf);
+        NtNet.versServeur(BankNetworking.BANK_ACTION, buf);
     }
 
     // ── Toast ──────────────────────────────────────────────────────────────────
@@ -1159,7 +1160,7 @@ public class BankScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mx, double my, double amount) {
+    public boolean mouseScrolled(double mx, double my, double horizontalAmount, double amount) {
         if (activeTab == Tab.ACCOUNT) {
             txScroll = Math.max(0, txScroll - (int) amount);
             return true;
@@ -1181,7 +1182,7 @@ public class BankScreen extends Screen {
             recurDropScroll = Math.max(0, Math.min(Math.max(0, knownPlayers.size() - 8), recurDropScroll - (int) amount));
             return true;
         }
-        return super.mouseScrolled(mx, my, amount);
+        return super.mouseScrolled(mx, my, horizontalAmount, amount);
     }
 
     @Override
@@ -1219,7 +1220,7 @@ public class BankScreen extends Screen {
         buf.writeInt(DURATIONS[modalDurationIdx]);
         buf.writeInt(PENALTIES[modalPenaltyIdx]);
         buf.writeInt(5); // penaltyIncrease fixe : +5 ◆ par jour supplémentaire
-        ClientPlayNetworking.send(BankNetworking.BANK_ACTION, buf);
+        NtNet.versServeur(BankNetworking.BANK_ACTION, buf);
     }
 
     /** Action crédit générique à payload int unique (accept/decline/repay/forgive). */
@@ -1227,7 +1228,7 @@ public class BankScreen extends Screen {
         PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
         buf.writeInt(action);
         buf.writeInt(id);
-        ClientPlayNetworking.send(BankNetworking.BANK_ACTION, buf);
+        NtNet.versServeur(BankNetworking.BANK_ACTION, buf);
     }
 
     private void sendTransfer(String target, int amount) {
@@ -1235,7 +1236,7 @@ public class BankScreen extends Screen {
         buf.writeInt(BankNetworking.ACTION_TRANSFER);
         buf.writeString(target);
         buf.writeInt(amount);
-        ClientPlayNetworking.send(BankNetworking.BANK_ACTION, buf);
+        NtNet.versServeur(BankNetworking.BANK_ACTION, buf);
     }
 
     private void sendRecurringCreate(String to, int amount, int intervalTicks) {
@@ -1244,14 +1245,14 @@ public class BankScreen extends Screen {
         buf.writeString(to);
         buf.writeInt(amount);
         buf.writeInt(intervalTicks);
-        ClientPlayNetworking.send(BankNetworking.BANK_ACTION, buf);
+        NtNet.versServeur(BankNetworking.BANK_ACTION, buf);
     }
 
     private void sendRecurringCancel(int id) {
         PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
         buf.writeInt(BankNetworking.ACTION_RECURRING_CANCEL);
         buf.writeInt(id);
-        ClientPlayNetworking.send(BankNetworking.BANK_ACTION, buf);
+        NtNet.versServeur(BankNetworking.BANK_ACTION, buf);
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────────

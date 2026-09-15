@@ -1,12 +1,13 @@
 package com.nouvelleterrebridge.service;
 
+import com.nouvelleterrebridge.network.NtNet;
+
 import com.nouvelleterrebridge.NouvelleTerreBridge;
 import com.nouvelleterrebridge.economy.LocalEconomy;
 import com.nouvelleterrebridge.economy.ServerShopActions;
 import com.nouvelleterrebridge.market.MarketManager;
 import com.nouvelleterrebridge.network.ServiceNetworking;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -29,8 +30,7 @@ public final class ServiceNetworkHandler {
     private ServiceNetworkHandler() {}
 
     public static void register() {
-        ServerPlayNetworking.registerGlobalReceiver(ServiceNetworking.MARCHE_ACTION,
-            (server, player, handler, buf, responseSender) -> {
+        NtNet.surServeur(ServiceNetworking.MARCHE_ACTION, (server, player, buf) -> {
                 // Lecture obligatoirement ici : le buffer est libéré au retour.
                 int action = buf.readInt();
                 String s1 = buf.readString();
@@ -83,8 +83,7 @@ public final class ServiceNetworkHandler {
                 });
             });
 
-        ServerPlayNetworking.registerGlobalReceiver(ServiceNetworking.ADMIN_ACTION,
-            (server, player, handler, buf, responseSender) -> {
+        NtNet.surServeur(ServiceNetworking.ADMIN_ACTION, (server, player, buf) -> {
                 int action = buf.readInt();
                 int id     = buf.readInt();
                 server.execute(() -> {
@@ -239,7 +238,7 @@ public final class ServiceNetworkHandler {
         PacketByteBuf buf = PacketByteBufs.create();
         buf.writeBoolean(ouvrir);
         ecrireEtat(buf, player);
-        ServerPlayNetworking.send(player, ServiceNetworking.MARCHE_OPEN, buf);
+        NtNet.versClient(player, ServiceNetworking.MARCHE_OPEN, buf);
     }
 
     private static void envoyerResultat(ServerPlayerEntity player, boolean ok, String msg) {
@@ -249,7 +248,7 @@ public final class ServiceNetworkHandler {
         buf.writeBoolean(ok);
         buf.writeString(msg);
         ecrireEtat(buf, player);
-        ServerPlayNetworking.send(player, ServiceNetworking.MARCHE_RESULT, buf);
+        NtNet.versClient(player, ServiceNetworking.MARCHE_RESULT, buf);
     }
 
     /** Corps commun aux deux canaux : solde, catégories, annonces, commandes. */
@@ -345,6 +344,6 @@ public final class ServiceNetworkHandler {
             buf.writeString(c.annulationDemandeePar);
         }
 
-        ServerPlayNetworking.send(player, ServiceNetworking.ADMIN_OPEN, buf);
+        NtNet.versClient(player, ServiceNetworking.ADMIN_OPEN, buf);
     }
 }

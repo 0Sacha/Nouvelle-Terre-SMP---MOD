@@ -117,7 +117,11 @@ public final class PrixDeriveur {
         }
 
         // ── Crafts : plusieurs passes, une recette pouvant dépendre d'une autre ──
-        List<Recipe<?>> recettes = List.copyOf(server.getRecipeManager().values());
+        // getRecipeManager().values() renvoie des RecipeEntry<?> (id + recette) depuis
+        // la 1.21 : seule la recette elle-même nous intéresse ici.
+        List<Recipe<?>> recettes = server.getRecipeManager().values().stream()
+            .<Recipe<?>>map(net.minecraft.recipe.RecipeEntry::value)
+            .toList();
         for (int passe = 0; passe < PASSES; passe++) {
             boolean change = false;
             for (Recipe<?> r : recettes) {
@@ -147,7 +151,7 @@ public final class PrixDeriveur {
      */
     private static boolean appliquer(Recipe<?> recette, Map<String, Integer> prix,
                                      Set<String> figes, MinecraftServer server) {
-        ItemStack sortie = recette.getOutput(server.getRegistryManager());
+        ItemStack sortie = recette.getResult(server.getRegistryManager());
         if (sortie == null || sortie.isEmpty()) return false;
 
         String idSortie = Registries.ITEM.getId(sortie.getItem()).toString();

@@ -1,12 +1,13 @@
 package com.nouvelleterrebridge.client;
 
+import com.nouvelleterrebridge.network.NtNet;
+
 import com.nouvelleterrebridge.network.ServiceNetworking;
 import com.nouvelleterrebridge.service.ServiceImages;
 import com.nouvelleterrebridge.service.ServiceManager;
 import io.netty.buffer.Unpooled;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
@@ -1227,11 +1228,11 @@ public class MarcheScreen extends Screen {
         buf.writeString(s1); buf.writeString(s2); buf.writeString(s3);
         buf.writeString(s4); buf.writeString(s5);
         buf.writeInt(i1); buf.writeInt(i2);
-        ClientPlayNetworking.send(ServiceNetworking.MARCHE_ACTION, buf);
+        NtNet.versServeur(ServiceNetworking.MARCHE_ACTION, buf);
     }
 
     @Override
-    public boolean mouseScrolled(double mx, double my, double amount) {
+    public boolean mouseScrolled(double mx, double my, double horizontalAmount, double amount) {
         if (archiveOuverte != null) {
             scrollArchive = Math.max(0, Math.min(scrollArchive + (int) Math.signum(amount),
                 Math.max(0, archiveOuverte.messages().size() - 1)));

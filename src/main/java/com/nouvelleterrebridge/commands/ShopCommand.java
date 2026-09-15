@@ -1,9 +1,10 @@
 package com.nouvelleterrebridge.commands;
 
+import com.nouvelleterrebridge.network.NtNet;
+
 import com.mojang.brigadier.CommandDispatcher;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
 import com.nouvelleterrebridge.network.ShopNetworking;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -20,8 +21,7 @@ public class ShopCommand {
                     src.sendError(Text.literal("Commande réservée aux joueurs."));
                     return 0;
                 }
-                ServerPlayNetworking.send(player, ShopNetworking.SHOP_OPEN,
-                    NouvelleTerreBridge.buildShopOpenPacket(player));
+                NtNet.versClient(player, ShopNetworking.SHOP_OPEN, NouvelleTerreBridge.buildShopOpenPacket(player));
                 return 1;
             }));
     }

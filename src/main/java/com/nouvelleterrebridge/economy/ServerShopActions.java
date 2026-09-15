@@ -156,7 +156,7 @@ public final class ServerShopActions {
     }
 
     private static boolean estRachetable(ItemStack s, String itemId) {
-        if (s.isEmpty() || s.hasNbt()) return false;
+        if (s.isEmpty() || !s.getComponentChanges().isEmpty()) return false;
         if (s.isDamaged()) return false;
         return Registries.ITEM.getId(s.getItem()).toString().equals(itemId);
     }

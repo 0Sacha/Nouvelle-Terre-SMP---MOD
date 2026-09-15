@@ -1,5 +1,7 @@
 package com.nouvelleterrebridge.events;
 
+import com.nouvelleterrebridge.network.NtNet;
+
 import com.nouvelleterrebridge.NouvelleTerreBridge;
 import com.nouvelleterrebridge.economy.FirstJoinTracker;
 import com.nouvelleterrebridge.economy.LocalEconomy;
@@ -9,7 +11,6 @@ import com.nouvelleterrebridge.network.HdvNetworking;
 import net.fabricmc.fabric.api.message.v1.ServerMessageEvents;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -86,7 +87,7 @@ public class PlayerEvents {
                 .orElse("unknown");
             PacketByteBuf versionBuf = PacketByteBufs.create();
             versionBuf.writeString(version);
-            ServerPlayNetworking.send(joueur, HdvNetworking.NT_VERSION, versionBuf);
+            NtNet.versClient(joueur, HdvNetworking.NT_VERSION, versionBuf);
 
             // Envoyer les noms RP des joueurs déjà en ligne au client qui rejoint
             for (Map.Entry<String, String> e : NouvelleTerreBridge.nomsRP.entrySet()) {
@@ -94,7 +95,7 @@ public class PlayerEvents {
                     PacketByteBuf buf = PacketByteBufs.create();
                     buf.writeUuid(UUID.fromString(e.getKey()));
                     buf.writeString(e.getValue());
-                    ServerPlayNetworking.send(joueur, HdvNetworking.NT_NOM_RP, buf);
+                    NtNet.versClient(joueur, HdvNetworking.NT_NOM_RP, buf);
                 } catch (IllegalArgumentException ignored) {}
             }
 
@@ -108,7 +109,7 @@ public class PlayerEvents {
                     PacketByteBuf buf = PacketByteBufs.create();
                     buf.writeUuid(uuidObj);
                     buf.writeString(nomRP);
-                    ServerPlayNetworking.send(p, HdvNetworking.NT_NOM_RP, buf);
+                    NtNet.versClient(p, HdvNetworking.NT_NOM_RP, buf);
                 }
 
                 // Scoreboard team → tab list : "§fNomRP §8(§7pseudo§8)"
@@ -120,7 +121,7 @@ public class PlayerEvents {
                 var team = scoreboard.addTeam(teamName);
                 team.setPrefix(Text.literal("§f" + nomRP + " §8(§7"));
                 team.setSuffix(Text.literal("§8)"));
-                scoreboard.addPlayerToTeam(pseudo, team);
+                scoreboard.addScoreHolderToTeam(pseudo, team);
 
                 server.getPlayerManager().broadcast(
                     Text.literal("§8[RP] §f" + nomRP + " §8(§7" + pseudo + "§8) §7est arrivé sur le serveur."),

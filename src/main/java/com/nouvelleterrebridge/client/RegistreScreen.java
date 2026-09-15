@@ -1,7 +1,8 @@
 package com.nouvelleterrebridge.client;
 
+import com.nouvelleterrebridge.network.NtNet;
+
 import com.nouvelleterrebridge.network.RegistreNetworking;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -66,7 +67,7 @@ public class RegistreScreen extends Screen {
         viewState = ViewState.LOADING;
         PacketByteBuf buf = PacketByteBufs.create();
         buf.writeString(pseudo);
-        ClientPlayNetworking.send(RegistreNetworking.REGISTRE_DETAIL_REQUEST, buf);
+        NtNet.versServeur(RegistreNetworking.REGISTRE_DETAIL_REQUEST, buf);
     }
 
     public void onDetailReceived(DetailData d) {
@@ -320,7 +321,7 @@ public class RegistreScreen extends Screen {
     // ── Input ────────────────────────────────────────────────────────────────
 
     @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double amount) {
         if (viewState == ViewState.LIST) {
             int listH    = ph - HEADER - 1;
             int contentH = personnages.size() * ROW_H;

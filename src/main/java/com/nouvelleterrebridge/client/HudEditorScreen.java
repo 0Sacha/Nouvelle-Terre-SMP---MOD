@@ -393,14 +393,14 @@ public class HudEditorScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mx, double my, double amount) {
+    public boolean mouseScrolled(double mx, double my, double horizontalAmount, double amount) {
         if (mode == Mode.PANEL) {
             int totalRows = (WIDGETS.size() + COLS - 1) / COLS;
             int maxScroll = Math.max(0, totalRows - VISIBLE_ROWS);
             scrollRow = Math.max(0, Math.min(scrollRow - (int)Math.signum(amount), maxScroll));
             return true;
         }
-        return super.mouseScrolled(mx, my, amount);
+        return super.mouseScrolled(mx, my, horizontalAmount, amount);
     }
 
     @Override

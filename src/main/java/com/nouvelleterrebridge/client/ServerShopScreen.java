@@ -1,11 +1,12 @@
 package com.nouvelleterrebridge.client;
 
+import com.nouvelleterrebridge.network.NtNet;
+
 import com.nouvelleterrebridge.market.FrenchItemNames;
 import com.nouvelleterrebridge.network.ShopNetworking;
 import io.netty.buffer.Unpooled;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
@@ -129,7 +130,7 @@ public class ServerShopScreen extends Screen {
         sellable = new LinkedHashMap<>();
         if (client == null || client.player == null) return;
         for (ItemStack s : client.player.getInventory().main) {
-            if (s.isEmpty() || s.hasNbt() || s.isDamaged()) continue;
+            if (s.isEmpty() || !s.getComponentChanges().isEmpty() || s.isDamaged()) continue;
             String id = Registries.ITEM.getId(s.getItem()).toString();
             sellable.merge(id, s.getCount(), Integer::sum);
         }
@@ -554,7 +555,7 @@ public class ServerShopScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mx, double my, double amount) {
+    public boolean mouseScrolled(double mx, double my, double horizontalAmount, double amount) {
         if (selected != null) return true;
         scroll = Math.max(0, Math.min(scroll - (int) Math.signum(amount), maxScroll));
         return true;
@@ -578,7 +579,7 @@ public class ServerShopScreen extends Screen {
         buf.writeInt(action);
         buf.writeString(itemId);
         buf.writeInt(quantity);
-        ClientPlayNetworking.send(ShopNetworking.SHOP_ACTION, buf);
+        NtNet.versServeur(ShopNetworking.SHOP_ACTION, buf);
     }
 
     // ── Utilitaires ───────────────────────────────────────────────────────────

@@ -35,9 +35,10 @@ public class EffetsWidget extends HudWidget {
         } else {
             for (int i = 0; i < effects.size(); i++) {
                 StatusEffectInstance e = effects.get(i);
-                boolean good  = e.getEffectType().isBeneficial();
+                net.minecraft.entity.effect.StatusEffect type = e.getEffectType().value();
+                boolean good  = type.isBeneficial();
                 int     color = good ? C_GREEN : C_RED;
-                String  name  = e.getEffectType().getName().getString();
+                String  name  = type.getName().getString();
                 if (name.length() > 14) name = name.substring(0, 13) + ".";
                 int amp = e.getAmplifier();
                 if (amp > 0) name += " " + (amp < ROMAN.length ? ROMAN[amp] : amp + 1);

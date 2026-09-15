@@ -1,16 +1,16 @@
 package com.nouvelleterrebridge.network;
 
-import net.minecraft.util.Identifier;
+import net.minecraft.network.packet.CustomPayload;
 
 public final class HdvNetworking {
 
-    public static final Identifier HDV_OPEN   = new Identifier("nouvelle-terre-bridge", "hdv_open");
-    public static final Identifier HDV_ACTION = new Identifier("nouvelle-terre-bridge", "hdv_action");
-    public static final Identifier HDV_RESULT = new Identifier("nouvelle-terre-bridge", "hdv_result");
-    public static final Identifier NT_VERSION = new Identifier("nouvelle-terre-bridge", "nt_version");
-    public static final Identifier NT_BALANCE = new Identifier("nouvelle-terre-bridge", "nt_balance");
-    public static final Identifier NT_TOAST   = new Identifier("nouvelle-terre-bridge", "nt_toast");
-    public static final Identifier NT_NOM_RP  = new Identifier("nouvelle-terre-bridge", "nt_nom_rp");
+    public static final CustomPayload.Id<NtPayload> HDV_OPEN   = NtNet.canal("hdv_open");
+    public static final CustomPayload.Id<NtPayload> HDV_ACTION = NtNet.canal("hdv_action");
+    public static final CustomPayload.Id<NtPayload> HDV_RESULT = NtNet.canal("hdv_result");
+    public static final CustomPayload.Id<NtPayload> NT_VERSION = NtNet.canal("nt_version");
+    public static final CustomPayload.Id<NtPayload> NT_BALANCE = NtNet.canal("nt_balance");
+    public static final CustomPayload.Id<NtPayload> NT_TOAST   = NtNet.canal("nt_toast");
+    public static final CustomPayload.Id<NtPayload> NT_NOM_RP  = NtNet.canal("nt_nom_rp");
 
     // Virements et récurrents vivent sur BANK_ACTION depuis la création de BankScreen —
     // les anciennes valeurs 3/4/5 de ce canal ont été retirées avec leurs handlers.

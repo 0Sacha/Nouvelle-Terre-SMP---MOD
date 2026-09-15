@@ -1,5 +1,7 @@
 package com.nouvelleterrebridge;
 
+import com.nouvelleterrebridge.network.NtNet;
+
 import com.nouvelleterrebridge.client.BalanceHudOverlay;
 import com.nouvelleterrebridge.client.BankScreen;
 import com.nouvelleterrebridge.client.ClientConfig;
@@ -38,7 +40,6 @@ import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
@@ -140,7 +141,7 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
 
         // ── Réseau ────────────────────────────────────────────────────────────
 
-        ClientPlayNetworking.registerGlobalReceiver(HdvNetworking.NT_TOAST, (client, handler, buf, responseSender) -> {
+        NtNet.surClient(HdvNetworking.NT_TOAST, (client, buf) -> {
             int color = buf.readInt();
             int count = buf.readInt();
             String[] lines = new String[count];
@@ -148,18 +149,18 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             client.execute(() -> NotificationHud.push(color, lines));
         });
 
-        ClientPlayNetworking.registerGlobalReceiver(HdvNetworking.NT_BALANCE, (client, handler, buf, responseSender) -> {
+        NtNet.surClient(HdvNetworking.NT_BALANCE, (client, buf) -> {
             int balance = buf.readInt();
             client.execute(() -> BalanceHudOverlay.cachedBalance = balance);
         });
 
-        ClientPlayNetworking.registerGlobalReceiver(HdvNetworking.NT_NOM_RP, (client, handler, buf, responseSender) -> {
+        NtNet.surClient(HdvNetworking.NT_NOM_RP, (client, buf) -> {
             UUID uuid  = buf.readUuid();
             String nom = buf.readString();
             nomsRP.put(uuid, nom);
         });
 
-        ClientPlayNetworking.registerGlobalReceiver(HdvNetworking.HDV_OPEN, (client, handler, buf, responseSender) -> {
+        NtNet.surClient(HdvNetworking.HDV_OPEN, (client, buf) -> {
             int balance = buf.readInt();
             List<HdvScreen.ListingData> listings = readListings(buf);
             client.execute(() -> {
@@ -168,8 +169,7 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             });
         });
 
-        ClientPlayNetworking.registerGlobalReceiver(ServiceNetworking.MARCHE_OPEN,
-            (client, handler, buf, responseSender) -> {
+        NtNet.surClient(ServiceNetworking.MARCHE_OPEN, (client, buf) -> {
                 // ouvrir = false : simple rafraîchissement (message reçu, commande
                 // validée…). Ouvrir l'écran d'office ferait surgir LeBonCube
                 // par-dessus le jeu à chaque notification.
@@ -184,8 +184,7 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
                 });
             });
 
-        ClientPlayNetworking.registerGlobalReceiver(ServiceNetworking.MARCHE_RESULT,
-            (client, handler, buf, responseSender) -> {
+        NtNet.surClient(ServiceNetworking.MARCHE_RESULT, (client, buf) -> {
                 boolean ok  = buf.readBoolean();
                 String  msg = buf.readString();
                 MarcheEtat e = lireMarche(buf);
@@ -196,8 +195,7 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
                 });
             });
 
-        ClientPlayNetworking.registerGlobalReceiver(ServiceNetworking.ADMIN_OPEN,
-            (client, handler, buf, responseSender) -> {
+        NtNet.surClient(ServiceNetworking.ADMIN_OPEN, (client, buf) -> {
                 int soldeServeur   = buf.readInt();
                 int soldeSequestre = buf.readInt();
                 long masse         = buf.readLong();
@@ -224,14 +222,10 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
                 });
             });
 
-        ClientPlayNetworking.registerGlobalReceiver(
-            com.nouvelleterrebridge.network.HubNetworking.HUB_OPEN,
-            (client, handler, buf, responseSender) ->
+        NtNet.surClient(com.nouvelleterrebridge.network.HubNetworking.HUB_OPEN, (client, buf) ->
                 client.execute(() -> client.setScreen(new com.nouvelleterrebridge.client.HubScreen())));
 
-        ClientPlayNetworking.registerGlobalReceiver(
-            com.nouvelleterrebridge.network.ShopNetworking.SHOP_OPEN,
-            (client, handler, buf, responseSender) -> {
+        NtNet.surClient(com.nouvelleterrebridge.network.ShopNetworking.SHOP_OPEN, (client, buf) -> {
                 int balance = buf.readInt();
                 var shopEntries = readShopEntries(buf);
                 client.execute(() -> {
@@ -240,9 +234,7 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
                 });
             });
 
-        ClientPlayNetworking.registerGlobalReceiver(
-            com.nouvelleterrebridge.network.ShopNetworking.SHOP_RESULT,
-            (client, handler, buf, responseSender) -> {
+        NtNet.surClient(com.nouvelleterrebridge.network.ShopNetworking.SHOP_RESULT, (client, buf) -> {
                 boolean ok  = buf.readBoolean();
                 String  msg = buf.readString();
                 int balance = buf.readInt();
@@ -255,7 +247,7 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
                 });
             });
 
-        ClientPlayNetworking.registerGlobalReceiver(HdvNetworking.NT_VERSION, (client, handler, buf, responseSender) -> {
+        NtNet.surClient(HdvNetworking.NT_VERSION, (client, buf) -> {
             String serverVer = buf.readString();
             String clientVer = FabricLoader.getInstance()
                 .getModContainer(NouvelleTerreBridge.MOD_ID)
@@ -275,12 +267,12 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             }
         });
 
-        ClientPlayNetworking.registerGlobalReceiver(BankNetworking.BANK_OPEN, (client, handler, buf, responseSender) -> {
+        NtNet.surClient(BankNetworking.BANK_OPEN, (client, buf) -> {
             BankScreen screen = readBankPacket(buf);
             client.execute(() -> client.setScreen(screen));
         });
 
-        ClientPlayNetworking.registerGlobalReceiver(BankNetworking.BANK_RESULT, (client, handler, buf, responseSender) -> {
+        NtNet.surClient(BankNetworking.BANK_RESULT, (client, buf) -> {
             boolean ok       = buf.readBoolean();
             String  message  = buf.readString();
             int balance      = buf.readInt();
@@ -304,7 +296,7 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             });
         });
 
-        ClientPlayNetworking.registerGlobalReceiver(HdvNetworking.HDV_RESULT, (client, handler, buf, responseSender) -> {
+        NtNet.surClient(HdvNetworking.HDV_RESULT, (client, buf) -> {
             boolean ok      = buf.readBoolean();
             String  message = buf.readString();
             int balance     = buf.readInt();
@@ -317,7 +309,7 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             });
         });
 
-        ClientPlayNetworking.registerGlobalReceiver(QuestNetworking.QUEST_OPEN, (client, handler, buf, responseSender) -> {
+        NtNet.surClient(QuestNetworking.QUEST_OPEN, (client, buf) -> {
             // ouvrir = false pour les rafraîchissements de fond (connexion, quête de
             // groupe activée, rollover) : sans ce drapeau, l'écran des quêtes
             // s'ouvrait tout seul au lancement du jeu.
@@ -339,13 +331,13 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             });
         });
 
-        ClientPlayNetworking.registerGlobalReceiver(ProductionNetworking.PROD_OPEN, (client, handler, buf, responseSender) -> {
+        NtNet.surClient(ProductionNetworking.PROD_OPEN, (client, buf) -> {
             boolean isOp = buf.readBoolean();
             List<ProductionScreen.ProdEntry> list = readProdEntries(buf);
             client.execute(() -> client.setScreen(new ProductionScreen(isOp, list)));
         });
 
-        ClientPlayNetworking.registerGlobalReceiver(ProductionNetworking.PROD_RESULT, (client, handler, buf, responseSender) -> {
+        NtNet.surClient(ProductionNetworking.PROD_RESULT, (client, buf) -> {
             boolean ok      = buf.readBoolean();
             String  message = buf.readString();
             boolean isOp    = buf.readBoolean();
@@ -356,12 +348,12 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             });
         });
 
-        ClientPlayNetworking.registerGlobalReceiver(ConflitNetworking.CONFLIT_OPEN, (client, handler, buf, responseSender) -> {
+        NtNet.surClient(ConflitNetworking.CONFLIT_OPEN, (client, buf) -> {
             List<String> joueurs = readStringList(buf);
             client.execute(() -> client.setScreen(new ConflitScreen(joueurs)));
         });
 
-        ClientPlayNetworking.registerGlobalReceiver(ConflitNetworking.CONFLIT_RESULT, (client, handler, buf, responseSender) -> {
+        NtNet.surClient(ConflitNetworking.CONFLIT_RESULT, (client, buf) -> {
             boolean ok      = buf.readBoolean();
             String  message = buf.readString();
             client.execute(() -> {
@@ -370,10 +362,10 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             });
         });
 
-        ClientPlayNetworking.registerGlobalReceiver(WikiNetworking.WIKI_OPEN, (client, handler, buf, responseSender) ->
+        NtNet.surClient(WikiNetworking.WIKI_OPEN, (client, buf) ->
             client.execute(() -> client.setScreen(new WikiScreen())));
 
-        ClientPlayNetworking.registerGlobalReceiver(RegistreNetworking.REGISTRE_OPEN, (client, handler, buf, responseSender) -> {
+        NtNet.surClient(RegistreNetworking.REGISTRE_OPEN, (client, buf) -> {
             int count = buf.readInt();
             List<RegistreScreen.PersonnageData> list = new ArrayList<>(count);
             for (int i = 0; i < count; i++)
@@ -381,7 +373,7 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             client.execute(() -> client.setScreen(new RegistreScreen(list)));
         });
 
-        ClientPlayNetworking.registerGlobalReceiver(RegistreNetworking.REGISTRE_DETAIL, (client, handler, buf, responseSender) -> {
+        NtNet.surClient(RegistreNetworking.REGISTRE_DETAIL, (client, buf) -> {
             boolean ok = buf.readBoolean();
             if (!ok) {
                 client.execute(() -> { if (client.currentScreen instanceof RegistreScreen s) s.onDetailError(); });
@@ -396,7 +388,7 @@ public class NouvelleTerreBridgeClient implements ClientModInitializer {
             client.execute(() -> { if (client.currentScreen instanceof RegistreScreen s) s.onDetailReceived(detail); });
         });
 
-        ClientPlayNetworking.registerGlobalReceiver(QuestNetworking.QUEST_RESULT, (client, handler, buf, responseSender) -> {
+        NtNet.surClient(QuestNetworking.QUEST_RESULT, (client, buf) -> {
             boolean ok      = buf.readBoolean();
             String  message = buf.readString();
             int level = buf.readInt(), xp = buf.readInt(), xpNext = buf.readInt();
