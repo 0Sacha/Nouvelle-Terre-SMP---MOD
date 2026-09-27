@@ -3,15 +3,15 @@ package com.nouvelleterrebridge.item;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
 import com.nouvelleterrebridge.economy.LocalEconomy;
 import com.nouvelleterrebridge.economy.TransactionLog;
-import net.minecraft.item.tooltip.TooltipType;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
-import net.minecraft.util.Hand;
-import net.minecraft.util.TypedActionResult;
-import net.minecraft.world.World;
+import net.minecraft.world.item.TooltipFlag;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResultHolder;
+import net.minecraft.world.level.Level;
 
 import java.util.List;
 
@@ -26,7 +26,7 @@ public class ShardItem extends Item {
     /** Valeur d'un exemplaire, en ◆. */
     private final int valeur;
 
-    public ShardItem(Settings settings, int valeur) {
+    public ShardItem(Properties settings, int valeur) {
         super(settings);
         this.valeur = valeur;
     }
@@ -36,27 +36,27 @@ public class ShardItem extends Item {
     }
 
     @Override
-    public TypedActionResult<ItemStack> use(World world, PlayerEntity user, Hand hand) {
-        ItemStack stack = user.getStackInHand(hand);
-        if (!world.isClient && user instanceof ServerPlayerEntity sp) {
+    public InteractionResultHolder<ItemStack> use(Level world, Player user, InteractionHand hand) {
+        ItemStack stack = user.getItemInHand(hand);
+        if (!world.isClientSide && user instanceof ServerPlayer sp) {
             int montant = stack.getCount() * valeur;
             String pseudo = sp.getName().getString();
             LocalEconomy.getInstance().depositShards(pseudo, montant);
             TransactionLog.log(pseudo, TransactionLog.TYPE_TRANSFER_IN,
                 "Dépôt de Shards physiques", montant);
-            user.setStackInHand(hand, ItemStack.EMPTY);
-            sp.sendMessage(Text.literal("§a+" + montant + " ◆ §fdéposés sur ton compte §7— solde : §e"
+            user.setItemInHand(hand, ItemStack.EMPTY);
+            sp.displayClientMessage(Component.literal("§a+" + montant + " ◆ §fdéposés sur ton compte §7— solde : §e"
                 + LocalEconomy.getInstance().getBalance(pseudo) + " ◆"), true);
             NouvelleTerreBridge.sendBalanceToPlayer(sp);
         }
-        return TypedActionResult.success(user.getStackInHand(hand), world.isClient());
+        return InteractionResultHolder.sidedSuccess(user.getItemInHand(hand), world.isClientSide);
     }
 
     @Override
-    public void appendTooltip(ItemStack stack, Item.TooltipContext context, List<Text> tooltip, TooltipType type) {
-        tooltip.add(Text.literal("§7Monnaie physique de Nouvelle Terre — §e" + valeur + " ◆ §7l'unité"));
+    public void appendHoverText(ItemStack stack, Item.TooltipContext context, List<Component> tooltip, TooltipFlag type) {
+        tooltip.add(Component.literal("§7Monnaie physique de Nouvelle Terre — §e" + valeur + " ◆ §7l'unité"));
         if (stack.getCount() > 1)
-            tooltip.add(Text.literal("§7Cette pile vaut §e" + (stack.getCount() * valeur) + " ◆"));
-        tooltip.add(Text.literal("§6Clic droit §7pour déposer la pile sur ton compte"));
+            tooltip.add(Component.literal("§7Cette pile vaut §e" + (stack.getCount() * valeur) + " ◆"));
+        tooltip.add(Component.literal("§6Clic droit §7pour déposer la pile sur ton compte"));
     }
 }

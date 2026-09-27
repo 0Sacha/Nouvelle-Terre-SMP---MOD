@@ -7,12 +7,12 @@ import com.nouvelleterrebridge.economy.SauvegardeFichier;
 import com.nouvelleterrebridge.economy.ServerShopPriceManager;
 import com.nouvelleterrebridge.economy.ShopThresholds;
 import com.nouvelleterrebridge.service.ServiceNetworkHandler;
-import net.minecraft.server.command.CommandManager;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.text.ClickEvent;
-import net.minecraft.text.HoverEvent;
-import net.minecraft.text.MutableText;
-import net.minecraft.text.Text;
+import net.minecraft.commands.Commands;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.Component;
 
 import java.util.List;
 
@@ -28,7 +28,7 @@ import java.util.List;
 public final class SauvegardeCommand {
 
     /** Sauvegardes proposées à l'autocomplétion, la plus récente en tête. */
-    private static final SuggestionProvider<ServerCommandSource> SAUVEGARDES =
+    private static final SuggestionProvider<CommandSourceStack> SAUVEGARDES =
         (ctx, builder) -> {
             for (String nom : SauvegardeFichier.lister()) builder.suggest(nom);
             return builder.buildFuture();
@@ -36,52 +36,52 @@ public final class SauvegardeCommand {
 
     private SauvegardeCommand() {}
 
-    public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
-        dispatcher.register(CommandManager.literal("nt-sauvegarde")
-            .requires(src -> src.hasPermissionLevel(ServiceNetworkHandler.NIVEAU_ADMIN))
+    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
+        dispatcher.register(Commands.literal("nt-sauvegarde")
+            .requires(src -> src.hasPermission(ServiceNetworkHandler.NIVEAU_ADMIN))
             .executes(ctx -> lister(ctx.getSource()))
-            .then(CommandManager.literal("restaurer")
-                .then(CommandManager.argument("fichier", StringArgumentType.string())
+            .then(Commands.literal("restaurer")
+                .then(Commands.argument("fichier", StringArgumentType.string())
                     .suggests(SAUVEGARDES)
                     .executes(ctx -> restaurer(ctx.getSource(),
                         StringArgumentType.getString(ctx, "fichier"))))));
     }
 
-    private static int lister(ServerCommandSource source) {
+    private static int lister(CommandSourceStack source) {
         List<String> copies = SauvegardeFichier.lister();
-        source.sendFeedback(() -> Text.literal(EconomieCommand.SEP_GOLD), false);
+        source.sendSuccess(() -> Component.literal(EconomieCommand.SEP_GOLD), false);
         if (copies.isEmpty()) {
-            source.sendFeedback(() -> Text.literal("  §7Aucune sauvegarde pour l'instant."), false);
-            source.sendFeedback(() -> Text.literal(
+            source.sendSuccess(() -> Component.literal("  §7Aucune sauvegarde pour l'instant."), false);
+            source.sendSuccess(() -> Component.literal(
                 "  §8Elles sont créées automatiquement avant chaque migration de prix"), false);
-            source.sendFeedback(() -> Text.literal("  §8ou purge du marché."), false);
-            source.sendFeedback(() -> Text.literal(EconomieCommand.SEP_GOLD), false);
+            source.sendSuccess(() -> Component.literal("  §8ou purge du marché."), false);
+            source.sendSuccess(() -> Component.literal(EconomieCommand.SEP_GOLD), false);
             return 1;
         }
 
-        source.sendFeedback(() -> Text.literal("  §6§lSauvegardes disponibles §7("
+        source.sendSuccess(() -> Component.literal("  §6§lSauvegardes disponibles §7("
             + copies.size() + ")"), false);
-        source.sendFeedback(() -> Text.literal("  §8De la plus récente à la plus ancienne — clique pour restaurer"), false);
-        source.sendFeedback(() -> Text.literal(""), false);
+        source.sendSuccess(() -> Component.literal("  §8De la plus récente à la plus ancienne — clique pour restaurer"), false);
+        source.sendSuccess(() -> Component.literal(""), false);
 
         // 12 suffisent à couvrir les manipulations récentes sans noyer le chat
         for (String nom : copies.stream().limit(12).toList()) {
-            MutableText ligne = Text.literal("  §f· §e" + nom)
-                .styled(s -> s
+            MutableComponent ligne = Component.literal("  §f· §e" + nom)
+                .withStyle(s -> s
                     .withClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND,
                         "/nt-sauvegarde restaurer \"" + nom + "\""))
                     .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-                        Text.literal("§7Cliquer pour préparer la restauration"))));
-            source.sendFeedback(() -> ligne, false);
+                        Component.literal("§7Cliquer pour préparer la restauration"))));
+            source.sendSuccess(() -> ligne, false);
         }
-        source.sendFeedback(() -> Text.literal(EconomieCommand.SEP_GOLD), false);
+        source.sendSuccess(() -> Component.literal(EconomieCommand.SEP_GOLD), false);
         return 1;
     }
 
-    private static int restaurer(ServerCommandSource source, String nom) {
+    private static int restaurer(CommandSourceStack source, String nom) {
         String cible = SauvegardeFichier.restaurer(nom);
         if (cible == null) {
-            source.sendError(Text.literal("Sauvegarde introuvable ou illisible : " + nom));
+            source.sendFailure(Component.literal("Sauvegarde introuvable ou illisible : " + nom));
             return 0;
         }
 
@@ -98,11 +98,11 @@ public final class SauvegardeCommand {
             detail = "§eFichier restauré, mais un redémarrage est nécessaire pour le prendre en compte.";
         }
 
-        source.sendFeedback(() -> Text.literal(EconomieCommand.SEP_GREEN), false);
-        source.sendFeedback(() -> Text.literal("  §a✅ Restauré §f" + cible), true);
-        source.sendFeedback(() -> Text.literal("  §7" + detail), false);
-        source.sendFeedback(() -> Text.literal("  §8L'état précédent a été sauvegardé avant d'être remplacé."), false);
-        source.sendFeedback(() -> Text.literal(EconomieCommand.SEP_GREEN), false);
+        source.sendSuccess(() -> Component.literal(EconomieCommand.SEP_GREEN), false);
+        source.sendSuccess(() -> Component.literal("  §a✅ Restauré §f" + cible), true);
+        source.sendSuccess(() -> Component.literal("  §7" + detail), false);
+        source.sendSuccess(() -> Component.literal("  §8L'état précédent a été sauvegardé avant d'être remplacé."), false);
+        source.sendSuccess(() -> Component.literal(EconomieCommand.SEP_GREEN), false);
         return 1;
     }
 }

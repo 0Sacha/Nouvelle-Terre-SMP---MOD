@@ -1,7 +1,5 @@
 package com.nouvelleterrebridge.client;
 
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -16,7 +14,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.UUID;
 
-@Environment(EnvType.CLIENT)
 class DiscordIPCClient {
 
     static final Logger LOGGER = LoggerFactory.getLogger("NT/DiscordRPC");

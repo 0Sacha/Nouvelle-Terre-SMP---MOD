@@ -5,7 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
 import com.nouvelleterrebridge.http.EventDispatcher;
-import net.fabricmc.loader.api.FabricLoader;
+import net.neoforged.fml.loading.FMLPaths;
 
 import java.io.*;
 import java.lang.reflect.Type;
@@ -30,7 +30,7 @@ public class LocalEconomy {
     private final Map<String, Integer> soldes = new HashMap<>();
 
     private LocalEconomy() {
-        fichier = FabricLoader.getInstance().getGameDir().resolve("shards.json");
+        fichier = FMLPaths.GAMEDIR.get().resolve("shards.json");
         load();
     }
 

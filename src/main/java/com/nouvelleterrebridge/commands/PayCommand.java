@@ -6,19 +6,19 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
 import com.nouvelleterrebridge.economy.LocalEconomy;
-import net.minecraft.server.command.CommandManager;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
+import net.minecraft.commands.Commands;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.Component;
 
 import java.util.Set;
 import java.util.stream.Collectors;
 
 public class PayCommand {
 
-    private static final SuggestionProvider<ServerCommandSource> JOUEURS_CONNUS =
+    private static final SuggestionProvider<CommandSourceStack> JOUEURS_CONNUS =
         (ctx, builder) -> {
-            Set<String> online = ctx.getSource().getServer().getPlayerManager().getPlayerList()
+            Set<String> online = ctx.getSource().getServer().getPlayerList().getPlayers()
                 .stream().map(p -> p.getName().getString())
                 .collect(Collectors.toSet());
             online.forEach(builder::suggest);
@@ -31,12 +31,12 @@ public class PayCommand {
             return builder.buildFuture();
         };
 
-    public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
+    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(
-            CommandManager.literal("pay")
-                .then(CommandManager.argument("joueur", StringArgumentType.word())
+            Commands.literal("pay")
+                .then(Commands.argument("joueur", StringArgumentType.word())
                     .suggests(JOUEURS_CONNUS)
-                    .then(CommandManager.argument("montant", IntegerArgumentType.integer(1))
+                    .then(Commands.argument("montant", IntegerArgumentType.integer(1))
                         .executes(ctx -> executer(
                             ctx.getSource(),
                             StringArgumentType.getString(ctx, "joueur"),
@@ -44,9 +44,9 @@ public class PayCommand {
         );
     }
 
-    private static int executer(ServerCommandSource source, String cible, int montant) {
-        if (!(source.getEntity() instanceof ServerPlayerEntity joueur)) {
-            source.sendError(Text.literal("Commande réservée aux joueurs."));
+    private static int executer(CommandSourceStack source, String cible, int montant) {
+        if (!(source.getEntity() instanceof ServerPlayer joueur)) {
+            source.sendFailure(Component.literal("Commande réservée aux joueurs."));
             return 0;
         }
 
@@ -95,14 +95,14 @@ public class PayCommand {
         // Notification destinataire (si connecté) — toast ET message chat.
         // Le toast seul passait inaperçu : il s'efface au bout de quelques secondes
         // et le joueur peut avoir masqué la zone de notification dans l'éditeur HUD.
-        ServerPlayerEntity dest = source.getServer().getPlayerManager().getPlayer(cible);
+        ServerPlayer dest = source.getServer().getPlayerList().getPlayerByName(cible);
         if (dest != null) {
             int soldeDest = LocalEconomy.getInstance().getBalance(cible);
             NouvelleTerreBridge.sendToast(dest, NouvelleTerreBridge.TOAST_OR,
                 "✦  Virement reçu !",
                 "← " + sender + "  +" + EconomieCommand.fmt(montant) + " ◆",
                 "Solde : " + EconomieCommand.fmt(soldeDest) + " ◆");
-            dest.sendMessage(Text.literal(
+            dest.sendSystemMessage(Component.literal(
                 "§6[Nouvelle Terre] §f" + sender + " §avous a envoyé §e"
                 + EconomieCommand.fmt(montant) + " ◆§a — solde : §e"
                 + EconomieCommand.fmt(soldeDest) + " ◆"));

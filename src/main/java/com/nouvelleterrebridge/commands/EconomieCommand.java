@@ -7,11 +7,14 @@ import com.mojang.brigadier.suggestion.SuggestionProvider;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
 import com.nouvelleterrebridge.economy.FirstJoinTracker;
 import com.nouvelleterrebridge.economy.LocalEconomy;
-import net.minecraft.server.command.CommandManager;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.*;
-import net.minecraft.util.Formatting;
+import net.minecraft.commands.Commands;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.ChatFormatting;
 
 /**
  * Toutes les commandes économie regroupées sous /economie.
@@ -32,9 +35,9 @@ public class EconomieCommand {
     private static final String SHARD     = "§b◆§r";
 
     // ── Suggestions ───────────────────────────────────────────────────────────
-    private static final SuggestionProvider<ServerCommandSource> TOUS_JOUEURS =
+    private static final SuggestionProvider<CommandSourceStack> TOUS_JOUEURS =
         (ctx, builder) -> {
-            ctx.getSource().getServer().getPlayerManager().getPlayerList()
+            ctx.getSource().getServer().getPlayerList().getPlayers()
                 .stream()
                 .map(p -> p.getName().getString())
                 .forEach(builder::suggest);
@@ -42,141 +45,141 @@ public class EconomieCommand {
         };
 
     // ── Enregistrement ────────────────────────────────────────────────────────
-    public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
+    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(
-            CommandManager.literal("economie")
-                .then(CommandManager.literal("bourse")
+            Commands.literal("economie")
+                .then(Commands.literal("bourse")
                     .executes(ctx -> executerBourse(ctx.getSource())))
 
-                .then(CommandManager.literal("admin")
-                    .requires(src -> src.hasPermissionLevel(2))
-                    .then(CommandManager.literal("give")
-                        .then(CommandManager.argument("joueur", StringArgumentType.word())
+                .then(Commands.literal("admin")
+                    .requires(src -> src.hasPermission(2))
+                    .then(Commands.literal("give")
+                        .then(Commands.argument("joueur", StringArgumentType.word())
                             .suggests(TOUS_JOUEURS)
-                            .then(CommandManager.argument("montant", IntegerArgumentType.integer(1))
+                            .then(Commands.argument("montant", IntegerArgumentType.integer(1))
                                 .executes(ctx -> executerAdminGive(
                                     ctx.getSource(),
                                     StringArgumentType.getString(ctx, "joueur"),
                                     IntegerArgumentType.getInteger(ctx, "montant"))))))
-                    .then(CommandManager.literal("take")
-                        .then(CommandManager.argument("joueur", StringArgumentType.word())
+                    .then(Commands.literal("take")
+                        .then(Commands.argument("joueur", StringArgumentType.word())
                             .suggests(TOUS_JOUEURS)
-                            .then(CommandManager.argument("montant", IntegerArgumentType.integer(1))
+                            .then(Commands.argument("montant", IntegerArgumentType.integer(1))
                                 .executes(ctx -> executerAdminTake(
                                     ctx.getSource(),
                                     StringArgumentType.getString(ctx, "joueur"),
                                     IntegerArgumentType.getInteger(ctx, "montant"))))))
-                    .then(CommandManager.literal("check")
-                        .then(CommandManager.argument("joueur", StringArgumentType.word())
+                    .then(Commands.literal("check")
+                        .then(Commands.argument("joueur", StringArgumentType.word())
                             .suggests(TOUS_JOUEURS)
                             .executes(ctx -> executerAdminCheck(
                                 ctx.getSource(),
                                 StringArgumentType.getString(ctx, "joueur")))))
-                    .then(CommandManager.literal("reset-economy")
-                        .then(CommandManager.literal("confirmer")
+                    .then(Commands.literal("reset-economy")
+                        .then(Commands.literal("confirmer")
                             .executes(ctx -> executerResetEconomy(ctx.getSource())))))
         );
     }
 
     // ── /economie bourse ──────────────────────────────────────────────────────
-    private static int executerBourse(ServerCommandSource source) {
-        if (!(source.getEntity() instanceof ServerPlayerEntity joueur)) {
-            source.sendError(Text.literal("Commande réservée aux joueurs.")); return 0;
+    private static int executerBourse(CommandSourceStack source) {
+        if (!(source.getEntity() instanceof ServerPlayer joueur)) {
+            source.sendFailure(Component.literal("Commande réservée aux joueurs.")); return 0;
         }
         String pseudo = joueur.getName().getString();
         int solde = LocalEconomy.getInstance().getBalance(pseudo);
-        joueur.sendMessage(Text.literal("§6[Nouvelle Terre] §7Solde §8» §f§l" + fmt(solde) + " " + SHARD));
+        joueur.sendSystemMessage(Component.literal("§6[Nouvelle Terre] §7Solde §8» §f§l" + fmt(solde) + " " + SHARD));
         return 1;
     }
 
     // ── /economie admin give ──────────────────────────────────────────────────
-    private static int executerAdminGive(ServerCommandSource source, String cible, int montant) {
+    private static int executerAdminGive(CommandSourceStack source, String cible, int montant) {
         LocalEconomy eco = LocalEconomy.getInstance();
         eco.addShards(cible, montant, "Don administrateur");
         int nouveau = eco.getBalance(cible);
 
-        source.sendFeedback(() -> Text.literal(SEP_DARK), false);
-        source.sendFeedback(() -> Text.literal("  " + ADMIN_TAG + "§a§l+ §f§lCrédit Shards"), true);
-        source.sendFeedback(() -> Text.literal("  §7Joueur  §8» §f§l" + cible), false);
-        source.sendFeedback(() -> Text.literal("  §7Crédit  §8» §a§l+" + fmt(montant) + " " + SHARD), false);
-        source.sendFeedback(() -> Text.literal("  §7Nouveau §8» §f§l" + fmt(nouveau)  + " " + SHARD), false);
-        source.sendFeedback(() -> Text.literal(SEP_DARK), false);
+        source.sendSuccess(() -> Component.literal(SEP_DARK), false);
+        source.sendSuccess(() -> Component.literal("  " + ADMIN_TAG + "§a§l+ §f§lCrédit Shards"), true);
+        source.sendSuccess(() -> Component.literal("  §7Joueur  §8» §f§l" + cible), false);
+        source.sendSuccess(() -> Component.literal("  §7Crédit  §8» §a§l+" + fmt(montant) + " " + SHARD), false);
+        source.sendSuccess(() -> Component.literal("  §7Nouveau §8» §f§l" + fmt(nouveau)  + " " + SHARD), false);
+        source.sendSuccess(() -> Component.literal(SEP_DARK), false);
 
-        ServerPlayerEntity joueurCible = source.getServer().getPlayerManager().getPlayer(cible);
+        ServerPlayer joueurCible = source.getServer().getPlayerList().getPlayerByName(cible);
         if (joueurCible != null) {
-            joueurCible.sendMessage(Text.literal(SEP_GOLD));
-            joueurCible.sendMessage(Text.literal("    §6§l✦ §f§lCrédit reçu !"));
-            joueurCible.sendMessage(Text.literal("  §7Un administrateur t'a crédité."));
-            joueurCible.sendMessage(Text.literal("  §7Montant §8» §a§l+" + fmt(montant) + " " + SHARD));
-            joueurCible.sendMessage(Text.literal("  §7Solde   §8» §f§l"  + fmt(nouveau) + " " + SHARD));
-            joueurCible.sendMessage(Text.literal(SEP_GOLD));
+            joueurCible.sendSystemMessage(Component.literal(SEP_GOLD));
+            joueurCible.sendSystemMessage(Component.literal("    §6§l✦ §f§lCrédit reçu !"));
+            joueurCible.sendSystemMessage(Component.literal("  §7Un administrateur t'a crédité."));
+            joueurCible.sendSystemMessage(Component.literal("  §7Montant §8» §a§l+" + fmt(montant) + " " + SHARD));
+            joueurCible.sendSystemMessage(Component.literal("  §7Solde   §8» §f§l"  + fmt(nouveau) + " " + SHARD));
+            joueurCible.sendSystemMessage(Component.literal(SEP_GOLD));
         }
         return 1;
     }
 
     // ── /economie admin take ──────────────────────────────────────────────────
-    private static int executerAdminTake(ServerCommandSource source, String cible, int montant) {
+    private static int executerAdminTake(CommandSourceStack source, String cible, int montant) {
         LocalEconomy eco = LocalEconomy.getInstance();
         eco.removeShards(cible, montant);
         int restant = eco.getBalance(cible);
 
-        source.sendFeedback(() -> Text.literal(SEP_DARK), false);
-        source.sendFeedback(() -> Text.literal("  " + ADMIN_TAG + "§c§l- §f§lDébit Shards"), true);
-        source.sendFeedback(() -> Text.literal("  §7Joueur  §8» §f§l" + cible), false);
-        source.sendFeedback(() -> Text.literal("  §7Retiré  §8» §c§l-" + fmt(montant) + " " + SHARD), false);
-        source.sendFeedback(() -> Text.literal("  §7Restant §8» §f§l" + fmt(restant)  + " " + SHARD), false);
-        source.sendFeedback(() -> Text.literal(SEP_DARK), false);
+        source.sendSuccess(() -> Component.literal(SEP_DARK), false);
+        source.sendSuccess(() -> Component.literal("  " + ADMIN_TAG + "§c§l- §f§lDébit Shards"), true);
+        source.sendSuccess(() -> Component.literal("  §7Joueur  §8» §f§l" + cible), false);
+        source.sendSuccess(() -> Component.literal("  §7Retiré  §8» §c§l-" + fmt(montant) + " " + SHARD), false);
+        source.sendSuccess(() -> Component.literal("  §7Restant §8» §f§l" + fmt(restant)  + " " + SHARD), false);
+        source.sendSuccess(() -> Component.literal(SEP_DARK), false);
         return 1;
     }
 
     // ── /economie admin check ─────────────────────────────────────────────────
-    private static int executerAdminCheck(ServerCommandSource source, String cible) {
+    private static int executerAdminCheck(CommandSourceStack source, String cible) {
         LocalEconomy eco = LocalEconomy.getInstance();
         boolean connu = eco.estConnu(cible);
         int solde = eco.getBalance(cible);
 
-        source.sendFeedback(() -> Text.literal(SEP_DARK), false);
+        source.sendSuccess(() -> Component.literal(SEP_DARK), false);
         if (!connu) {
-            source.sendFeedback(() -> Text.literal("  " + ADMIN_TAG + "§e§l⚠ §f§lJoueur inconnu"), false);
-            source.sendFeedback(() -> Text.literal("  §7Pseudo §8» §f§l" + cible), false);
-            source.sendFeedback(() -> Text.literal("  §7Aucun solde enregistré."), false);
+            source.sendSuccess(() -> Component.literal("  " + ADMIN_TAG + "§e§l⚠ §f§lJoueur inconnu"), false);
+            source.sendSuccess(() -> Component.literal("  §7Pseudo §8» §f§l" + cible), false);
+            source.sendSuccess(() -> Component.literal("  §7Aucun solde enregistré."), false);
         } else {
-            MutableText nomCliquable = Text.literal(cible)
-                .styled(s -> s.withColor(Formatting.WHITE).withBold(true)
+            MutableComponent nomCliquable = Component.literal(cible)
+                .withStyle(s -> s.withColor(ChatFormatting.WHITE).withBold(true)
                     .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-                        Text.literal("§7Cliquer pour créditer §f" + cible)))
+                        Component.literal("§7Cliquer pour créditer §f" + cible)))
                     .withClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND,
                         "/economie admin give " + cible + " ")));
 
-            source.sendFeedback(() -> Text.literal("  " + ADMIN_TAG + "§b◆ §f§lVérification"), false);
-            source.sendFeedback(() -> Text.literal("  §7Joueur §8» ").append(nomCliquable), false);
-            source.sendFeedback(() -> Text.literal("  §7Solde  §8» §f§l" + fmt(solde) + " " + SHARD), false);
+            source.sendSuccess(() -> Component.literal("  " + ADMIN_TAG + "§b◆ §f§lVérification"), false);
+            source.sendSuccess(() -> Component.literal("  §7Joueur §8» ").append(nomCliquable), false);
+            source.sendSuccess(() -> Component.literal("  §7Solde  §8» §f§l" + fmt(solde) + " " + SHARD), false);
         }
-        source.sendFeedback(() -> Text.literal(SEP_DARK), false);
+        source.sendSuccess(() -> Component.literal(SEP_DARK), false);
         return 1;
     }
 
     // ── /economie admin reset-economy confirmer ───────────────────────────────
-    private static int executerResetEconomy(ServerCommandSource source) {
+    private static int executerResetEconomy(CommandSourceStack source) {
         LocalEconomy eco = LocalEconomy.getInstance();
         eco.resetAll();
         FirstJoinTracker.getInstance().resetAll();
 
         // Donner 500 ◆ immédiatement à tous les joueurs en ligne
-        for (ServerPlayerEntity p : source.getServer().getPlayerManager().getPlayerList()) {
+        for (ServerPlayer p : source.getServer().getPlayerList().getPlayers()) {
             String name = p.getName().getString();
             eco.addShards(name, 500, "Pécule de départ");
             FirstJoinTracker.getInstance().markReceived(name);
-            p.sendMessage(Text.literal(
+            p.sendSystemMessage(Component.literal(
                 "§6[Admin] §fL'économie a été réinitialisée. Tu reçois §e§l500 ◆§f de départ !"));
             NouvelleTerreBridge.sendBalanceToPlayer(p);
         }
 
-        source.sendFeedback(() -> Text.literal(SEP_RED), false);
-        source.sendFeedback(() -> Text.literal("  " + ADMIN_TAG + "§c§l⚠ Économie réinitialisée"), true);
-        source.sendFeedback(() -> Text.literal("  §7Soldes remis à §f§l0 ◆§7, 500 ◆ distribués aux joueurs en ligne."), false);
-        source.sendFeedback(() -> Text.literal("  §7Les joueurs hors ligne recevront §a§l500 ◆ §7à leur prochaine connexion."), false);
-        source.sendFeedback(() -> Text.literal(SEP_RED), false);
+        source.sendSuccess(() -> Component.literal(SEP_RED), false);
+        source.sendSuccess(() -> Component.literal("  " + ADMIN_TAG + "§c§l⚠ Économie réinitialisée"), true);
+        source.sendSuccess(() -> Component.literal("  §7Soldes remis à §f§l0 ◆§7, 500 ◆ distribués aux joueurs en ligne."), false);
+        source.sendSuccess(() -> Component.literal("  §7Les joueurs hors ligne recevront §a§l500 ◆ §7à leur prochaine connexion."), false);
+        source.sendSuccess(() -> Component.literal(SEP_RED), false);
         return 1;
     }
 

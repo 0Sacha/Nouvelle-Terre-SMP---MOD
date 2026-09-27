@@ -1,18 +1,27 @@
-# Nouvelle Terre — Mod Fabric 1.21.1 (tourne sur serveur NeoForge via Sinytra Connector)
+# Nouvelle Terre — Mod NeoForge natif 1.21.1 (branche `neoforge-natif-1.21.1`)
 
 Mod de bridge entre un serveur Minecraft SMP RP et un bot Discord (Railway).
 Lit ce fichier automatiquement pour avoir le contexte complet avant de coder.
 
+⚠ **Cette branche est un portage natif NeoForge** (Mojang mappings, event bus
+NeoForge, réseau via `RegisterPayloadHandlersEvent`) — pas de Sinytra Connector.
+Repartie de `fabric-1.21.1` (pas de l'ancien brouillon abandonné sur
+`neoforge-1.21.1`, obsolète). Build + tests manuels complets validés (voir
+`docs/NEOFORGE_PORT_SPEC.md` pour le détail de chaque point de passage Fabric
+→ NeoForge : réseau, entrypoint, events, mixins, items).
+⚠ **La branche `fabric-1.21.1` reste le développement de référence** — on peut
+y revenir à tout moment ; le choix définitif entre Connector et ce natif pour
+le serveur de production n'a pas encore été tranché.
+
 ## Portage 1.20.1 → 1.21.1 (2.0.0)
 
-⚠ **Le mod reste Fabric** (Yarn, Fabric API) — c'est le *serveur* qui passe en
-NeoForge. Le pont entre les deux est **Sinytra Connector** + **Forgified Fabric
-API**, à installer côté serveur (et client). Décision explicite de Sacha :
-un portage natif NeoForge (Mojang mappings, event bus NeoForge) a été commencé
-puis abandonné au profit de cette voie — moins de travail de maintenance, et
-Connector sert aussi à faire tourner `cottonmod` sans le porter deux fois.
-Le brouillon natif NeoForge reste sur la branche `neoforge-1.21.1` (commit
-`wip`, non fusionné) au cas où Connector se révélerait insuffisant.
+Contexte historique (valable pour la branche `fabric-1.21.1`) : le mod a
+d'abord été porté en Fabric 1.21.1, avec l'intention de le faire tourner sur
+un serveur NeoForge via **Sinytra Connector** + **Forgified Fabric API**. Un
+premier essai de portage natif avait alors été commencé puis abandonné au
+profit de cette voie. C'est ce premier essai (stale, 1.20.1) qui a été mis de
+côté — **pas** le portage natif actuel de cette branche, qui repart du code
+Fabric 1.21.1 terminé et est fonctionnellement à jour avec lui.
 
 Deux changements imposés par **Minecraft lui-même** (1.20.5+), indépendants du
 loader — c'est le seul vrai travail de ce portage, tout le reste est mécanique :
@@ -49,14 +58,19 @@ avec Fabric/NeoForge) :
   `RegistryEntry<StatusEffect>` — `.value()` pour retrouver l'ancien comportement.
 - `Scoreboard.addPlayerToTeam` renommé `addScoreHolderToTeam`.
 
-`gradle.properties` : Java 17 → 21 (imposé par 1.21.1, quel que soit le
-loader) via toolchain Gradle — aucun JDK 21 sur le poste de dev, `foojay-resolver`
-le récupère. `fabric-loom` 1.6.12 → 1.10.5, wrapper Gradle 8.8 → 8.14.5 (requis
-par Loom 1.10+). Yarn `1.21.1+build.3`, Loader `0.19.5`, Fabric API `0.116.17+1.21.1`.
+`gradle.properties` sur **cette branche** : Java 21 via toolchain Gradle (aucun
+JDK 21 sur le poste de dev, `foojay-resolver` le récupère), plugin
+`net.neoforged.moddev` 2.0.147, `neoforge_version=21.1.250`. Pas de Yarn, pas
+de Loom, pas de `fabric.mod.json` — `META-INF/neoforge.mods.toml` à la place,
+avec `modId="nouvelle_terre_bridge"` (underscore imposé par NeoForge) tout en
+gardant le namespace de ressources `nouvelle-terre-bridge` (items, réseau)
+inchangé pour ne pas perdre les Shards/Parchemins déjà en circulation.
+`mod_version` porte un qualificatif `+neoforge.N` pendant les tests en
+parallèle du JAR Fabric — voir « Convention de version ».
 
-⚠ **Cadmus n'a pas de build 1.21.1** (dernier NeoForge en 1.20.4) — retiré de
-`suggests` dans `fabric.mod.json`, l'intégration par réflexion reste en place
-mais ne trouvera rien tant qu'un remplaçant n'est pas choisi.
+⚠ **Cadmus n'a pas de build 1.21.1** (dernier NeoForge en 1.20.4) — l'intégration
+par réflexion reste en place mais ne trouvera rien tant qu'un remplaçant n'est
+pas choisi.
 
 ## Repos
 - Mod : `https://github.com/0Sacha/Nouvelle-Terre-SMP---MOD.git`
@@ -77,9 +91,10 @@ mais ne trouvera rien tant qu'un remplaçant n'est pas choisi.
 # (toolchain + foojay-resolver) si absent du poste.
 ```
 GitHub Action crée une Release automatique à chaque push sur `main`.
-Le mod tourne sur le **client ET le serveur** (`environment: "*"`) — les joueurs doivent installer le JAR Fabric côté client pour le GUI HDV/Bank/Registre.
-⚠ Le serveur tourne en **NeoForge** (Sinytra Connector + Forgified Fabric API) :
-le JAR reste un mod Fabric ordinaire, rien de spécifique à générer pour NeoForge.
+Le mod tourne sur le **client ET le serveur** — les joueurs doivent installer
+le JAR NeoForge côté client pour le GUI HDV/Bank/Registre.
+⚠ Sur cette branche, le JAR est un mod **NeoForge natif** — plus besoin de
+Sinytra Connector ni de Forgified Fabric API côté serveur ou client.
 
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0

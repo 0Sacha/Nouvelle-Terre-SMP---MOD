@@ -2,8 +2,8 @@ package com.nouvelleterrebridge.mixin;
 
 import com.mojang.authlib.GameProfile;
 import com.nouvelleterrebridge.MaintenanceMode;
-import net.minecraft.server.PlayerManager;
-import net.minecraft.text.Text;
+import net.minecraft.server.players.PlayerList;
+import net.minecraft.network.chat.Component;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -20,17 +20,17 @@ import java.net.SocketAddress;
  * de chunk, aucun message « a rejoint la partie », aucune donnée touchée. Un kick
  * après connexion l'aurait fait charger le monde pour rien.
  */
-@Mixin(PlayerManager.class)
+@Mixin(PlayerList.class)
 public abstract class PlayerManagerMixin {
 
-    @Inject(method = "checkCanJoin", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "canPlayerLogin", at = @At("HEAD"), cancellable = true)
     private void nt$refuserPendantMaintenance(SocketAddress address, GameProfile profile,
-                                              CallbackInfoReturnable<Text> cir) {
+                                              CallbackInfoReturnable<Component> cir) {
         if (!MaintenanceMode.estActif()) return;
 
-        PlayerManager self = (PlayerManager) (Object) this;
-        if (self.isOperator(profile)) return;   // les op gardent l'accès
+        PlayerList self = (PlayerList) (Object) this;
+        if (self.isOp(profile)) return;   // les op gardent l'accès
 
-        cir.setReturnValue(Text.literal("§6⚠ " + MaintenanceMode.getMessage()));
+        cir.setReturnValue(Component.literal("§6⚠ " + MaintenanceMode.getMessage()));
     }
 }

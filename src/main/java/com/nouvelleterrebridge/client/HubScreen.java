@@ -4,12 +4,10 @@ import com.nouvelleterrebridge.network.NtNet;
 
 import com.nouvelleterrebridge.network.HubNetworking;
 import io.netty.buffer.Unpooled;
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.text.Text;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -18,7 +16,6 @@ import java.util.List;
  * Hub du Parchemin — carte électronique donnant accès aux fenêtres du mod.
  * Chaque entrée est une « puce » reliée au bus central par des pistes.
  */
-@Environment(EnvType.CLIENT)
 public class HubScreen extends Screen {
 
     // ── Couleurs (DA carte électronique) ──────────────────────────────────────
@@ -63,11 +60,11 @@ public class HubScreen extends Screen {
     private final List<int[]> chipBounds = new ArrayList<>();
 
     public HubScreen() {
-        super(Text.literal("Parchemin — Nouvelle Terre"));
+        super(Component.literal("Parchemin — Nouvelle Terre"));
     }
 
     @Override
-    public boolean shouldPause() {
+    public boolean isPauseScreen() {
         return false;
     }
 
@@ -79,7 +76,13 @@ public class HubScreen extends Screen {
     }
 
     @Override
-    public void render(DrawContext ctx, int mx, int my, float delta) {
+    public void renderBackground(GuiGraphics ctx, int mx, int my, float delta) {
+        // No-op — cet écran dessine son propre fond ; super.render() (appelé en dernier
+        // pour les widgets vanilla) réappliquerait sinon flou + texture menu par-dessus.
+    }
+
+    @Override
+    public void render(GuiGraphics ctx, int mx, int my, float delta) {
         ctx.fill(0, 0, width, height, 0x78000000);
         computePanel();
 
@@ -92,14 +95,14 @@ public class HubScreen extends Screen {
         renderTraces(ctx);
         renderChips(ctx, mx, my);
 
-        ctx.drawCenteredTextWithShadow(textRenderer,
+        ctx.drawCenteredString(font,
             "§8Clic droit sur le parchemin à tout moment",
             px + pw / 2, py + ph - 16, C_DIM);
 
         super.render(ctx, mx, my, delta);
     }
 
-    private void renderHeader(DrawContext ctx) {
+    private void renderHeader(GuiGraphics ctx) {
         ctx.fill(px + 1, py + 1, px + pw - 1, py + TOP_H, C_PANEL);
         ctx.fill(px + 1, py + TOP_H - 1, px + pw - 1, py + TOP_H, C_TRACE);
 
@@ -109,12 +112,12 @@ public class HubScreen extends Screen {
             ctx.fill(cx, py + 15, cx + 4, py + 19, C_GOLD);
         }
 
-        ctx.drawText(textRenderer, "PARCHEMIN", px + PAD + 28, py + 10, C_GOLD, false);
-        ctx.drawText(textRenderer, "Terminal Nouvelle Terre", px + PAD + 28, py + 22, C_DIM, false);
+        ctx.drawString(font, "PARCHEMIN", px + PAD + 28, py + 10, C_GOLD, false);
+        ctx.drawString(font, "Terminal Nouvelle Terre", px + PAD + 28, py + 22, C_DIM, false);
     }
 
     /** Bus central + dérivations vers chaque rangée de puces. */
-    private void renderTraces(DrawContext ctx) {
+    private void renderTraces(GuiGraphics ctx) {
         int busY = py + TOP_H + 6;
         ctx.fill(px + PAD, busY, px + pw - PAD, busY + 1, C_TRACE);
         for (int i = 0; i <= COLS; i++) {
@@ -124,7 +127,7 @@ public class HubScreen extends Screen {
         }
     }
 
-    private void renderChips(DrawContext ctx, int mx, int my) {
+    private void renderChips(GuiGraphics ctx, int mx, int my) {
         chipBounds.clear();
         int gridX = px + PAD;
         int gridY = py + TOP_H + 16;
@@ -151,19 +154,19 @@ public class HubScreen extends Screen {
             }
 
             // Glyphe + libellés
-            ctx.drawCenteredTextWithShadow(textRenderer, e.glyph(),
+            ctx.drawCenteredString(font, e.glyph(),
                 cx + chipW / 2, cy + 10, hov ? C_GOLD : C_TRACE_H);
-            ctx.drawCenteredTextWithShadow(textRenderer, e.label(),
+            ctx.drawCenteredString(font, e.label(),
                 cx + chipW / 2, cy + 26, hov ? C_WHITE : C_MID);
             String hint = truncate(e.hint(), chipW - 8);
-            ctx.drawCenteredTextWithShadow(textRenderer, hint,
+            ctx.drawCenteredString(font, hint,
                 cx + chipW / 2, cy + 40, C_DIM);
 
             chipBounds.add(new int[]{cx, cy, chipW, CHIP_H, e.action()});
         }
     }
 
-    private void drawBorder(DrawContext ctx, int x, int y, int w, int h, int color) {
+    private void drawBorder(GuiGraphics ctx, int x, int y, int w, int h, int color) {
         ctx.fill(x, y, x + w, y + 1, color);
         ctx.fill(x, y + h - 1, x + w, y + h, color);
         ctx.fill(x, y, x + 1, y + h, color);
@@ -171,20 +174,20 @@ public class HubScreen extends Screen {
     }
 
     private String truncate(String s, int maxW) {
-        if (textRenderer.getWidth(s) <= maxW) return s;
+        if (font.width(s) <= maxW) return s;
         StringBuilder sb = new StringBuilder(s);
-        while (sb.length() > 1 && textRenderer.getWidth(sb + "…") > maxW) sb.deleteCharAt(sb.length() - 1);
+        while (sb.length() > 1 && font.width(sb + "…") > maxW) sb.deleteCharAt(sb.length() - 1);
         return sb + "…";
     }
 
     @Override
     public boolean mouseClicked(double mx0, double my0, int btn) {
         int x = (int) mx0, y = (int) my0;
-        if (x < px || x > px + pw || y < py || y > py + ph) { close(); return true; }
+        if (x < px || x > px + pw || y < py || y > py + ph) { onClose(); return true; }
 
         for (int[] b : chipBounds) {
             if (x >= b[0] && x < b[0] + b[2] && y >= b[1] && y < b[1] + b[3]) {
-                PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+                FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
                 buf.writeInt(b[4]);
                 NtNet.versServeur(HubNetworking.HUB_ACTION, buf);
                 return true;

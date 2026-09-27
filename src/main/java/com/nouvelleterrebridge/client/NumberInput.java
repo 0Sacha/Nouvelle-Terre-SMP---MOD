@@ -1,9 +1,7 @@
 package com.nouvelleterrebridge.client;
 
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphics;
 
 /**
  * Champ numérique partagé par tous les écrans du mod (prix, quantités, montants).
@@ -19,7 +17,6 @@ import net.minecraft.client.gui.DrawContext;
  * `mouseClicked` : recalculer les positions côté clic les désynchroniserait dès
  * que la mise en page bouge.
  */
-@Environment(EnvType.CLIENT)
 public class NumberInput {
 
     private static final int C_BG      = 0xFF14161A;
@@ -86,7 +83,7 @@ public class NumberInput {
 
     // ── Rendu ─────────────────────────────────────────────────────────────────
 
-    public void render(DrawContext ctx, TextRenderer tr, int x, int y, int w, int mx, int my) {
+    public void render(GuiGraphics ctx, Font tr, int x, int y, int w, int mx, int my) {
         lastX = x; lastY = y; lastW = w;
 
         // Boîte de saisie — bordure or quand le champ a le focus clavier
@@ -100,7 +97,7 @@ public class NumberInput {
         boolean vide = saisie.isEmpty();
         String shown = vide ? placeholder : saisie;
         if (focused) shown += "_";
-        ctx.drawText(tr, shown, x + 8, y + (BOX_H - tr.fontHeight) / 2, vide ? C_DIM : C_WHITE, false);
+        ctx.drawString(tr, shown, x + 8, y + (BOX_H - tr.lineHeight) / 2, vide ? C_DIM : C_WHITE, false);
 
         // Rangée Min / Max
         int by = y + BOX_H + 4;
@@ -109,11 +106,11 @@ public class NumberInput {
         renderBouton(ctx, tr, x + half, by, w - half,      "Max", mx, my);
     }
 
-    private void renderBouton(DrawContext ctx, TextRenderer tr, int x, int y, int w, String label, int mx, int my) {
+    private void renderBouton(GuiGraphics ctx, Font tr, int x, int y, int w, String label, int mx, int my) {
         boolean hov = mx >= x && mx < x + w && my >= y && my < y + STEP_H;
         ctx.fill(x, y, x + w, y + STEP_H, hov ? C_HOVER : C_SURFACE);
         ctx.fill(x, y, x + w, y + 1, hov ? C_GOLD : C_BORDER);
-        ctx.drawCenteredTextWithShadow(tr, label, x + w / 2, y + (STEP_H - tr.fontHeight) / 2,
+        ctx.drawCenteredString(tr, label, x + w / 2, y + (STEP_H - tr.lineHeight) / 2,
             hov ? C_GOLD : C_MID);
     }
 

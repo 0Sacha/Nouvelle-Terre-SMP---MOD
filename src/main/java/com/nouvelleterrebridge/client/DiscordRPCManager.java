@@ -1,10 +1,7 @@
 package com.nouvelleterrebridge.client;
 
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
-import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.Minecraft;
 
-@Environment(EnvType.CLIENT)
 public class DiscordRPCManager {
 
     // !! Remplacer par l'Application ID de votre app Discord Developer Portal !!
@@ -59,10 +56,10 @@ public class DiscordRPCManager {
     }
 
     private void updatePresence() {
-        MinecraftClient mc = MinecraftClient.getInstance();
+        Minecraft mc = Minecraft.getInstance();
         int count = 0;
-        if (mc.getNetworkHandler() != null) {
-            count = mc.getNetworkHandler().getPlayerList().size();
+        if (mc.getConnection() != null) {
+            count = mc.getConnection().getOnlinePlayers().size();
         }
         String state = count > 0
             ? count + " joueur" + (count > 1 ? "s" : "") + " en ligne"

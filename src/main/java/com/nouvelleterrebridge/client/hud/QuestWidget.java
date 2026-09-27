@@ -1,8 +1,8 @@
 package com.nouvelleterrebridge.client.hud;
 
 import com.nouvelleterrebridge.client.ClientConfig;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,26 +35,26 @@ public class QuestWidget extends HudWidget {
     }
 
     @Override
-    public int getWidth(MinecraftClient mc) {
+    public int getWidth(Minecraft mc) {
         if (activeLabels.isEmpty()) return 80;
         int max = 0;
         for (int i = 0; i < activeLabels.size(); i++)
-            max = Math.max(max, mc.textRenderer.getWidth(buildLine(i)));
+            max = Math.max(max, mc.font.width(buildLine(i)));
         return max + 12;
     }
 
     @Override
-    public int getHeight(MinecraftClient mc) {
+    public int getHeight(Minecraft mc) {
         int n = activeLabels.size();
         return n == 0 ? 13 : n * 13 + 2;
     }
 
     @Override
-    public void render(DrawContext ctx, MinecraftClient mc) {
+    public void render(GuiGraphics ctx, Minecraft mc) {
         if (activeLabels.isEmpty()) return;
 
-        int x = getPixelX(mc.getWindow().getScaledWidth(), mc);
-        int y = getPixelY(mc.getWindow().getScaledHeight(), mc);
+        int x = getPixelX(mc.getWindow().getGuiScaledWidth(), mc);
+        int y = getPixelY(mc.getWindow().getGuiScaledHeight(), mc);
         int w = getWidth(mc);
         int h = getHeight(mc);
 
@@ -64,7 +64,7 @@ public class QuestWidget extends HudWidget {
         ctx.fill(x, y, x + 2, y + h, firstGroup ? 0xFF5BA8D4 : C_GOLD);
 
         for (int i = 0; i < activeLabels.size(); i++) {
-            ctx.drawText(mc.textRenderer, buildLine(i), x + 6, y + 2 + i * 13, C_WHITE, false);
+            ctx.drawString(mc.font, buildLine(i), x + 6, y + 2 + i * 13, C_WHITE, false);
         }
     }
 

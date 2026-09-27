@@ -5,19 +5,16 @@ import com.nouvelleterrebridge.network.NtNet;
 import com.nouvelleterrebridge.economy.ShardDenominations;
 import com.nouvelleterrebridge.network.BankNetworking;
 import io.netty.buffer.Unpooled;
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.item.ItemStack;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.text.Text;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.chat.Component;
 
 import java.text.SimpleDateFormat;
 import java.util.*;
 
-@Environment(EnvType.CLIENT)
 public class BankScreen extends Screen {
 
     // ── Records ────────────────────────────────────────────────────────────────
@@ -94,7 +91,7 @@ public class BankScreen extends Screen {
     // Classement : scroll + recherche
     private int lbScroll = 0;
     private int lbMaxScroll = 0;
-    private TextFieldWidget lbSearchField;
+    private EditBox lbSearchField;
     private int tabsStartX = 0;
     private long screenOpenTime;
 
@@ -108,7 +105,7 @@ public class BankScreen extends Screen {
     private int     trfDropScroll  = 0;
     private String  trfTarget      = "";
     private int     trfAmount      = 0;
-    private TextFieldWidget trfAmountField;
+    private EditBox trfAmountField;
     private int trfDropX = -1, trfDropY = -1, trfDropW = 0;
     private int trfSendBtnY = -1;
 
@@ -117,8 +114,8 @@ public class BankScreen extends Screen {
     private String  recurTarget     = "";
     private int     recurAmount     = 0;
     private int     recurIntervalMins = 60;
-    private TextFieldWidget recurAmountField;
-    private TextFieldWidget recurIntervalMinsField;
+    private EditBox recurAmountField;
+    private EditBox recurIntervalMinsField;
     private int recurDropX = -1, recurDropY = -1, recurDropW = 0;
     private int recurCreateBtnY = -1;
     private final List<Integer> recurCancelBtnY = new ArrayList<>();
@@ -131,7 +128,7 @@ public class BankScreen extends Screen {
     private int     borrowerDropScroll = 0;
     private int     modalDurationIdx   = 3; // 7 jours par défaut
     private int     modalPenaltyIdx    = 2; // 15 ◆/j par défaut
-    private TextFieldWidget modalAmountField;
+    private EditBox modalAmountField;
 
     // ── Modal — retrait en Shards physiques ────────────────────────────────────
 
@@ -173,7 +170,7 @@ public class BankScreen extends Screen {
                       List<LoanData> loansAsLender, List<LoanData> loansAsBorrower,
                       List<LoanRequestData> requestsAsLender, List<LoanRequestData> requestsAsBorrower,
                       List<String> knownPlayers, List<RecurringData> recurring) {
-        super(Text.literal("Banque — Nouvelle Terre"));
+        super(Component.literal("Banque — Nouvelle Terre"));
         this.balance            = balance;
         this.ticksReward        = ticksReward;
         this.transactions       = new ArrayList<>(transactions);
@@ -196,37 +193,37 @@ public class BankScreen extends Screen {
     protected void init() {
         super.init();
         recomputeWin();
-        modalAmountField = new TextFieldWidget(textRenderer, 0, -200, 160, 18, Text.empty());
+        modalAmountField = new EditBox(font, 0, -200, 160, 18, Component.empty());
         modalAmountField.setMaxLength(8);
-        modalAmountField.setPlaceholder(Text.literal("Montant..."));
-        addSelectableChild(modalAmountField);
+        modalAmountField.setHint(Component.literal("Montant..."));
+        addRenderableWidget(modalAmountField);
 
         withdrawInput.setPlaceholder("Montant...");
         depositInput.setPlaceholder("Montant... (Max = tout)");
 
-        lbSearchField = new TextFieldWidget(textRenderer, 0, -200, 160, 18, Text.empty());
-        lbSearchField.setDrawsBackground(false);
-        lbSearchField.setPlaceholder(Text.literal("Rechercher un joueur..."));
-        lbSearchField.setChangedListener(s -> lbScroll = 0);
-        addSelectableChild(lbSearchField);
+        lbSearchField = new EditBox(font, 0, -200, 160, 18, Component.empty());
+        lbSearchField.setBordered(false);
+        lbSearchField.setHint(Component.literal("Rechercher un joueur..."));
+        lbSearchField.setResponder(s -> lbScroll = 0);
+        addRenderableWidget(lbSearchField);
 
-        trfAmountField = new TextFieldWidget(textRenderer, 0, -200, 100, 18, Text.empty());
+        trfAmountField = new EditBox(font, 0, -200, 100, 18, Component.empty());
         trfAmountField.setMaxLength(8);
-        trfAmountField.setPlaceholder(Text.literal("Montant..."));
-        trfAmountField.setChangedListener(s -> { try { trfAmount = Math.max(0, Integer.parseInt(s.trim())); } catch (NumberFormatException ignored) { trfAmount = 0; } });
-        addSelectableChild(trfAmountField);
+        trfAmountField.setHint(Component.literal("Montant..."));
+        trfAmountField.setResponder(s -> { try { trfAmount = Math.max(0, Integer.parseInt(s.trim())); } catch (NumberFormatException ignored) { trfAmount = 0; } });
+        addRenderableWidget(trfAmountField);
 
-        recurAmountField = new TextFieldWidget(textRenderer, 0, -200, 100, 18, Text.empty());
+        recurAmountField = new EditBox(font, 0, -200, 100, 18, Component.empty());
         recurAmountField.setMaxLength(8);
-        recurAmountField.setPlaceholder(Text.literal("Montant..."));
-        recurAmountField.setChangedListener(s -> { try { recurAmount = Math.max(0, Integer.parseInt(s.trim())); } catch (NumberFormatException ignored) { recurAmount = 0; } });
-        addSelectableChild(recurAmountField);
+        recurAmountField.setHint(Component.literal("Montant..."));
+        recurAmountField.setResponder(s -> { try { recurAmount = Math.max(0, Integer.parseInt(s.trim())); } catch (NumberFormatException ignored) { recurAmount = 0; } });
+        addRenderableWidget(recurAmountField);
 
-        recurIntervalMinsField = new TextFieldWidget(textRenderer, 0, -200, 100, 18, Text.empty());
+        recurIntervalMinsField = new EditBox(font, 0, -200, 100, 18, Component.empty());
         recurIntervalMinsField.setMaxLength(6);
-        recurIntervalMinsField.setText("60");
-        recurIntervalMinsField.setChangedListener(s -> { try { recurIntervalMins = Math.max(1, Integer.parseInt(s.trim())); } catch (NumberFormatException ignored) { recurIntervalMins = 0; } });
-        addSelectableChild(recurIntervalMinsField);
+        recurIntervalMinsField.setValue("60");
+        recurIntervalMinsField.setResponder(s -> { try { recurIntervalMins = Math.max(1, Integer.parseInt(s.trim())); } catch (NumberFormatException ignored) { recurIntervalMins = 0; } });
+        addRenderableWidget(recurIntervalMinsField);
     }
 
     private void recomputeWin() {
@@ -278,7 +275,13 @@ public class BankScreen extends Screen {
     // ── Render principal ────────────────────────────────────────────────────────
 
     @Override
-    public void render(DrawContext ctx, int mx, int my, float delta) {
+    public void renderBackground(GuiGraphics ctx, int mx, int my, float delta) {
+        // No-op — cet écran dessine son propre fond ; super.render() (appelé en dernier
+        // pour les widgets vanilla) réappliquerait sinon flou + texture menu par-dessus.
+    }
+
+    @Override
+    public void render(GuiGraphics ctx, int mx, int my, float delta) {
         ctx.fill(0, 0, width, height, 0x78000000);
         recomputeWin();
         ctx.fill(winX + 3, winY + 3, winX + winW + 3, winY + winH + 3, 0x40000000);
@@ -288,6 +291,17 @@ public class BankScreen extends Screen {
 
         int cy = winY + TOP_H + PAD;
         int ch = winH - TOP_H - PAD * 2;
+
+        // Champs des autres onglets — masqués tant que leur onglet n'est pas actif,
+        // sinon ils restent affichés à leur dernière position (super.render() les
+        // dessine quel que soit l'onglet courant, voir HdvScreen.searchField).
+        if (activeTab != Tab.LEADERBOARD && lbSearchField != null) lbSearchField.setY(-200);
+        if (activeTab != Tab.TRANSFERS) {
+            if (trfAmountField != null) trfAmountField.setY(-200);
+            if (recurAmountField != null) recurAmountField.setY(-200);
+            if (recurIntervalMinsField != null) recurIntervalMinsField.setY(-200);
+        }
+
         switch (activeTab) {
             case ACCOUNT     -> renderAccountTab(ctx, mx, my, cy, ch);
             case ECONOMY     -> renderEconomyTab(ctx, mx, my, cy, ch);
@@ -343,59 +357,59 @@ public class BankScreen extends Screen {
 
     // ── Top bar ────────────────────────────────────────────────────────────────
 
-    private void renderTopBar(DrawContext ctx, int mx, int my) {
+    private void renderTopBar(GuiGraphics ctx, int mx, int my) {
         ctx.fill(winX, winY, winX + winW, winY + TOP_H, 0xE01B1D22);
         ctx.fill(winX, winY + TOP_H - 1, winX + winW, winY + TOP_H, C_BORDER);
 
-        int ty = winY + (TOP_H - textRenderer.fontHeight) / 2;
+        int ty = winY + (TOP_H - font.lineHeight) / 2;
         int tx = winX + PAD;
 
-        HubBackButton.render(ctx, textRenderer, tx, winY + (TOP_H - HubBackButton.H) / 2, mx, my);
+        HubBackButton.render(ctx, font, tx, winY + (TOP_H - HubBackButton.H) / 2, mx, my);
         tx += HubBackButton.W + 8;
 
-        ctx.drawText(textRenderer, "◆", tx, ty, C_GOLD, false);
-        tx += textRenderer.getWidth("◆") + 6;
-        ctx.drawText(textRenderer, "Banque", tx, ty, C_WHITE, false);
-        tx += textRenderer.getWidth("Banque") + 8;
+        ctx.drawString(font, "◆", tx, ty, C_GOLD, false);
+        tx += font.width("◆") + 6;
+        ctx.drawString(font, "Banque", tx, ty, C_WHITE, false);
+        tx += font.width("Banque") + 8;
         ctx.fill(tx, winY + (TOP_H - 16) / 2, tx + 1, winY + (TOP_H + 16) / 2, C_BORDER);
         tx += 9;
-        ctx.drawText(textRenderer, "Nouvelle Terre", tx, ty, C_MID, false);
-        tx += textRenderer.getWidth("Nouvelle Terre") + 20;
+        ctx.drawString(font, "Nouvelle Terre", tx, ty, C_MID, false);
+        tx += font.width("Nouvelle Terre") + 20;
 
         tabsStartX = tx;
 
         for (Tab tab : Tab.values()) {
             boolean active = activeTab == tab;
-            int tw = textRenderer.getWidth(tab.label) + 18;
+            int tw = font.width(tab.label) + 18;
             boolean hov = mx >= tx && mx <= tx + tw && my >= winY && my <= winY + TOP_H - 1;
             int tabY = winY + (TOP_H - 22) / 2;
             if (active) {
                 ctx.fill(tx, tabY, tx + tw, tabY + 22, C_GOLD);
-                ctx.drawText(textRenderer, tab.label,
-                    tx + tw / 2 - textRenderer.getWidth(tab.label) / 2, tabY + 7, C_BG, false);
+                ctx.drawString(font, tab.label,
+                    tx + tw / 2 - font.width(tab.label) / 2, tabY + 7, C_BG, false);
             } else if (hov) {
                 ctx.fill(tx, tabY, tx + tw, tabY + 22, C_HOVER);
-                ctx.drawCenteredTextWithShadow(textRenderer, tab.label, tx + tw / 2, tabY + 7, C_WHITE);
+                ctx.drawCenteredString(font, tab.label, tx + tw / 2, tabY + 7, C_WHITE);
             } else {
-                ctx.drawCenteredTextWithShadow(textRenderer, tab.label, tx + tw / 2, tabY + 7, C_DIM);
+                ctx.drawCenteredString(font, tab.label, tx + tw / 2, tabY + 7, C_DIM);
             }
             tx += tw + 4;
         }
 
         // Chip solde
         String bal = fmt(balance) + " ◆";
-        int bw = textRenderer.getWidth(bal) + 18;
+        int bw = font.width(bal) + 18;
         int bx = winX + winW - bw - PAD;
         int by = winY + (TOP_H - 20) / 2;
         boolean balHov = mx >= bx && mx < bx + bw && my >= winY && my <= winY + TOP_H - 1;
         ctx.fill(bx, by, bx + bw, by + 20, balHov ? C_HOVER : C_STRIP);
         ctx.fill(bx, by, bx + 2, by + 20, balance < 0 ? C_RED : C_GOLD);
-        ctx.drawText(textRenderer, bal, bx + 10, by + 6, balance < 0 ? C_RED : C_GOLD, false);
+        ctx.drawString(font, bal, bx + 10, by + 6, balance < 0 ? C_RED : C_GOLD, false);
     }
 
     // ── Onglet Compte ──────────────────────────────────────────────────────────
 
-    private void renderAccountTab(DrawContext ctx, int mx, int my, int cy, int ch) {
+    private void renderAccountTab(GuiGraphics ctx, int mx, int my, int cy, int ch) {
         int px = winX + PAD, pw = winW - PAD * 2;
 
         // Solde large
@@ -404,31 +418,31 @@ public class BankScreen extends Screen {
         ctx.fill(px, cy, px + 3, cy + headerH, balance < 0 ? C_RED : C_GOLD);
         ctx.fill(px, cy + headerH - 1, px + pw, cy + headerH, C_BORDER);
         String balStr = fmt(balance) + " ◆";
-        ctx.drawText(textRenderer, balStr,
-            px + (pw - textRenderer.getWidth(balStr)) / 2,
-            cy + (headerH - textRenderer.fontHeight) / 2,
+        ctx.drawString(font, balStr,
+            px + (pw - font.width(balStr)) / 2,
+            cy + (headerH - font.lineHeight) / 2,
             balance < 0 ? C_RED : C_GOLD, false);
 
         // Bouton "Retirer en Shards" (monnaie physique)
         String wLbl = "Retirer en Shards ◆";
-        wBtnW = textRenderer.getWidth(wLbl) + 16;
+        wBtnW = font.width(wLbl) + 16;
         wBtnX = px + pw - wBtnW - 10;
         wBtnY = cy + (headerH - 22) / 2;
         boolean wHov = mx >= wBtnX && mx < wBtnX + wBtnW && my >= wBtnY && my < wBtnY + 22;
         ctx.fill(wBtnX, wBtnY, wBtnX + wBtnW, wBtnY + 22, wHov ? C_HOVER : C_SURFACE);
         ctx.fill(wBtnX, wBtnY, wBtnX + wBtnW, wBtnY + 1, C_GOLD);
-        ctx.drawText(textRenderer, wLbl, wBtnX + 8, wBtnY + 7, C_GOLD, false);
+        ctx.drawString(font, wLbl, wBtnX + 8, wBtnY + 7, C_GOLD, false);
 
         // Bouton "Déposer ◆" — dépose le montant choisi d'un coup, au lieu de devoir
         // faire un clic droit sur chaque pile
         String dLbl = "Déposer des Shards ◆";
-        dBtnW = textRenderer.getWidth(dLbl) + 16;
+        dBtnW = font.width(dLbl) + 16;
         dBtnX = wBtnX - dBtnW - 6;
         dBtnY = wBtnY;
         boolean dHov = mx >= dBtnX && mx < dBtnX + dBtnW && my >= dBtnY && my < dBtnY + 22;
         ctx.fill(dBtnX, dBtnY, dBtnX + dBtnW, dBtnY + 22, dHov ? C_HOVER : C_SURFACE);
         ctx.fill(dBtnX, dBtnY, dBtnX + dBtnW, dBtnY + 1, C_GREEN);
-        ctx.drawText(textRenderer, dLbl, dBtnX + 8, dBtnY + 7, C_GREEN, false);
+        ctx.drawString(font, dLbl, dBtnX + 8, dBtnY + 7, C_GREEN, false);
 
         cy += headerH + GAP;
 
@@ -439,13 +453,13 @@ public class BankScreen extends Screen {
         ctx.fill(px, cy, px + pw, cy + cardH, C_PANEL);
         ctx.fill(px, cy, px + 3, cy + cardH, C_GOLD);
         ctx.fill(px, cy + cardH - 1, px + pw, cy + cardH, C_BORDER);
-        ctx.drawText(textRenderer, "RECOMPENSE — +5 ◆ par 30 min de jeu", px + 12, cy + 8, C_DIM, false);
+        ctx.drawString(font, "RECOMPENSE — +5 ◆ par 30 min de jeu", px + 12, cy + 8, C_DIM, false);
         int barW = pw - 30;
         ctx.fill(px + 12, cy + 26, px + 12 + barW, cy + 31, C_BORDER);
         int prog = (int)(barW * Math.max(0f, Math.min(1f, 1f - rewardTicks / 36000f)));
         ctx.fill(px + 12, cy + 26, px + 12 + prog, cy + 31, C_GOLD);
         boolean ready = rewardTicks == 0;
-        ctx.drawText(textRenderer, ready ? "Recompense disponible !" : "Dans " + ticksToTime(rewardTicks),
+        ctx.drawString(font, ready ? "Recompense disponible !" : "Dans " + ticksToTime(rewardTicks),
             px + 12, cy + 38, ready ? C_GOLD : C_MID, false);
         cy += cardH + GAP;
 
@@ -474,15 +488,15 @@ public class BankScreen extends Screen {
             || type == 9;                      // LOAN_PENALTY
     }
 
-    private void renderTxColumn(DrawContext ctx, int x, int y, int w, int h,
+    private void renderTxColumn(GuiGraphics ctx, int x, int y, int w, int h,
                                 String titre, List<TxData> list) {
         ctx.fill(x, y, x + w, y + h, C_PANEL);
         ctx.fill(x, y, x + 3, y + h, C_BORDER);
         ctx.fill(x, y + h - 1, x + w, y + h, C_BORDER);
-        ctx.drawText(textRenderer, titre + " (" + list.size() + ")", x + 12, y + 8, C_DIM, false);
+        ctx.drawString(font, titre + " (" + list.size() + ")", x + 12, y + 8, C_DIM, false);
 
         if (list.isEmpty()) {
-            ctx.drawCenteredTextWithShadow(textRenderer, "Aucune", x + w / 2, y + h / 2, C_DIM);
+            ctx.drawCenteredString(font, "Aucune", x + w / 2, y + h / 2, C_DIM);
             return;
         }
 
@@ -497,15 +511,15 @@ public class BankScreen extends Screen {
             int accent = (tx.type() == 9) ? C_RED : (isIn ? C_GREEN : C_RED);
             ctx.fill(x + 12, ry + 2, x + 15, ry + rowH - 2, accent);
             String amtStr = (isIn ? "+" : "-") + fmt(tx.amount()) + " ◆";
-            int amtW = textRenderer.getWidth(amtStr);
-            ctx.drawText(textRenderer, truncate(tx.label(), w - amtW - 40), x + 20, ry + 4, C_MID, false);
-            ctx.drawText(textRenderer, amtStr, x + w - amtW - 12, ry + 4, isIn ? C_GREEN : C_RED, false);
+            int amtW = font.width(amtStr);
+            ctx.drawString(font, truncate(tx.label(), w - amtW - 40), x + 20, ry + 4, C_MID, false);
+            ctx.drawString(font, amtStr, x + w - amtW - 12, ry + 4, isIn ? C_GREEN : C_RED, false);
         }
     }
 
     // ── Onglet Economie ────────────────────────────────────────────────────────
 
-    private void renderEconomyTab(DrawContext ctx, int mx, int my, int cy, int ch) {
+    private void renderEconomyTab(GuiGraphics ctx, int mx, int my, int cy, int ch) {
         int px = winX + PAD, pw = winW - PAD * 2;
         int cardH = 64, cardW = (pw - GAP) / 2;
 
@@ -522,20 +536,20 @@ public class BankScreen extends Screen {
             "SOLDE MOYEN", fmt(avg) + " ◆", C_MID);
     }
 
-    private void renderStatCard(DrawContext ctx, int x, int y, int w, int h,
+    private void renderStatCard(GuiGraphics ctx, int x, int y, int w, int h,
                                 int accent, String title, String value, int valueColor) {
         ctx.fill(x, y, x + w, y + h, C_PANEL);
         ctx.fill(x, y, x + 3, y + h, accent);
         ctx.fill(x, y + h - 1, x + w, y + h, C_BORDER);
-        ctx.drawText(textRenderer, title, x + 12, y + 14, C_DIM, false);
-        ctx.drawText(textRenderer, value, x + 12, y + 40, valueColor, false);
+        ctx.drawString(font, title, x + 12, y + 14, C_DIM, false);
+        ctx.drawString(font, value, x + 12, y + 40, valueColor, false);
     }
 
     // ── Onglet Classement ──────────────────────────────────────────────────────
 
-    private void renderLeaderboardTab(DrawContext ctx, int mx, int my, int cy, int ch) {
+    private void renderLeaderboardTab(GuiGraphics ctx, int mx, int my, int cy, int ch) {
         int px = winX + PAD, pw = winW - PAD * 2;
-        String me = client != null && client.player != null ? client.player.getName().getString() : "";
+        String me = this.minecraft != null && this.minecraft.player != null ? this.minecraft.player.getName().getString() : "";
         int top = cy;
 
         // Barre de recherche
@@ -552,15 +566,15 @@ public class BankScreen extends Screen {
         // En-tête
         ctx.fill(px, cy, px + pw, cy + 24, C_PANEL);
         ctx.fill(px, cy + 23, px + pw, cy + 24, C_BORDER);
-        ctx.drawText(textRenderer, "#",       px + 12,  cy + 7, C_DIM, false);
-        ctx.drawText(textRenderer, "Joueur",  px + 52,  cy + 7, C_DIM, false);
+        ctx.drawString(font, "#",       px + 12,  cy + 7, C_DIM, false);
+        ctx.drawString(font, "Joueur",  px + 52,  cy + 7, C_DIM, false);
         String hdSolde = "Solde";
-        ctx.drawText(textRenderer, hdSolde, px + pw - textRenderer.getWidth(hdSolde) - 12, cy + 7, C_DIM, false);
+        ctx.drawString(font, hdSolde, px + pw - font.width(hdSolde) - 12, cy + 7, C_DIM, false);
         cy += 24;
 
         // Le rang affiché reste celui du classement complet : filtrer ne doit pas
         // faire croire à un joueur qu'il est premier parce qu'il est seul à l'écran.
-        String q = lbSearchField != null ? lbSearchField.getText().trim().toLowerCase() : "";
+        String q = lbSearchField != null ? lbSearchField.getValue().trim().toLowerCase() : "";
         List<Integer> visibles = new ArrayList<>();
         for (int i = 0; i < leaderboard.size(); i++)
             if (q.isEmpty() || leaderboard.get(i).name().toLowerCase().contains(q)) visibles.add(i);
@@ -572,7 +586,7 @@ public class BankScreen extends Screen {
         lbScroll    = Math.max(0, Math.min(lbScroll, lbMaxScroll));
 
         if (visibles.isEmpty()) {
-            ctx.drawCenteredTextWithShadow(textRenderer, "Aucun joueur trouvé", px + pw / 2, cy + 20, C_DIM);
+            ctx.drawCenteredString(font, "Aucun joueur trouvé", px + pw / 2, cy + 20, C_DIM);
             return;
         }
 
@@ -589,12 +603,12 @@ public class BankScreen extends Screen {
             if (isMe) ctx.fill(px, ry, px + 3, ry + rowH, C_GOLD);
             ctx.fill(px, ry + rowH - 1, px + listW, ry + rowH, C_BORDER);
             int rankColor = i == 0 ? C_GOLD : (i == 1 ? 0xFFC0C0C0 : (i == 2 ? 0xFFCD7F32 : C_DIM));
-            ctx.drawText(textRenderer, "#" + (i + 1), px + 12, ry + (rowH - textRenderer.fontHeight) / 2, rankColor, false);
-            ctx.drawText(textRenderer, e.name(), px + 52, ry + (rowH - textRenderer.fontHeight) / 2,
+            ctx.drawString(font, "#" + (i + 1), px + 12, ry + (rowH - font.lineHeight) / 2, rankColor, false);
+            ctx.drawString(font, e.name(), px + 52, ry + (rowH - font.lineHeight) / 2,
                 isMe ? C_GOLD : C_WHITE, false);
             String balStr = fmt(e.balance()) + " ◆";
-            ctx.drawText(textRenderer, balStr, px + listW - textRenderer.getWidth(balStr) - 12,
-                ry + (rowH - textRenderer.fontHeight) / 2, C_GOLD, false);
+            ctx.drawString(font, balStr, px + listW - font.width(balStr) - 12,
+                ry + (rowH - font.lineHeight) / 2, C_GOLD, false);
         }
         ctx.disableScissor();
 
@@ -609,24 +623,24 @@ public class BankScreen extends Screen {
 
     // ── Onglet Credits ─────────────────────────────────────────────────────────
 
-    private void renderCreditsTab(DrawContext ctx, int mx, int my, int cy, int ch) {
+    private void renderCreditsTab(GuiGraphics ctx, int mx, int my, int cy, int ch) {
         creditBtnBounds.clear();
         int px = winX + PAD, pw = winW - PAD * 2;
 
         // Bouton "Proposer un credit"
         String btnLabel = "+ Proposer un credit";
-        int btnW = textRenderer.getWidth(btnLabel) + 20;
+        int btnW = font.width(btnLabel) + 20;
         int btnX = winX + winW - btnW - PAD;
         boolean btnHov = mx >= btnX && mx < btnX + btnW && my >= cy && my < cy + 22;
         ctx.fill(btnX, cy, btnX + btnW, cy + 22, btnHov ? 0xFF1A8050 : C_GREEN);
-        ctx.drawCenteredTextWithShadow(textRenderer, btnLabel, btnX + btnW / 2, cy + 7, C_WHITE);
+        ctx.drawCenteredString(font, btnLabel, btnX + btnW / 2, cy + 7, C_WHITE);
         newLoanBtnX = btnX; newLoanBtnY = cy; newLoanBtnW = btnW;
         cy += 30;
 
         // Propositions reçues — l'emprunteur doit accepter ou refuser
         if (!requestsAsBorrower.isEmpty()) {
-            ctx.drawText(textRenderer, "ON VOUS PROPOSE UN CREDIT (" + requestsAsBorrower.size() + ")", px, cy, C_GOLD, false);
-            cy += textRenderer.fontHeight + 6;
+            ctx.drawString(font, "ON VOUS PROPOSE UN CREDIT (" + requestsAsBorrower.size() + ")", px, cy, C_GOLD, false);
+            cy += font.lineHeight + 6;
             for (LoanRequestData r : requestsAsBorrower)
                 cy = renderRequestRow(ctx, mx, my, px, pw, cy, r, true);
             cy += GAP;
@@ -634,18 +648,18 @@ public class BankScreen extends Screen {
 
         // Propositions envoyées — en attente de l'accord de l'emprunteur
         if (!requestsAsLender.isEmpty()) {
-            ctx.drawText(textRenderer, "VOS PROPOSITIONS EN ATTENTE (" + requestsAsLender.size() + ")", px, cy, C_DIM, false);
-            cy += textRenderer.fontHeight + 6;
+            ctx.drawString(font, "VOS PROPOSITIONS EN ATTENTE (" + requestsAsLender.size() + ")", px, cy, C_DIM, false);
+            cy += font.lineHeight + 6;
             for (LoanRequestData r : requestsAsLender)
                 cy = renderRequestRow(ctx, mx, my, px, pw, cy, r, false);
             cy += GAP;
         }
 
         // Section : argent que j'ai prêté
-        ctx.drawText(textRenderer, "ARGENT PRETE — ON ME DOIT (" + loansAsLender.size() + ")", px, cy, C_DIM, false);
-        cy += textRenderer.fontHeight + 6;
+        ctx.drawString(font, "ARGENT PRETE — ON ME DOIT (" + loansAsLender.size() + ")", px, cy, C_DIM, false);
+        cy += font.lineHeight + 6;
         if (loansAsLender.isEmpty()) {
-            ctx.drawText(textRenderer, "Vous n'avez prete d'argent a personne.", px + 8, cy, C_DIM, false);
+            ctx.drawString(font, "Vous n'avez prete d'argent a personne.", px + 8, cy, C_DIM, false);
             cy += 20;
         } else {
             for (LoanData loan : loansAsLender)
@@ -654,10 +668,10 @@ public class BankScreen extends Screen {
         cy += GAP;
 
         // Section : argent que je dois rembourser
-        ctx.drawText(textRenderer, "ARGENT EMPRUNTE — JE DOIS REMBOURSER (" + loansAsBorrower.size() + ")", px, cy, C_DIM, false);
-        cy += textRenderer.fontHeight + 6;
+        ctx.drawString(font, "ARGENT EMPRUNTE — JE DOIS REMBOURSER (" + loansAsBorrower.size() + ")", px, cy, C_DIM, false);
+        cy += font.lineHeight + 6;
         if (loansAsBorrower.isEmpty()) {
-            ctx.drawText(textRenderer, "Vous n'avez aucun emprunt a rembourser.", px + 8, cy, C_DIM, false);
+            ctx.drawString(font, "Vous n'avez aucun emprunt a rembourser.", px + 8, cy, C_DIM, false);
         } else {
             for (LoanData loan : loansAsBorrower)
                 cy = renderLoanRow(ctx, mx, my, px, pw, cy, loan, false);
@@ -665,7 +679,7 @@ public class BankScreen extends Screen {
     }
 
     /** Ligne de proposition de crédit. incoming=true : on me propose ; false : ma proposition en attente. */
-    private int renderRequestRow(DrawContext ctx, int mx, int my,
+    private int renderRequestRow(GuiGraphics ctx, int mx, int my,
                                  int px, int pw, int y, LoanRequestData r, boolean incoming) {
         int rowH = 36;
         ctx.fill(px, y, px + pw, y + rowH, C_PANEL);
@@ -675,9 +689,9 @@ public class BankScreen extends Screen {
         String line1 = incoming
             ? r.other() + " vous propose un credit de " + fmt(r.principal()) + " ◆"
             : "Proposition envoyee a " + r.other() + " — " + fmt(r.principal()) + " ◆ (en attente de son accord)";
-        ctx.drawText(textRenderer, line1, px + 12, y + 6, C_WHITE, false);
+        ctx.drawString(font, line1, px + 12, y + 6, C_WHITE, false);
         String line2 = "A rembourser sous " + r.durationDays() + " j · penalite " + r.penaltyBase() + " ◆/j en cas de retard";
-        ctx.drawText(textRenderer, line2, px + 12, y + 19, C_MID, false);
+        ctx.drawString(font, line2, px + 12, y + 19, C_MID, false);
 
         int bw = 70, ay = y + (rowH - 20) / 2;
         if (incoming) {
@@ -685,26 +699,26 @@ public class BankScreen extends Screen {
             int ax = px + pw - bw * 2 - 16;
             boolean ah = mx >= ax && mx < ax + bw && my >= ay && my < ay + 20;
             ctx.fill(ax, ay, ax + bw, ay + 20, ah ? 0xFF1A8050 : C_GREEN);
-            ctx.drawCenteredTextWithShadow(textRenderer, "Accepter", ax + bw / 2, ay + 6, C_WHITE);
+            ctx.drawCenteredString(font, "Accepter", ax + bw / 2, ay + 6, C_WHITE);
             creditBtnBounds.add(new int[]{ax, ay, bw, 20, BankNetworking.ACTION_LOAN_ACCEPT, r.id()});
             // Refuser
             int dx = px + pw - bw - 8;
             boolean dh = mx >= dx && mx < dx + bw && my >= ay && my < ay + 20;
             ctx.fill(dx, ay, dx + bw, ay + 20, dh ? 0xFF8B1030 : C_RED);
-            ctx.drawCenteredTextWithShadow(textRenderer, "Refuser", dx + bw / 2, ay + 6, C_WHITE);
+            ctx.drawCenteredString(font, "Refuser", dx + bw / 2, ay + 6, C_WHITE);
             creditBtnBounds.add(new int[]{dx, ay, bw, 20, BankNetworking.ACTION_LOAN_DECLINE, r.id()});
         } else {
             // Annuler ma proposition
             int ax = px + pw - bw - 8;
             boolean ah = mx >= ax && mx < ax + bw && my >= ay && my < ay + 20;
             ctx.fill(ax, ay, ax + bw, ay + 20, ah ? 0xFF8B1030 : C_RED);
-            ctx.drawCenteredTextWithShadow(textRenderer, "Annuler", ax + bw / 2, ay + 6, C_WHITE);
+            ctx.drawCenteredString(font, "Annuler", ax + bw / 2, ay + 6, C_WHITE);
             creditBtnBounds.add(new int[]{ax, ay, bw, 20, BankNetworking.ACTION_LOAN_DECLINE, r.id()});
         }
         return y + rowH + GAP;
     }
 
-    private int renderLoanRow(DrawContext ctx, int mx, int my,
+    private int renderLoanRow(GuiGraphics ctx, int mx, int my,
                                int px, int pw, int y, LoanData loan, boolean asLender) {
         int rowH = 50;
         long now = System.currentTimeMillis();
@@ -719,11 +733,11 @@ public class BankScreen extends Screen {
         String role = asLender
             ? "Prete a " + loan.other()
             : "Emprunte a " + loan.other();
-        ctx.drawText(textRenderer, role, px + 12, y + 8, C_WHITE, false);
+        ctx.drawString(font, role, px + 12, y + 8, C_WHITE, false);
         String amountLbl = asLender
             ? loan.other() + " doit vous rendre " + fmt(loan.principal()) + " ◆"
             : "Vous devez rembourser " + fmt(loan.principal()) + " ◆";
-        ctx.drawText(textRenderer, amountLbl, px + 12, y + 22, C_GOLD, false);
+        ctx.drawString(font, amountLbl, px + 12, y + 22, C_GOLD, false);
 
         // Infos centre
         String dateStr = new SimpleDateFormat("dd/MM/yyyy").format(new Date(loan.dueMs()));
@@ -731,12 +745,12 @@ public class BankScreen extends Screen {
             ? "En retard J+" + loan.daysOverdue() + "  (echeance: " + dateStr + ")"
             : "Echeance: " + dateStr;
         int mid = px + pw / 2;
-        ctx.drawText(textRenderer, dueLabel, mid - textRenderer.getWidth(dueLabel) / 2, y + 8,
+        ctx.drawString(font, dueLabel, mid - font.width(dueLabel) / 2, y + 8,
             overdue ? C_RED : C_MID, false);
         if (loan.totalPenalty() > 0) {
             String penStr = "Penalites deduites: " + fmt(loan.totalPenalty()) + " ◆"
                 + (overdue ? "  (prochaine: " + fmt(loan.nextPenalty()) + " ◆/j)" : "");
-            ctx.drawText(textRenderer, penStr, mid - textRenderer.getWidth(penStr) / 2, y + 22, C_RED, false);
+            ctx.drawString(font, penStr, mid - font.width(penStr) / 2, y + 22, C_RED, false);
         }
 
         // Bouton d'action droite
@@ -744,17 +758,17 @@ public class BankScreen extends Screen {
         int abY = y + (rowH - 20) / 2;
         if (loan.repaid()) {
             ctx.fill(abX, abY, abX + abW, abY + 20, C_DARK);
-            ctx.drawCenteredTextWithShadow(textRenderer, "Rembourse", abX + abW / 2, abY + 6, C_DIM);
+            ctx.drawCenteredString(font, "Rembourse", abX + abW / 2, abY + 6, C_DIM);
         } else if (asLender) {
             boolean hov = mx >= abX && mx < abX + abW && my >= abY && my < abY + 20;
             ctx.fill(abX, abY, abX + abW, abY + 20, hov ? 0xFF8B1030 : C_RED);
-            ctx.drawCenteredTextWithShadow(textRenderer, "Effacer la dette", abX + abW / 2, abY + 6, C_WHITE);
+            ctx.drawCenteredString(font, "Effacer la dette", abX + abW / 2, abY + 6, C_WHITE);
             creditBtnBounds.add(new int[]{abX, abY, abW, 20, BankNetworking.ACTION_LOAN_FORGIVE, loan.id()});
         } else {
             boolean canRepay = balance >= loan.principal();
             boolean hov = canRepay && mx >= abX && mx < abX + abW && my >= abY && my < abY + 20;
             ctx.fill(abX, abY, abX + abW, abY + 20, canRepay ? (hov ? 0xFF1A8050 : C_GREEN) : C_DARK);
-            ctx.drawCenteredTextWithShadow(textRenderer, "Rembourser", abX + abW / 2, abY + 6,
+            ctx.drawCenteredString(font, "Rembourser", abX + abW / 2, abY + 6,
                 canRepay ? C_WHITE : C_DIM);
             if (canRepay)
                 creditBtnBounds.add(new int[]{abX, abY, abW, 20, BankNetworking.ACTION_LOAN_REPAY, loan.id()});
@@ -765,7 +779,7 @@ public class BankScreen extends Screen {
 
     // ── Modal nouveau crédit ────────────────────────────────────────────────────
 
-    private void renderLoanModal(DrawContext ctx, int mx, int my) {
+    private void renderLoanModal(GuiGraphics ctx, int mx, int my) {
         int mw = 360, mh = 272;
         int mx0 = winX + (winW - mw) / 2;
         int my0 = winY + (winH - mh) / 2;
@@ -778,14 +792,14 @@ public class BankScreen extends Screen {
         ctx.fill(mx0, my0, mx0 + 1, my0 + mh, C_GOLD);
         ctx.fill(mx0 + mw - 1, my0, mx0 + mw, my0 + mh, C_BORDER);
 
-        ctx.drawText(textRenderer, "PROPOSER UN CREDIT", mx0 + PAD, my0 + 10, C_GOLD, false);
+        ctx.drawString(font, "PROPOSER UN CREDIT", mx0 + PAD, my0 + 10, C_GOLD, false);
         ctx.fill(mx0, my0 + 28, mx0 + mw, my0 + 29, C_BORDER);
 
         int fy = my0 + 36;
 
         // Dropdown emprunteur
-        ctx.drawText(textRenderer, "A qui preter (l'emprunteur)", mx0 + PAD, fy, C_DIM, false);
-        fy += textRenderer.fontHeight + 4;
+        ctx.drawString(font, "A qui preter (l'emprunteur)", mx0 + PAD, fy, C_DIM, false);
+        fy += font.lineHeight + 4;
         int dw = mw - PAD * 2;
         modalBorrowDropX = mx0 + PAD; modalBorrowDropY = fy; modalBorrowDropW = dw;
         String dropLbl = knownPlayers.isEmpty() ? "Aucun joueur connu"
@@ -795,20 +809,20 @@ public class BankScreen extends Screen {
         ctx.fill(modalBorrowDropX - 1, fy - 1, modalBorrowDropX + dw + 1, fy + 21, C_BORDER);
         ctx.fill(modalBorrowDropX, fy, modalBorrowDropX + dw, fy + 20,
             borrowerDropOpen || dHov ? C_HOVER : C_DARK);
-        ctx.drawText(textRenderer, dropLbl, modalBorrowDropX + 8, fy + 6, C_WHITE, false);
-        ctx.drawText(textRenderer, borrowerDropOpen ? "▲" : "▼",
+        ctx.drawString(font, dropLbl, modalBorrowDropX + 8, fy + 6, C_WHITE, false);
+        ctx.drawString(font, borrowerDropOpen ? "▲" : "▼",
             modalBorrowDropX + dw - 14, fy + 6, C_DIM, false);
         fy += 24;
 
         // Champ montant (positionné par render())
-        ctx.drawText(textRenderer, "Montant a preter", mx0 + PAD, fy, C_DIM, false);
-        fy += textRenderer.fontHeight + 4;
-        fy += 22; // espace pour le TextFieldWidget
+        ctx.drawString(font, "Montant a preter", mx0 + PAD, fy, C_DIM, false);
+        fy += font.lineHeight + 4;
+        fy += 22; // espace pour le EditBox
 
         // Sélecteurs durée + pénalité
         fy += 6;
-        ctx.drawText(textRenderer, "Duree du credit / Penalite par jour de retard", mx0 + PAD, fy, C_DIM, false);
-        fy += textRenderer.fontHeight + 4;
+        ctx.drawString(font, "Duree du credit / Penalite par jour de retard", mx0 + PAD, fy, C_DIM, false);
+        fy += font.lineHeight + 4;
         int selW = (dw - GAP) / 2;
         modalDurationBtnX = mx0 + PAD; modalDurationBtnW = selW;
         modalPenaltyBtnX  = mx0 + PAD + selW + GAP; modalPenaltyBtnW = selW;
@@ -818,18 +832,18 @@ public class BankScreen extends Screen {
         fy += 28;
 
         // Note augmentation
-        ctx.drawText(textRenderer, "La penalite augmente de +5 ◆ chaque jour de retard",
+        ctx.drawString(font, "La penalite augmente de +5 ◆ chaque jour de retard",
             mx0 + PAD, fy, C_DIM, false);
-        fy += textRenderer.fontHeight + 6;
+        fy += font.lineHeight + 6;
 
         // Rappel : l'emprunteur doit accepter avant le transfert
         int amount = parseAmount();
         String warn = amount > 0
             ? fmt(amount) + " ◆ preleves de votre compte s'il accepte"
             : "L'emprunteur devra accepter la proposition";
-        ctx.drawText(textRenderer, warn, mx0 + mw / 2 - textRenderer.getWidth(warn) / 2, fy,
+        ctx.drawString(font, warn, mx0 + mw / 2 - font.width(warn) / 2, fy,
             amount > balance ? C_RED : C_MID, false);
-        fy += textRenderer.fontHeight + 6;
+        fy += font.lineHeight + 6;
 
         // Bouton envoyer
         boolean canCreate = amount > 0 && amount <= balance && !knownPlayers.isEmpty();
@@ -837,23 +851,23 @@ public class BankScreen extends Screen {
             && my >= fy && my < fy + 26;
         ctx.fill(mx0 + PAD, fy, mx0 + mw - PAD, fy + 26,
             canCreate ? (cHov ? 0xFF1A8050 : C_GREEN) : C_DARK);
-        ctx.drawCenteredTextWithShadow(textRenderer, "Envoyer la proposition",
+        ctx.drawCenteredString(font, "Envoyer la proposition",
             mx0 + mw / 2, fy + 9, canCreate ? C_WHITE : C_DIM);
         modalCreateBtnX = mx0 + PAD; modalCreateBtnY = fy; modalCreateBtnW = mw - PAD * 2;
     }
 
-    private void renderSelector(DrawContext ctx, int mx, int my, int x, int y, int w, String label) {
+    private void renderSelector(GuiGraphics ctx, int mx, int my, int x, int y, int w, String label) {
         boolean hL = mx >= x && mx < x + 18 && my >= y && my < y + 22;
         boolean hR = mx >= x + w - 18 && mx < x + w && my >= y && my < y + 22;
         ctx.fill(x, y, x + w, y + 22, C_DARK);
         ctx.fill(x, y, x + 1, y + 22, C_BORDER);
         ctx.fill(x + w - 1, y, x + w, y + 22, C_BORDER);
-        ctx.drawText(textRenderer, "<", x + 5, y + 7, hL ? C_WHITE : C_DIM, false);
-        ctx.drawCenteredTextWithShadow(textRenderer, label, x + w / 2, y + 7, C_WHITE);
-        ctx.drawText(textRenderer, ">", x + w - 12, y + 7, hR ? C_WHITE : C_DIM, false);
+        ctx.drawString(font, "<", x + 5, y + 7, hL ? C_WHITE : C_DIM, false);
+        ctx.drawCenteredString(font, label, x + w / 2, y + 7, C_WHITE);
+        ctx.drawString(font, ">", x + w - 12, y + 7, hR ? C_WHITE : C_DIM, false);
     }
 
-    private void renderBorrowerDrop(DrawContext ctx, int mx, int my) {
+    private void renderBorrowerDrop(GuiGraphics ctx, int mx, int my) {
         int vis = Math.min(knownPlayers.size(), 6);
         int dh  = vis * 20;
         int dy  = modalBorrowDropY + 21;
@@ -865,14 +879,14 @@ public class BankScreen extends Screen {
                 && my >= iy && my < iy + 20;
             if (hov || i == modalBorrowerIdx)
                 ctx.fill(modalBorrowDropX, iy, modalBorrowDropX + modalBorrowDropW, iy + 20, C_HOVER);
-            ctx.drawText(textRenderer, knownPlayers.get(i),
+            ctx.drawString(font, knownPlayers.get(i),
                 modalBorrowDropX + 8, iy + 6, i == modalBorrowerIdx ? C_GOLD : C_WHITE, false);
         }
     }
 
     // ── Modal retrait en Shards physiques ───────────────────────────────────────
 
-    private void renderWithdrawModal(DrawContext ctx, int mx, int my) {
+    private void renderWithdrawModal(GuiGraphics ctx, int mx, int my) {
         int mw = 300, mh = 186;
         int mx0 = winX + (winW - mw) / 2;
         int my0 = winY + (winH - mh) / 2;
@@ -884,28 +898,28 @@ public class BankScreen extends Screen {
         ctx.fill(mx0, my0, mx0 + 1, my0 + mh, C_GOLD);
         ctx.fill(mx0 + mw - 1, my0, mx0 + mw, my0 + mh, C_BORDER);
 
-        ctx.drawText(textRenderer, "RETIRER EN SHARDS ◆", mx0 + PAD, my0 + 10, C_GOLD, false);
+        ctx.drawString(font, "RETIRER EN SHARDS ◆", mx0 + PAD, my0 + 10, C_GOLD, false);
         ctx.fill(mx0, my0 + 28, mx0 + mw, my0 + 29, C_BORDER);
 
-        ctx.drawText(textRenderer, "Montant a retirer", mx0 + PAD, my0 + 36, C_DIM, false);
+        ctx.drawString(font, "Montant a retirer", mx0 + PAD, my0 + 36, C_DIM, false);
         withdrawInput.setBounds(0, Math.max(0, balance));
-        withdrawInput.render(ctx, textRenderer, mx0 + PAD, my0 + 50, mw - PAD * 2, mx, my);
+        withdrawInput.render(ctx, font, mx0 + PAD, my0 + 50, mw - PAD * 2, mx, my);
 
         int fy = my0 + 50 + NumberInput.H + 8;
-        ctx.drawText(textRenderer, "Clic droit sur l'item pour le redeposer", mx0 + PAD, fy, C_DIM, false);
-        fy += textRenderer.fontHeight + 8;
+        ctx.drawString(font, "Clic droit sur l'item pour le redeposer", mx0 + PAD, fy, C_DIM, false);
+        fy += font.lineHeight + 8;
 
         int amount = withdrawInput.getValue();
         boolean canWithdraw = amount > 0 && amount <= balance;
         boolean hov = canWithdraw && mx >= mx0 + PAD && mx < mx0 + mw - PAD && my >= fy && my < fy + 26;
         ctx.fill(mx0 + PAD, fy, mx0 + mw - PAD, fy + 26, canWithdraw ? (hov ? 0xFF1A8050 : C_GREEN) : C_DARK);
         String lbl = amount > balance ? "Solde insuffisant" : "Retirer" + (amount > 0 ? " " + fmt(amount) + " ◆" : "");
-        ctx.drawCenteredTextWithShadow(textRenderer, lbl, mx0 + mw / 2, fy + 9, canWithdraw ? C_WHITE : C_DIM);
+        ctx.drawCenteredString(font, lbl, mx0 + mw / 2, fy + 9, canWithdraw ? C_WHITE : C_DIM);
         wConfirmBtnY = fy;
     }
 
     private void sendWithdrawShards(int amount) {
-        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
         buf.writeInt(BankNetworking.ACTION_WITHDRAW_SHARDS);
         buf.writeInt(amount);
         NtNet.versServeur(BankNetworking.BANK_ACTION, buf);
@@ -918,14 +932,14 @@ public class BankScreen extends Screen {
      * Le serveur revalide le montant : ce compte ne sert qu'à borner la saisie.
      */
     private int shardsEnPoche() {
-        if (client == null || client.player == null) return 0;
+        if (this.minecraft == null || this.minecraft.player == null) return 0;
         int total = 0;
-        for (ItemStack s : client.player.getInventory().main)
+        for (ItemStack s : this.minecraft.player.getInventory().items)
             total += ShardDenominations.valeur(s.getItem()) * s.getCount();
         return total;
     }
 
-    private void renderDepositModal(DrawContext ctx, int mx, int my) {
+    private void renderDepositModal(GuiGraphics ctx, int mx, int my) {
         int mw = 300, mh = 176;
         int mx0 = winX + (winW - mw) / 2;
         int my0 = winY + (winH - mh) / 2;
@@ -937,14 +951,14 @@ public class BankScreen extends Screen {
         ctx.fill(mx0, my0, mx0 + 1, my0 + mh, C_GREEN);
         ctx.fill(mx0 + mw - 1, my0, mx0 + mw, my0 + mh, C_BORDER);
 
-        ctx.drawText(textRenderer, "DEPOSER DES SHARDS ◆", mx0 + PAD, my0 + 10, C_GREEN, false);
+        ctx.drawString(font, "DEPOSER DES SHARDS ◆", mx0 + PAD, my0 + 10, C_GREEN, false);
         ctx.fill(mx0, my0 + 28, mx0 + mw, my0 + 29, C_BORDER);
 
         int enPoche = shardsEnPoche();
         depositInput.setBounds(0, enPoche);
-        ctx.drawText(textRenderer, "Dans votre inventaire : §f" + fmt(enPoche) + " ◆",
+        ctx.drawString(font, "Dans votre inventaire : §f" + fmt(enPoche) + " ◆",
             mx0 + PAD, my0 + 36, C_DIM, false);
-        depositInput.render(ctx, textRenderer, mx0 + PAD, my0 + 50, mw - PAD * 2, mx, my);
+        depositInput.render(ctx, font, mx0 + PAD, my0 + 50, mw - PAD * 2, mx, my);
 
         int fy = my0 + 50 + NumberInput.H + 10;
         int amount = depositInput.getValue();
@@ -953,12 +967,12 @@ public class BankScreen extends Screen {
         ctx.fill(mx0 + PAD, fy, mx0 + mw - PAD, fy + 26, canDeposit ? (hov ? 0xFF1A8050 : C_GREEN) : C_DARK);
         String lbl = enPoche == 0 ? "Aucun Shard en poche"
                                   : "Deposer" + (amount > 0 ? " " + fmt(amount) + " ◆" : "");
-        ctx.drawCenteredTextWithShadow(textRenderer, lbl, mx0 + mw / 2, fy + 9, canDeposit ? C_WHITE : C_DIM);
+        ctx.drawCenteredString(font, lbl, mx0 + mw / 2, fy + 9, canDeposit ? C_WHITE : C_DIM);
         dConfirmBtnY = fy;
     }
 
     private void sendDepositShards(int amount) {
-        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
         buf.writeInt(BankNetworking.ACTION_DEPOSIT_SHARDS);
         buf.writeInt(amount);
         NtNet.versServeur(BankNetworking.BANK_ACTION, buf);
@@ -966,10 +980,10 @@ public class BankScreen extends Screen {
 
     // ── Toast ──────────────────────────────────────────────────────────────────
 
-    private void renderToast(DrawContext ctx) {
+    private void renderToast(GuiGraphics ctx) {
         if (toastMsg == null) return;
         if (System.currentTimeMillis() > toastEnd) { toastMsg = null; return; }
-        int tw = textRenderer.getWidth(toastMsg) + 28;
+        int tw = font.width(toastMsg) + 28;
         int th = 26;
         int tx = winX + winW - tw - 12;
         int ty = winY + winH - th - 12;
@@ -978,8 +992,8 @@ public class BankScreen extends Screen {
         ctx.fill(tx, ty + th - 1, tx + tw, ty + th, C_BORDER);
         ctx.fill(tx + tw - 1, ty, tx + tw, ty + th, C_BORDER);
         ctx.fill(tx, ty, tx + 3, ty + th, toastOk ? C_GREEN : C_RED);
-        ctx.drawText(textRenderer, toastMsg, tx + 11,
-            ty + (th - textRenderer.fontHeight) / 2, C_WHITE, false);
+        ctx.drawString(font, toastMsg, tx + 11,
+            ty + (th - font.lineHeight) / 2, C_WHITE, false);
     }
 
     // ── Mouse ──────────────────────────────────────────────────────────────────
@@ -987,7 +1001,7 @@ public class BankScreen extends Screen {
     @Override
     public boolean mouseClicked(double mx0, double my0, int btn) {
         int x = (int) mx0, y = (int) my0;
-        if (x < winX || x > winX + winW || y < winY || y > winY + winH) { close(); return true; }
+        if (x < winX || x > winX + winW || y < winY || y > winY + winH) { onClose(); return true; }
 
         // ── Modal ouverte ──
         if (modalOpen) {
@@ -1099,7 +1113,7 @@ public class BankScreen extends Screen {
             if (HubBackButton.clicked(winX + PAD, winY + (TOP_H - HubBackButton.H) / 2, x, y)) return true;
             int tx = tabsStartX;
             for (Tab tab : Tab.values()) {
-                int tw = textRenderer.getWidth(tab.label) + 18;
+                int tw = font.width(tab.label) + 18;
                 if (x >= tx && x < tx + tw) { activeTab = tab; txScroll = 0; return true; }
                 tx += tw + 4;
             }
@@ -1133,7 +1147,7 @@ public class BankScreen extends Screen {
                 modalOpen = true;
                 borrowerDropOpen = false;
                 modalBorrowerIdx = 0;
-                if (modalAmountField != null) modalAmountField.setText("");
+                if (modalAmountField != null) modalAmountField.setValue("");
                 return true;
             }
 
@@ -1205,7 +1219,7 @@ public class BankScreen extends Screen {
         return super.charTyped(chr, mod);
     }
 
-    @Override public boolean shouldPause() { return false; }
+    @Override public boolean isPauseScreen() { return false; }
     @Override public boolean shouldCloseOnEsc() { return true; }
 
     // ── Réseau ─────────────────────────────────────────────────────────────────
@@ -1213,9 +1227,9 @@ public class BankScreen extends Screen {
     /** Envoie une proposition de crédit à l'emprunteur sélectionné dans le modal. */
     private void sendLoanRequest(int amount) {
         if (knownPlayers.isEmpty()) return;
-        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
         buf.writeInt(BankNetworking.ACTION_LOAN_REQUEST);
-        buf.writeString(knownPlayers.get(modalBorrowerIdx)); // l'emprunteur choisi
+        buf.writeUtf(knownPlayers.get(modalBorrowerIdx)); // l'emprunteur choisi
         buf.writeInt(amount);
         buf.writeInt(DURATIONS[modalDurationIdx]);
         buf.writeInt(PENALTIES[modalPenaltyIdx]);
@@ -1225,31 +1239,31 @@ public class BankScreen extends Screen {
 
     /** Action crédit générique à payload int unique (accept/decline/repay/forgive). */
     private void sendLoanAction(int action, int id) {
-        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
         buf.writeInt(action);
         buf.writeInt(id);
         NtNet.versServeur(BankNetworking.BANK_ACTION, buf);
     }
 
     private void sendTransfer(String target, int amount) {
-        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
         buf.writeInt(BankNetworking.ACTION_TRANSFER);
-        buf.writeString(target);
+        buf.writeUtf(target);
         buf.writeInt(amount);
         NtNet.versServeur(BankNetworking.BANK_ACTION, buf);
     }
 
     private void sendRecurringCreate(String to, int amount, int intervalTicks) {
-        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
         buf.writeInt(BankNetworking.ACTION_RECURRING_CREATE);
-        buf.writeString(to);
+        buf.writeUtf(to);
         buf.writeInt(amount);
         buf.writeInt(intervalTicks);
         NtNet.versServeur(BankNetworking.BANK_ACTION, buf);
     }
 
     private void sendRecurringCancel(int id) {
-        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
         buf.writeInt(BankNetworking.ACTION_RECURRING_CANCEL);
         buf.writeInt(id);
         NtNet.versServeur(BankNetworking.BANK_ACTION, buf);
@@ -1259,7 +1273,7 @@ public class BankScreen extends Screen {
 
     private int parseAmount() {
         if (modalAmountField == null) return 0;
-        try { return Math.max(0, Integer.parseInt(modalAmountField.getText().trim())); }
+        try { return Math.max(0, Integer.parseInt(modalAmountField.getValue().trim())); }
         catch (NumberFormatException e) { return 0; }
     }
 
@@ -1284,13 +1298,13 @@ public class BankScreen extends Screen {
     }
 
     private String truncate(String s, int maxPx) {
-        if (textRenderer.getWidth(s) <= maxPx) return s;
-        while (s.length() > 1 && textRenderer.getWidth(s + "…") > maxPx)
+        if (font.width(s) <= maxPx) return s;
+        while (s.length() > 1 && font.width(s + "…") > maxPx)
             s = s.substring(0, s.length() - 1);
         return s + "…";
     }
 
-    private void renderInfoCard(DrawContext ctx, int x, int y, int w, int h, int accent) {
+    private void renderInfoCard(GuiGraphics ctx, int x, int y, int w, int h, int accent) {
         ctx.fill(x, y, x + w, y + h, C_PANEL);
         ctx.fill(x, y, x + w, y + 1, C_BORDER);
         ctx.fill(x, y + h - 1, x + w, y + h, C_BORDER);
@@ -1301,8 +1315,8 @@ public class BankScreen extends Screen {
 
     // ── Onglet Virements ───────────────────────────────────────────────────────
 
-    private void renderTransfersTab(DrawContext ctx, int mx, int my, int cy, int ch, float delta) {
-        String me = client != null && client.player != null ? client.player.getName().getString() : "";
+    private void renderTransfersTab(GuiGraphics ctx, int mx, int my, int cy, int ch, float delta) {
+        String me = this.minecraft != null && this.minecraft.player != null ? this.minecraft.player.getName().getString() : "";
         int px = winX + PAD, pw = winW - PAD * 2;
         int cardH = 148, cardW = (pw - GAP) / 2;
         int c1x = px, c2x = px + cardW + GAP;
@@ -1312,16 +1326,16 @@ public class BankScreen extends Screen {
         renderInfoCard(ctx, c1x, cy, cardW, cardH, C_GOLD);
         {
             int fy = cy + 12;
-            ctx.drawText(textRenderer, "VIREMENT PONCTUEL", c1x + 10, fy, C_DIM, false);
-            fy += textRenderer.fontHeight + 8;
+            ctx.drawString(font, "VIREMENT PONCTUEL", c1x + 10, fy, C_DIM, false);
+            fy += font.lineHeight + 8;
             trfDropX = c1x + 10; trfDropY = fy; trfDropW = cardW - 20;
             boolean dropHov = !trfDropOpen && !recurDropOpen
                 && mx >= trfDropX && mx < trfDropX + trfDropW && my >= fy && my < fy + 20;
             ctx.fill(trfDropX - 1, fy - 1, trfDropX + trfDropW + 1, fy + 21, C_BORDER);
             ctx.fill(trfDropX, fy, trfDropX + trfDropW, fy + 20, trfDropOpen ? C_HOVER : (dropHov ? C_HOVER : C_DARK));
-            ctx.drawText(textRenderer, truncate(trfTarget.isEmpty() ? "Destinataire..." : trfTarget, trfDropW - 20),
+            ctx.drawString(font, truncate(trfTarget.isEmpty() ? "Destinataire..." : trfTarget, trfDropW - 20),
                 trfDropX + 6, fy + 6, trfTarget.isEmpty() ? C_DIM : C_WHITE, false);
-            ctx.drawText(textRenderer, trfDropOpen ? "▲" : "▼", trfDropX + trfDropW - 14, fy + 6, C_DIM, false);
+            ctx.drawString(font, trfDropOpen ? "▲" : "▼", trfDropX + trfDropW - 14, fy + 6, C_DIM, false);
             fy += 24;
             if (trfDropOpen || recurDropOpen) {
                 trfAmountField.setY(-200);
@@ -1334,7 +1348,7 @@ public class BankScreen extends Screen {
                 boolean sendHov = canSend && mx >= c1x + 10 && mx < c1x + cardW - 10 && my >= fy && my < fy + 22;
                 trfSendBtnY = fy;
                 ctx.fill(c1x + 10, fy, c1x + cardW - 10, fy + 22, canSend ? (sendHov ? 0xFF1A8050 : C_GREEN) : C_DARK);
-                ctx.drawCenteredTextWithShadow(textRenderer, "Envoyer", c1x + cardW / 2, fy + 7, canSend ? C_WHITE : C_DIM);
+                ctx.drawCenteredString(font, "Envoyer", c1x + cardW / 2, fy + 7, canSend ? C_WHITE : C_DIM);
             }
         }
 
@@ -1342,16 +1356,16 @@ public class BankScreen extends Screen {
         renderInfoCard(ctx, c2x, cy, cardW, cardH, C_GOLD);
         {
             int fy = cy + 12;
-            ctx.drawText(textRenderer, "VIREMENT RECURRENT", c2x + 10, fy, C_DIM, false);
-            fy += textRenderer.fontHeight + 8;
+            ctx.drawString(font, "VIREMENT RECURRENT", c2x + 10, fy, C_DIM, false);
+            fy += font.lineHeight + 8;
             recurDropX = c2x + 10; recurDropY = fy; recurDropW = cardW - 20;
             boolean rdropHov = !recurDropOpen && !trfDropOpen
                 && mx >= recurDropX && mx < recurDropX + recurDropW && my >= fy && my < fy + 20;
             ctx.fill(recurDropX - 1, fy - 1, recurDropX + recurDropW + 1, fy + 21, C_BORDER);
             ctx.fill(recurDropX, fy, recurDropX + recurDropW, fy + 20, recurDropOpen ? C_HOVER : (rdropHov ? C_HOVER : C_DARK));
-            ctx.drawText(textRenderer, truncate(recurTarget.isEmpty() ? "Destinataire..." : recurTarget, recurDropW - 20),
+            ctx.drawString(font, truncate(recurTarget.isEmpty() ? "Destinataire..." : recurTarget, recurDropW - 20),
                 recurDropX + 6, fy + 6, recurTarget.isEmpty() ? C_DIM : C_WHITE, false);
-            ctx.drawText(textRenderer, recurDropOpen ? "▲" : "▼", recurDropX + recurDropW - 14, fy + 6, C_DIM, false);
+            ctx.drawString(font, recurDropOpen ? "▲" : "▼", recurDropX + recurDropW - 14, fy + 6, C_DIM, false);
             fy += 24;
             if (recurDropOpen || trfDropOpen) {
                 recurAmountField.setY(-200); recurIntervalMinsField.setY(-200);
@@ -1359,14 +1373,14 @@ public class BankScreen extends Screen {
                 recurAmountField.setX(c2x + 10); recurAmountField.setY(fy); recurAmountField.setWidth(cardW - 20);
                 recurAmountField.render(ctx, mx, my, delta);
                 fy += 26;
-                ctx.drawText(textRenderer, "INTERVALLE (minutes)", c2x + 10, fy, C_DIM, false);
-                fy += textRenderer.fontHeight + 4;
+                ctx.drawString(font, "INTERVALLE (minutes)", c2x + 10, fy, C_DIM, false);
+                fy += font.lineHeight + 4;
                 recurIntervalMinsField.setX(c2x + 10); recurIntervalMinsField.setY(fy); recurIntervalMinsField.setWidth(cardW - 20);
                 recurIntervalMinsField.render(ctx, mx, my, delta);
                 if (recurIntervalMins > 0) {
                     String preview = "= " + ticksToInterval(recurIntervalMins * 1200);
-                    ctx.drawText(textRenderer, preview, c2x + cardW - 10 - textRenderer.getWidth(preview),
-                        fy - textRenderer.fontHeight - 4, C_GOLD, false);
+                    ctx.drawString(font, preview, c2x + cardW - 10 - font.width(preview),
+                        fy - font.lineHeight - 4, C_GOLD, false);
                 }
                 fy += 22;
                 boolean canCreate = !recurTarget.isEmpty() && recurAmount > 0 && recurIntervalMins >= 1
@@ -1374,15 +1388,15 @@ public class BankScreen extends Screen {
                 boolean createHov = canCreate && mx >= c2x + 10 && mx < c2x + cardW - 10 && my >= fy && my < fy + 22;
                 recurCreateBtnY = fy;
                 ctx.fill(c2x + 10, fy, c2x + cardW - 10, fy + 22, canCreate ? (createHov ? 0xFF1A8050 : C_GREEN) : C_DARK);
-                ctx.drawCenteredTextWithShadow(textRenderer, "Creer", c2x + cardW / 2, fy + 7, canCreate ? C_WHITE : C_DIM);
+                ctx.drawCenteredString(font, "Creer", c2x + cardW / 2, fy + 7, canCreate ? C_WHITE : C_DIM);
             }
         }
 
         // Liste des virements récurrents actifs
         int listY = cy + cardH + GAP;
         if (recurringList != null && !recurringList.isEmpty()) {
-            ctx.drawText(textRenderer, "VIREMENTS RECURRENTS ACTIFS", px, listY + 4, C_DIM, false);
-            listY += textRenderer.fontHeight + 10;
+            ctx.drawString(font, "VIREMENTS RECURRENTS ACTIFS", px, listY + 4, C_DIM, false);
+            listY += font.lineHeight + 10;
             int rowH = 28;
             for (int i = 0; i < recurringList.size(); i++) {
                 RecurringData r = recurringList.get(i);
@@ -1393,13 +1407,13 @@ public class BankScreen extends Screen {
                 ctx.fill(px, ry, px + pw, ry + 1, C_BORDER);
                 ctx.fill(px, ry + rowH - 1, px + pw, ry + rowH, C_BORDER);
                 ctx.fill(px + 1, ry + 1, px + 3, ry + rowH - 1, C_GOLD);
-                int midY = ry + (rowH - textRenderer.fontHeight) / 2;
+                int midY = ry + (rowH - font.lineHeight) / 2;
                 String toStr = "→ " + r.to();
-                ctx.drawText(textRenderer, toStr, px + 8, midY, C_MID, false);
+                ctx.drawString(font, toStr, px + 8, midY, C_MID, false);
                 String amtLabel = r.amount() + " ◆ / " + ticksToInterval(r.intervalTicks());
-                ctx.drawText(textRenderer, amtLabel, px + 8 + textRenderer.getWidth(toStr) + 8, midY, C_GOLD, false);
+                ctx.drawString(font, amtLabel, px + 8 + font.width(toStr) + 8, midY, C_GOLD, false);
                 String countStr = "dans " + ticksToTime(r.ticksUntilNext());
-                ctx.drawText(textRenderer, countStr, px + pw - textRenderer.getWidth(countStr) - 70, midY, C_DIM, false);
+                ctx.drawString(font, countStr, px + pw - font.width(countStr) - 70, midY, C_DIM, false);
                 int cancelX = px + pw - 58, cancelBtnY = ry + (rowH - 14) / 2;
                 boolean cancelHov = mx >= cancelX && mx < cancelX + 54 && my >= cancelBtnY && my < cancelBtnY + 14;
                 ctx.fill(cancelX, cancelBtnY, cancelX + 54, cancelBtnY + 14, cancelHov ? C_RED : C_DARK);
@@ -1407,14 +1421,14 @@ public class BankScreen extends Screen {
                 ctx.fill(cancelX, cancelBtnY + 13, cancelX + 54, cancelBtnY + 14, C_BORDER);
                 ctx.fill(cancelX, cancelBtnY, cancelX + 1, cancelBtnY + 14, C_BORDER);
                 ctx.fill(cancelX + 53, cancelBtnY, cancelX + 54, cancelBtnY + 14, C_BORDER);
-                ctx.drawCenteredTextWithShadow(textRenderer, "Annuler", cancelX + 27, cancelBtnY + 3, cancelHov ? C_WHITE : C_DIM);
+                ctx.drawCenteredString(font, "Annuler", cancelX + 27, cancelBtnY + 3, cancelHov ? C_WHITE : C_DIM);
                 recurCancelBtnY.add(cancelBtnY);
             }
         }
     }
 
     private void handleTransfersClick(int mx, int my) {
-        String me = client != null && client.player != null ? client.player.getName().getString() : "";
+        String me = this.minecraft != null && this.minecraft.player != null ? this.minecraft.player.getName().getString() : "";
         int px = winX + PAD, pw = winW - PAD * 2;
         int cardW = (pw - GAP) / 2;
         int c1x = winX + PAD, c2x = c1x + cardW + GAP;
@@ -1432,7 +1446,7 @@ public class BankScreen extends Screen {
             boolean canSend = !trfTarget.isEmpty() && !trfTarget.equalsIgnoreCase(me) && trfAmount > 0 && trfAmount <= balance;
             if (canSend && mx >= c1x + 10 && mx < c1x + cardW - 10 && my >= trfSendBtnY && my < trfSendBtnY + 22) {
                 sendTransfer(trfTarget, trfAmount);
-                trfTarget = ""; trfAmountField.setText(""); trfAmount = 0; return;
+                trfTarget = ""; trfAmountField.setValue(""); trfAmount = 0; return;
             }
         }
         // Bouton Créer virement récurrent
@@ -1440,7 +1454,7 @@ public class BankScreen extends Screen {
             boolean canCreate = !recurTarget.isEmpty() && recurAmount > 0 && recurIntervalMins >= 1 && !recurTarget.equalsIgnoreCase(me);
             if (canCreate && mx >= c2x + 10 && mx < c2x + cardW - 10 && my >= recurCreateBtnY && my < recurCreateBtnY + 22) {
                 sendRecurringCreate(recurTarget, recurAmount, recurIntervalMins * 1200);
-                recurTarget = ""; recurAmountField.setText(""); recurAmount = 0; return;
+                recurTarget = ""; recurAmountField.setValue(""); recurAmount = 0; return;
             }
         }
         // Boutons Annuler
@@ -1454,7 +1468,7 @@ public class BankScreen extends Screen {
         }
     }
 
-    private void renderTrfDropdown(DrawContext ctx, int mx, int my) {
+    private void renderTrfDropdown(GuiGraphics ctx, int mx, int my) {
         if (knownPlayers.isEmpty() || trfDropX < 0) { trfDropOpen = false; return; }
         int itemH = 18, maxVis = Math.min(8, knownPlayers.size()), dropH = maxVis * itemH + 4;
         int dx = trfDropX, dw = trfDropW, dy = trfDropY + 20;
@@ -1472,12 +1486,12 @@ public class BankScreen extends Screen {
             boolean sel = p.equalsIgnoreCase(trfTarget), hov = mx >= dx && mx < dx + dw && my >= iy && my < iy + itemH;
             if (sel) { ctx.fill(dx + 1, iy, dx + dw - 1, iy + itemH, C_HOVER); ctx.fill(dx + 1, iy, dx + 3, iy + itemH, C_GOLD); }
             else if (hov) ctx.fill(dx + 1, iy, dx + dw - 1, iy + itemH, 0x18FFFFFF);
-            ctx.drawText(textRenderer, p, dx + 8, iy + (itemH - textRenderer.fontHeight) / 2, (sel || hov) ? C_WHITE : C_MID, false);
+            ctx.drawString(font, p, dx + 8, iy + (itemH - font.lineHeight) / 2, (sel || hov) ? C_WHITE : C_MID, false);
         }
         ctx.disableScissor();
     }
 
-    private void renderRecurDropdown(DrawContext ctx, int mx, int my) {
+    private void renderRecurDropdown(GuiGraphics ctx, int mx, int my) {
         if (knownPlayers.isEmpty() || recurDropX < 0) { recurDropOpen = false; return; }
         int itemH = 18, maxVis = Math.min(8, knownPlayers.size()), dropH = maxVis * itemH + 4;
         int dx = recurDropX, dw = recurDropW, dy = recurDropY + 20;
@@ -1495,7 +1509,7 @@ public class BankScreen extends Screen {
             boolean sel = p.equalsIgnoreCase(recurTarget), hov = mx >= dx && mx < dx + dw && my >= iy && my < iy + itemH;
             if (sel) { ctx.fill(dx + 1, iy, dx + dw - 1, iy + itemH, C_HOVER); ctx.fill(dx + 1, iy, dx + 3, iy + itemH, C_GOLD); }
             else if (hov) ctx.fill(dx + 1, iy, dx + dw - 1, iy + itemH, 0x18FFFFFF);
-            ctx.drawText(textRenderer, p, dx + 8, iy + (itemH - textRenderer.fontHeight) / 2, (sel || hov) ? C_WHITE : C_MID, false);
+            ctx.drawString(font, p, dx + 8, iy + (itemH - font.lineHeight) / 2, (sel || hov) ? C_WHITE : C_MID, false);
         }
         ctx.disableScissor();
     }

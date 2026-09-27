@@ -2,14 +2,11 @@ package com.nouvelleterrebridge.client;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
-import net.fabricmc.loader.api.FabricLoader;
+import net.neoforged.fml.loading.FMLPaths;
 
 import java.io.*;
 import java.nio.file.Path;
 
-@Environment(EnvType.CLIENT)
 public class ClientConfig {
 
     private static final Gson   GSON     = new GsonBuilder().setPrettyPrinting().create();
@@ -96,7 +93,7 @@ public class ClientConfig {
     }
 
     public static void load() {
-        Path path = FabricLoader.getInstance().getConfigDir().resolve(FILENAME);
+        Path path = FMLPaths.CONFIGDIR.get().resolve(FILENAME);
         File file = path.toFile();
         if (file.exists()) {
             try (Reader r = new FileReader(file)) {
@@ -110,7 +107,7 @@ public class ClientConfig {
     }
 
     public void save() {
-        Path path = FabricLoader.getInstance().getConfigDir().resolve(FILENAME);
+        Path path = FMLPaths.CONFIGDIR.get().resolve(FILENAME);
         try (Writer w = new FileWriter(path.toFile())) {
             GSON.toJson(this, w);
         } catch (IOException ignored) {}

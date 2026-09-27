@@ -1,11 +1,11 @@
 package com.nouvelleterrebridge.network;
 
-import net.minecraft.network.packet.CustomPayload;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 
 public class QuestNetworking {
-    public static final CustomPayload.Id<NtPayload> QUEST_OPEN = NtNet.canal("quest_open");
-    public static final CustomPayload.Id<NtPayload> QUEST_ACTION = NtNet.canal("quest_action");
-    public static final CustomPayload.Id<NtPayload> QUEST_RESULT = NtNet.canal("quest_result");
+    public static final CustomPacketPayload.Type<NtPayload> QUEST_OPEN = NtNet.canal("quest_open");
+    public static final CustomPacketPayload.Type<NtPayload> QUEST_ACTION = NtNet.canal("quest_action");
+    public static final CustomPacketPayload.Type<NtPayload> QUEST_RESULT = NtNet.canal("quest_result");
 
     public static final int ACTION_ACCEPT         = 0;
     public static final int ACTION_CLAIM          = 1;  // KILL/HARVEST : réclamer ; DELIVERY : remettre items

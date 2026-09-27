@@ -4,7 +4,7 @@ import com.nouvelleterrebridge.NouvelleTerreBridge;
 import com.nouvelleterrebridge.market.FrenchItemNames;
 import com.nouvelleterrebridge.market.MarketManager;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.level.ServerPlayer;
 
 /**
  * Suit le déblocage des items du Shop Serveur par la production naturelle.
@@ -47,7 +47,7 @@ public final class ProductionShopManager {
         // La notification part sur le thread serveur : onProduction est appelé
         // depuis la comptabilisation de production, qui n'y est pas garantie.
         server.execute(() -> {
-            for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
+            for (ServerPlayer p : server.getPlayerList().getPlayers()) {
                 NouvelleTerreBridge.sendToast(p, NouvelleTerreBridge.TOAST_VERT,
                     "§aNouveauté au Shop",
                     "§f" + nom,

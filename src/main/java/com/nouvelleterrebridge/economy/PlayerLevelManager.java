@@ -4,10 +4,10 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
-import net.fabricmc.loader.api.FabricLoader;
+import net.neoforged.fml.loading.FMLPaths;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.Component;
 
 import java.io.*;
 import java.lang.reflect.Type;
@@ -20,7 +20,7 @@ import java.util.Map;
 public class PlayerLevelManager {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final Path FILE = FabricLoader.getInstance().getGameDir().resolve("player-levels.json");
+    private static final Path FILE = FMLPaths.GAMEDIR.get().resolve("player-levels.json");
 
     private static class Data {
         int level = 0;
@@ -72,9 +72,9 @@ public class PlayerLevelManager {
             leveled = true;
             final int newLevel = d.level;
             server.execute(() -> {
-                ServerPlayerEntity sp = server.getPlayerManager().getPlayer(player);
+                ServerPlayer sp = server.getPlayerList().getPlayerByName(player);
                 if (sp != null) {
-                    sp.sendMessage(Text.literal(
+                    sp.displayClientMessage(Component.literal(
                         "§6[Nouvelle Terre] §e✨ Niveau " + newLevel + " atteint ! De nouvelles quêtes sont disponibles."), false);
                 }
             });

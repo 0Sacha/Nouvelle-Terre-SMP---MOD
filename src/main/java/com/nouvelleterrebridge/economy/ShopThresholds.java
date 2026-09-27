@@ -4,13 +4,13 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
-import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.registry.Registries;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.Rarity;
+import net.neoforged.fml.loading.FMLPaths;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.Rarity;
 
 import java.io.*;
 import java.lang.reflect.Type;
@@ -54,7 +54,7 @@ public class ShopThresholds {
     }
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final Path FILE = FabricLoader.getInstance().getGameDir().resolve("seuils-shop.json");
+    private static final Path FILE = FMLPaths.GAMEDIR.get().resolve("seuils-shop.json");
     private static Map<String, Entry> thresholds = new HashMap<>();
 
     public static synchronized void load() {
@@ -280,9 +280,9 @@ public class ShopThresholds {
         Entry existing = thresholds.get(itemId);
         if (existing != null) return existing;
 
-        Identifier id = Identifier.tryParse(itemId);
+        ResourceLocation id = ResourceLocation.tryParse(itemId);
         if (id == null) return null;
-        Item item = Registries.ITEM.get(id);
+        Item item = BuiltInRegistries.ITEM.get(id);
         if (item == Items.AIR) return null;
 
         Entry e;

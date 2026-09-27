@@ -1,7 +1,7 @@
 package com.nouvelleterrebridge.market;
 
-import net.minecraft.registry.Registries;
-import net.minecraft.util.Identifier;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -174,7 +174,7 @@ public class FrenchItemNames {
 
         // Déjà un ID Minecraft valide avec namespace
         if (input.contains(":")) {
-            return Registries.ITEM.containsId(Identifier.tryParse(input)) ? input : null;
+            return BuiltInRegistries.ITEM.containsKey(ResourceLocation.tryParse(input)) ? input : null;
         }
 
         String norm = normaliser(input);
@@ -185,7 +185,7 @@ public class FrenchItemNames {
 
         // Essaie comme ID minecraft:xxx directement
         String withPrefix = "minecraft:" + norm.replace(" ", "_");
-        if (Registries.ITEM.containsId(Identifier.tryParse(withPrefix))) return withPrefix;
+        if (BuiltInRegistries.ITEM.containsKey(ResourceLocation.tryParse(withPrefix))) return withPrefix;
 
         // Recherche par préfixe
         for (Map.Entry<String, String> entry : FR_TO_MC.entrySet()) {

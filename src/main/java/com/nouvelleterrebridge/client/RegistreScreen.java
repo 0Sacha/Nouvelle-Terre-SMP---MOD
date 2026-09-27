@@ -3,11 +3,10 @@ package com.nouvelleterrebridge.client;
 import com.nouvelleterrebridge.network.NtNet;
 
 import com.nouvelleterrebridge.network.RegistreNetworking;
-import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.text.Text;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -54,7 +53,7 @@ public class RegistreScreen extends Screen {
     private int px, py, pw, ph;
 
     public RegistreScreen(List<PersonnageData> personnages) {
-        super(Text.empty());
+        super(Component.empty());
         this.personnages = new ArrayList<>(personnages);
         this.personnages.sort(Comparator
             .comparingInt((PersonnageData p) -> p.enLigne() ? 0 : 1)
@@ -65,8 +64,8 @@ public class RegistreScreen extends Screen {
 
     public void sendDetailRequest(String pseudo) {
         viewState = ViewState.LOADING;
-        PacketByteBuf buf = PacketByteBufs.create();
-        buf.writeString(pseudo);
+        FriendlyByteBuf buf = com.nouvelleterrebridge.network.NtNet.buffer();
+        buf.writeUtf(pseudo);
         NtNet.versServeur(RegistreNetworking.REGISTRE_DETAIL_REQUEST, buf);
     }
 
@@ -83,7 +82,7 @@ public class RegistreScreen extends Screen {
     // ── Render ───────────────────────────────────────────────────────────────
 
     @Override
-    public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
         pw = Math.min(viewState == ViewState.LIST ? PW_LIST : PW_DETAIL, width  - 16);
         ph = Math.min(viewState == ViewState.LIST ? PH_LIST : PH_DETAIL, height - 16);
         px = (width  - pw) / 2;
@@ -105,18 +104,18 @@ public class RegistreScreen extends Screen {
 
     // ── List ─────────────────────────────────────────────────────────────────
 
-    private void renderList(DrawContext ctx, int mouseX, int mouseY) {
+    private void renderList(GuiGraphics ctx, int mouseX, int mouseY) {
         ctx.fill(px, py, px + pw, py + HEADER, C_PANEL);
         ctx.fill(px, py + HEADER, px + pw, py + HEADER + 1, C_BORDER);
-        HubBackButton.render(ctx, textRenderer, px + PAD, py + (HEADER - HubBackButton.H) / 2, mouseX, mouseY);
+        HubBackButton.render(ctx, font, px + PAD, py + (HEADER - HubBackButton.H) / 2, mouseX, mouseY);
         int titleX = px + PAD + HubBackButton.W + 8;
-        ctx.drawText(textRenderer, "§lRegistre des personnages", titleX, py + 10, C_GOLD, false);
+        ctx.drawString(font, "§lRegistre des personnages", titleX, py + 10, C_GOLD, false);
         long online = personnages.stream().filter(PersonnageData::enLigne).count();
-        ctx.drawText(textRenderer, online + " en ligne · " + personnages.size() + " personnages",
+        ctx.drawString(font, online + " en ligne · " + personnages.size() + " personnages",
             titleX, py + 24, C_DIM, false);
 
         boolean hClose = inBounds(mouseX, mouseY, px + pw - 20, py + 8, 14, 16);
-        ctx.drawText(textRenderer, hClose ? "§c✕" : "§7✕", px + pw - 16, py + 12, C_WHITE, false);
+        ctx.drawString(font, hClose ? "§c✕" : "§7✕", px + pw - 16, py + 12, C_WHITE, false);
 
         int listTop  = py + HEADER + 1;
         int listH    = ph - HEADER - 1;
@@ -136,22 +135,22 @@ public class RegistreScreen extends Screen {
             int dot = p.enLigne() ? C_GREEN : C_DIM;
             ctx.fill(px + PAD, ry + 8, px + PAD + 6, ry + 14, dot);
 
-            ctx.drawText(textRenderer, p.nomRp(), px + PAD + 10, ry + 7, C_WHITE, false);
+            ctx.drawString(font, p.nomRp(), px + PAD + 10, ry + 7, C_WHITE, false);
 
             if (!p.pseudoMc().isEmpty()) {
-                int nw = textRenderer.getWidth(p.nomRp());
-                ctx.drawText(textRenderer, "§8— §7" + p.pseudoMc(),
+                int nw = font.width(p.nomRp());
+                ctx.drawString(font, "§8— §7" + p.pseudoMc(),
                     px + PAD + 10 + nw + 4, ry + 7, C_MID, false);
             }
 
             if (p.enLigne()) {
                 String badge = "● en ligne";
-                ctx.drawText(textRenderer, "§a" + badge,
-                    px + pw - PAD - textRenderer.getWidth(badge), ry + 7, C_GREEN, false);
+                ctx.drawString(font, "§a" + badge,
+                    px + pw - PAD - font.width(badge), ry + 7, C_GREEN, false);
             }
 
             if (hov) {
-                ctx.drawText(textRenderer, "§8›", px + pw - PAD - 4, ry + 7, C_DIM, false);
+                ctx.drawString(font, "§8›", px + pw - PAD - 4, ry + 7, C_DIM, false);
             }
         }
         ctx.disableScissor();
@@ -166,20 +165,20 @@ public class RegistreScreen extends Screen {
 
     // ── Loading ──────────────────────────────────────────────────────────────
 
-    private void renderLoading(DrawContext ctx) {
+    private void renderLoading(GuiGraphics ctx) {
         ctx.fill(px, py, px + pw, py + HEADER, C_PANEL);
         ctx.fill(px, py + HEADER, px + pw, py + HEADER + 1, C_BORDER);
-        ctx.drawText(textRenderer, "§lRegistre", px + PAD, py + 14, C_GOLD, false);
+        ctx.drawString(font, "§lRegistre", px + PAD, py + 14, C_GOLD, false);
 
         String msg = "Chargement de la fiche...";
-        ctx.drawText(textRenderer, "§7" + msg,
-            px + (pw - textRenderer.getWidth(msg)) / 2,
+        ctx.drawString(font, "§7" + msg,
+            px + (pw - font.width(msg)) / 2,
             py + HEADER + (ph - HEADER) / 2 - 4, C_MID, false);
     }
 
     // ── Detail ───────────────────────────────────────────────────────────────
 
-    private void renderDetail(DrawContext ctx, int mouseX, int mouseY) {
+    private void renderDetail(GuiGraphics ctx, int mouseX, int mouseY) {
         if (detail == null) { onDetailError(); return; }
 
         // Header
@@ -187,17 +186,17 @@ public class RegistreScreen extends Screen {
         ctx.fill(px, py + HEADER, px + pw, py + HEADER + 1, C_BORDER);
 
         boolean hBack = inBounds(mouseX, mouseY, px + PAD - 2, py + 8, 56, 16);
-        ctx.drawText(textRenderer, hBack ? "§f← Retour" : "§7← Retour", px + PAD, py + 14, C_MID, false);
+        ctx.drawString(font, hBack ? "§f← Retour" : "§7← Retour", px + PAD, py + 14, C_MID, false);
 
         // Nom RP + dot statut
         int titleX = px + PAD + 62;
-        ctx.drawText(textRenderer, "§l" + detail.nomRp(), titleX, py + 10, C_WHITE, false);
-        int titleW = textRenderer.getWidth("§l" + detail.nomRp());
+        ctx.drawString(font, "§l" + detail.nomRp(), titleX, py + 10, C_WHITE, false);
+        int titleW = font.width("§l" + detail.nomRp());
         ctx.fill(titleX + titleW + 6, py + 13, titleX + titleW + 12, py + 19,
             detail.enLigne() ? C_GREEN : C_DIM);
 
         boolean hClose = inBounds(mouseX, mouseY, px + pw - 20, py + 8, 14, 16);
-        ctx.drawText(textRenderer, hClose ? "§c✕" : "§7✕", px + pw - 16, py + 12, C_WHITE, false);
+        ctx.drawString(font, hClose ? "§c✕" : "§7✕", px + pw - 16, py + 12, C_WHITE, false);
 
         // Scrollable body
         int bodyTop  = py + HEADER + 1;
@@ -228,7 +227,7 @@ public class RegistreScreen extends Screen {
      * dryRun=true : aucun rendu, retourne la hauteur totale.
      * dryRun=false : rend à (x, y).
      */
-    private int renderDetailContent(DrawContext ctx, int x, int y, int innerW, boolean dryRun) {
+    private int renderDetailContent(GuiGraphics ctx, int x, int y, int innerW, boolean dryRun) {
         int cy = y;
 
         // ── Ligne info rapide ─────────────────────────────────────────────────
@@ -238,21 +237,21 @@ public class RegistreScreen extends Screen {
         if (detail.age() > 0)             chips.add("§7Âge: §f" + detail.age() + " ans");
         if (!detail.origine().isEmpty())  chips.add("§7Origine: §f" + detail.origine());
         if (!chips.isEmpty()) {
-            if (!dryRun) ctx.drawText(textRenderer, String.join("  §8·  ", chips), x, cy, C_MID, false);
+            if (!dryRun) ctx.drawString(font, String.join("  §8·  ", chips), x, cy, C_MID, false);
             cy += LINE_H + 4;
         }
 
         // ── Spécialité ────────────────────────────────────────────────────────
         if (!detail.specialite().isEmpty()) {
             if (!dryRun)
-                ctx.drawText(textRenderer, "§7Spécialité: §f" + detail.specialite(), x, cy, C_MID, false);
+                ctx.drawString(font, "§7Spécialité: §f" + detail.specialite(), x, cy, C_MID, false);
             cy += LINE_H + 6;
         }
 
         // ── Traits ────────────────────────────────────────────────────────────
         if (!detail.traits().isEmpty()) {
             if (!dryRun)
-                ctx.drawText(textRenderer, "§7Traits: §8" + detail.traits(), x, cy, C_DIM, false);
+                ctx.drawString(font, "§7Traits: §8" + detail.traits(), x, cy, C_DIM, false);
             cy += LINE_H + 8;
         }
 
@@ -267,7 +266,7 @@ public class RegistreScreen extends Screen {
             List<String> lines = wrapText("\"" + detail.citation() + "\"", innerW);
             for (String line : lines) {
                 if (!dryRun)
-                    ctx.drawText(textRenderer, "§7§o" + line, x, cy, C_DIM, false);
+                    ctx.drawString(font, "§7§o" + line, x, cy, C_DIM, false);
                 cy += LINE_H;
             }
             cy += 4;
@@ -276,15 +275,15 @@ public class RegistreScreen extends Screen {
         return cy - y;
     }
 
-    private int renderSection(DrawContext ctx, int x, int cy, int innerW,
+    private int renderSection(GuiGraphics ctx, int x, int cy, int innerW,
                               String label, String text, boolean dryRun) {
         if (text == null || text.isEmpty()) return cy;
         if (!dryRun)
-            ctx.drawText(textRenderer, "§e" + label, x, cy, C_GOLD, false);
+            ctx.drawString(font, "§e" + label, x, cy, C_GOLD, false);
         cy += LINE_H + 2;
         for (String line : wrapText(text, innerW)) {
             if (!dryRun)
-                ctx.drawText(textRenderer, line, x, cy, C_MID, false);
+                ctx.drawString(font, line, x, cy, C_MID, false);
             cy += LINE_H;
         }
         return cy + 6;
@@ -301,7 +300,7 @@ public class RegistreScreen extends Screen {
             for (String word : para.split("\\s+")) {
                 if (word.isEmpty()) continue;
                 String test = line.length() > 0 ? line + " " + word : word;
-                if (textRenderer.getWidth(test) > maxWidth && line.length() > 0) {
+                if (font.width(test) > maxWidth && line.length() > 0) {
                     result.add(line.toString());
                     line = new StringBuilder(word);
                 } else {
@@ -341,10 +340,10 @@ public class RegistreScreen extends Screen {
         int mx = (int) mouseX, my = (int) mouseY;
 
         // Clic hors du panneau → fermer
-        if (!inBounds(mx, my, px, py, pw, ph)) { this.close(); return true; }
+        if (!inBounds(mx, my, px, py, pw, ph)) { this.onClose(); return true; }
 
         // Bouton ✕ (toujours)
-        if (inBounds(mx, my, px + pw - 20, py + 8, 14, 16)) { this.close(); return true; }
+        if (inBounds(mx, my, px + pw - 20, py + 8, 14, 16)) { this.onClose(); return true; }
 
         if (viewState == ViewState.LIST
             && HubBackButton.clicked(px + PAD, py + (HEADER - HubBackButton.H) / 2, mx, my)) return true;
@@ -368,5 +367,5 @@ public class RegistreScreen extends Screen {
     }
 
     @Override
-    public boolean shouldPause() { return false; }
+    public boolean isPauseScreen() { return false; }
 }

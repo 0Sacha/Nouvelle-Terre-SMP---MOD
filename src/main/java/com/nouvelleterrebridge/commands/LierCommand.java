@@ -2,13 +2,13 @@ package com.nouvelleterrebridge.commands;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.nouvelleterrebridge.http.EventDispatcher;
-import net.minecraft.server.command.CommandManager;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.ClickEvent;
-import net.minecraft.text.HoverEvent;
-import net.minecraft.text.MutableText;
-import net.minecraft.text.Text;
+import net.minecraft.commands.Commands;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.Component;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -22,16 +22,16 @@ public class LierCommand {
 
     private static final Random RANDOM = new Random();
 
-    public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
+    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(
-            CommandManager.literal("discord")
+            Commands.literal("discord")
                 .executes(ctx -> executerLier(ctx.getSource()))
         );
     }
 
-    private static int executerLier(ServerCommandSource source) {
-        if (!(source.getEntity() instanceof ServerPlayerEntity joueur)) {
-            source.sendError(Text.literal("Commande réservée aux joueurs.")); return 0;
+    private static int executerLier(CommandSourceStack source) {
+        if (!(source.getEntity() instanceof ServerPlayer joueur)) {
+            source.sendFailure(Component.literal("Commande réservée aux joueurs.")); return 0;
         }
 
         String pseudo = joueur.getName().getString();
@@ -42,18 +42,18 @@ public class LierCommand {
         data.put("code", code);
         EventDispatcher.envoyer("LINK_REQUEST", data);
 
-        MutableText codeCliquable = Text.literal("§f§l" + code)
-            .styled(s -> s
+        MutableComponent codeCliquable = Component.literal("§f§l" + code)
+            .withStyle(s -> s
                 .withClickEvent(new ClickEvent(ClickEvent.Action.COPY_TO_CLIPBOARD, code))
                 .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-                    Text.literal("§7Cliquer pour copier")))
+                    Component.literal("§7Cliquer pour copier")))
             );
 
-        joueur.sendMessage(Text.literal(EconomieCommand.SEP_GOLD));
-        joueur.sendMessage(Text.literal("    §6§l🔗 §f§lLiaison Discord"));
-        joueur.sendMessage(Text.literal("  §7Ton code : ").append(codeCliquable));
-        joueur.sendMessage(Text.literal("  §7Tape §f/link <code> §7sur Discord. §eValide 10 min."));
-        joueur.sendMessage(Text.literal(EconomieCommand.SEP_GOLD));
+        joueur.sendSystemMessage(Component.literal(EconomieCommand.SEP_GOLD));
+        joueur.sendSystemMessage(Component.literal("    §6§l🔗 §f§lLiaison Discord"));
+        joueur.sendSystemMessage(Component.literal("  §7Ton code : ").append(codeCliquable));
+        joueur.sendSystemMessage(Component.literal("  §7Tape §f/link <code> §7sur Discord. §eValide 10 min."));
+        joueur.sendSystemMessage(Component.literal(EconomieCommand.SEP_GOLD));
         return 1;
     }
 }

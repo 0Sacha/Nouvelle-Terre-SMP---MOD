@@ -4,7 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
-import net.fabricmc.loader.api.FabricLoader;
+import net.neoforged.fml.loading.FMLPaths;
 
 import java.io.*;
 import java.lang.reflect.Type;
@@ -29,7 +29,7 @@ public class MarketManager {
     private final AtomicInteger nextId = new AtomicInteger(1);
 
     private MarketManager() {
-        fichierMarche = FabricLoader.getInstance().getGameDir().resolve("marche.json");
+        fichierMarche = FMLPaths.GAMEDIR.get().resolve("marche.json");
         load();
     }
 

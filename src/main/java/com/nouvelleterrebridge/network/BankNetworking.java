@@ -1,14 +1,14 @@
 package com.nouvelleterrebridge.network;
 
-import net.minecraft.network.packet.CustomPayload;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 
 public final class BankNetworking {
 
-    public static final CustomPayload.Id<NtPayload> BANK_OPEN = NtNet.canal("bank_open");
-    public static final CustomPayload.Id<NtPayload> BANK_ACTION = NtNet.canal("bank_action");
-    public static final CustomPayload.Id<NtPayload> BANK_RESULT = NtNet.canal("bank_result");
+    public static final CustomPacketPayload.Type<NtPayload> BANK_OPEN = NtNet.canal("bank_open");
+    public static final CustomPacketPayload.Type<NtPayload> BANK_ACTION = NtNet.canal("bank_action");
+    public static final CustomPacketPayload.Type<NtPayload> BANK_RESULT = NtNet.canal("bank_result");
 
-    public static final CustomPayload.Id<NtPayload> BANK_REQUEST = NtNet.canal("bank_request");
+    public static final CustomPacketPayload.Type<NtPayload> BANK_REQUEST = NtNet.canal("bank_request");
 
     public static final int ACTION_LOAN_REQUEST      = 0;  // prêteur → propose un crédit à l'emprunteur
     public static final int ACTION_LOAN_REPAY        = 1;

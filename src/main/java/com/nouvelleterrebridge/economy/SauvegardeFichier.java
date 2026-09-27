@@ -1,7 +1,7 @@
 package com.nouvelleterrebridge.economy;
 
 import com.nouvelleterrebridge.NouvelleTerreBridge;
-import net.fabricmc.loader.api.FabricLoader;
+import net.neoforged.fml.loading.FMLPaths;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -27,7 +27,7 @@ public final class SauvegardeFichier {
 
     /** Dossier des copies, à la racine du serveur. */
     public static Path dossier() {
-        return FabricLoader.getInstance().getGameDir().resolve("backups-economie");
+        return FMLPaths.GAMEDIR.get().resolve("backups-economie");
     }
 
     /**
@@ -65,7 +65,7 @@ public final class SauvegardeFichier {
             String cible = nomSauvegarde.substring(0, nomSauvegarde.indexOf('.')) + ".json";
             sauver(cible, "avant-restauration");
 
-            Path destination = FabricLoader.getInstance().getGameDir().resolve(cible);
+            Path destination = FMLPaths.GAMEDIR.get().resolve(cible);
             Files.copy(source, destination, StandardCopyOption.REPLACE_EXISTING);
             NouvelleTerreBridge.LOGGER.info("[Sauvegarde] Restauré : {} → {}", nomSauvegarde, cible);
             return cible;
@@ -82,11 +82,11 @@ public final class SauvegardeFichier {
      * @return true si une copie a été écrite (false si le fichier n'existe pas encore)
      */
     public static boolean sauver(String nomFichier, String motif) {
-        Path source = FabricLoader.getInstance().getGameDir().resolve(nomFichier);
+        Path source = FMLPaths.GAMEDIR.get().resolve(nomFichier);
         if (!Files.exists(source)) return false;
 
         try {
-            Path dossier = FabricLoader.getInstance().getGameDir().resolve("backups-economie");
+            Path dossier = FMLPaths.GAMEDIR.get().resolve("backups-economie");
             Files.createDirectories(dossier);
 
             String base = nomFichier.replace(".json", "");

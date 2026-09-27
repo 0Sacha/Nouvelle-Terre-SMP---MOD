@@ -6,14 +6,12 @@ import com.nouvelleterrebridge.network.ServiceNetworking;
 import com.nouvelleterrebridge.service.ServiceImages;
 import com.nouvelleterrebridge.service.ServiceManager;
 import io.netty.buffer.Unpooled;
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -24,7 +22,6 @@ import java.util.List;
  * Cinq onglets : le journal des annonces, ses propres annonces, les prestations
  * qu'on rend, les commandes qu'on a passées, et les archives.
  */
-@Environment(EnvType.CLIENT)
 public class MarcheScreen extends Screen {
 
     // ── Données ───────────────────────────────────────────────────────────────
@@ -92,7 +89,7 @@ public class MarcheScreen extends Screen {
     private String categorieFiltre = "Toutes";
     private int tabsStartX = 0;
 
-    private TextFieldWidget rechercheField;
+    private EditBox rechercheField;
 
     /** Bounds cliquables recalculés au rendu : {x, y, w, h, action, id}. */
     private final List<int[]> bounds = new ArrayList<>();
@@ -117,12 +114,12 @@ public class MarcheScreen extends Screen {
 
     // Formulaire de publication
     private boolean formOuvert = false;
-    private TextFieldWidget fTitre, fDescription, fImage;
+    private EditBox fTitre, fDescription, fImage;
     private final NumberInput fPrix = new NumberInput(0, 1, 999_999);
     private int fContact = 0;
     /** Catégorie choisie : "" tant que rien n'est sélectionné ni saisi. */
     private String fCategorie = "";
-    private TextFieldWidget fNouvelleCategorie;
+    private EditBox fNouvelleCategorie;
 
     /** Catégories déjà utilisées sur le serveur, envoyées par le serveur. */
     private List<String> categories = new ArrayList<>();
@@ -132,10 +129,10 @@ public class MarcheScreen extends Screen {
     // Validation avec note
     private CommandeData validationEnCours = null;
     private int noteChoisie = 0;
-    private TextFieldWidget fAvis;
+    private EditBox fAvis;
 
     // Chat
-    private TextFieldWidget fMessage;
+    private EditBox fMessage;
 
     private String toastMsg;
     private boolean toastOk;
@@ -146,7 +143,7 @@ public class MarcheScreen extends Screen {
     public MarcheScreen(int balance, List<String> categories, List<AnnonceData> annonces,
                         List<CommandeData> prestations,
                         List<CommandeData> commandes, List<CommandeData> archives) {
-        super(Text.literal("LeBonCube"));
+        super(Component.literal("LeBonCube"));
         maj(balance, categories, annonces, prestations, commandes, archives);
     }
 
@@ -180,7 +177,7 @@ public class MarcheScreen extends Screen {
             if (formOuvert) viderFormulaire();
             formOuvert = false;
             validationEnCours = null;
-            if (fMessage != null) fMessage.setText("");
+            if (fMessage != null) fMessage.setValue("");
         }
         toastMsg = msg.replaceAll("§[0-9a-fA-Fklmnor]", "");
         toastOk  = ok;
@@ -203,7 +200,7 @@ public class MarcheScreen extends Screen {
         fMessage       = champ(0, -200, 200, "Votre message...");
         fTitre.setMaxLength(60);
         // Une URL Discord porte des paramètres de signature : ~200 caractères.
-        // Sans ça le champ reste au défaut de TextFieldWidget, soit 32.
+        // Sans ça le champ reste au défaut de EditBox, soit 32.
         fImage.setMaxLength(500);
         fDescription.setMaxLength(500);
         fAvis.setMaxLength(200);
@@ -211,7 +208,7 @@ public class MarcheScreen extends Screen {
         fNouvelleCategorie = champ(0, -200, 200, "Nouvelle catégorie...");
         fNouvelleCategorie.setMaxLength(20);
         fPrix.setPlaceholder("Prix ◆...");
-        rechercheField.setChangedListener(s -> scroll = 0);
+        rechercheField.setResponder(s -> scroll = 0);
     }
 
     /**
@@ -221,10 +218,10 @@ public class MarcheScreen extends Screen {
      * texte de la précédente, qu'il fallait effacer à la main.
      */
     private void viderFormulaire() {
-        if (fTitre != null)       fTitre.setText("");
-        if (fDescription != null) fDescription.setText("");
-        if (fImage != null)       fImage.setText("");
-        if (fNouvelleCategorie != null) fNouvelleCategorie.setText("");
+        if (fTitre != null)       fTitre.setValue("");
+        if (fDescription != null) fDescription.setValue("");
+        if (fImage != null)       fImage.setValue("");
+        if (fNouvelleCategorie != null) fNouvelleCategorie.setValue("");
         fPrix.clear();
         fContact   = 0;
         fCategorie = "";
@@ -237,32 +234,38 @@ public class MarcheScreen extends Screen {
      * clics : la barre de recherche, restée sur la zone de liste, avalait le clic
      * du bouton « ← Retour » du formulaire, qui semblait alors mort.
      */
-    private void parquerChamps(TextFieldWidget... utilises) {
-        List<TextFieldWidget> gardes = List.of(utilises);
-        for (TextFieldWidget f : new TextFieldWidget[]{rechercheField, fTitre, fDescription,
+    private void parquerChamps(EditBox... utilises) {
+        List<EditBox> gardes = List.of(utilises);
+        for (EditBox f : new EditBox[]{rechercheField, fTitre, fDescription,
                 fImage, fNouvelleCategorie, fAvis, fMessage}) {
             if (f != null && !gardes.contains(f)) { f.setY(-200); f.setFocused(false); }
         }
     }
 
-    private TextFieldWidget champ(int x, int y, int w, String placeholder) {
-        TextFieldWidget f = new TextFieldWidget(textRenderer, x, y, w, 18, Text.empty());
-        f.setDrawsBackground(false);
-        f.setPlaceholder(Text.literal(placeholder));
-        addSelectableChild(f);
+    private EditBox champ(int x, int y, int w, String placeholder) {
+        EditBox f = new EditBox(font, x, y, w, 18, Component.empty());
+        f.setBordered(false);
+        f.setHint(Component.literal(placeholder));
+        addRenderableWidget(f);
         return f;
     }
 
-    @Override public boolean shouldPause() { return false; }
+    @Override public boolean isPauseScreen() { return false; }
 
     private String moi() {
-        return client != null && client.player != null ? client.player.getName().getString() : "";
+        return this.minecraft != null && this.minecraft.player != null ? this.minecraft.player.getName().getString() : "";
     }
 
     // ── Rendu ─────────────────────────────────────────────────────────────────
 
     @Override
-    public void render(DrawContext ctx, int mx, int my, float delta) {
+    public void renderBackground(GuiGraphics ctx, int mx, int my, float delta) {
+        // No-op — cet écran dessine son propre fond ; super.render() (appelé en dernier
+        // pour les widgets vanilla) réappliquerait sinon flou + texture menu par-dessus.
+    }
+
+    @Override
+    public void render(GuiGraphics ctx, int mx, int my, float delta) {
         ctx.fill(0, 0, width, height, 0x78000000);
         ctx.fill(px, py, px + pw, py + ph, C_BG);
         cadre(ctx, px, py, pw, ph, C_BORDER);
@@ -290,31 +293,31 @@ public class MarcheScreen extends Screen {
         super.render(ctx, mx, my, delta);
     }
 
-    private void cadre(DrawContext ctx, int x, int y, int w, int h, int couleur) {
+    private void cadre(GuiGraphics ctx, int x, int y, int w, int h, int couleur) {
         ctx.fill(x, y, x + w, y + 1, couleur);
         ctx.fill(x, y + h - 1, x + w, y + h, couleur);
         ctx.fill(x, y, x + 1, y + h, couleur);
         ctx.fill(x + w - 1, y, x + w, y + h, couleur);
     }
 
-    private void renderTopBar(DrawContext ctx, int mx, int my) {
+    private void renderTopBar(GuiGraphics ctx, int mx, int my) {
         ctx.fill(px, py, px + pw, py + TOP_H, C_PANEL);
         ctx.fill(px, py + TOP_H - 1, px + pw, py + TOP_H, C_BORDER);
 
         // ── Rangée 1 : retour, titre, solde ──
         int tx = px + PAD;
-        HubBackButton.render(ctx, textRenderer, tx, py + (TITRE_H - HubBackButton.H) / 2, mx, my);
+        HubBackButton.render(ctx, font, tx, py + (TITRE_H - HubBackButton.H) / 2, mx, my);
         tx += HubBackButton.W + 8;
 
-        ctx.drawText(textRenderer, "LeBonCube", tx, py + 8, C_GOLD, false);
-        ctx.drawText(textRenderer, "§8Services entre joueurs", tx, py + 21, C_DIM, false);
+        ctx.drawString(font, "LeBonCube", tx, py + 8, C_GOLD, false);
+        ctx.drawString(font, "§8Services entre joueurs", tx, py + 21, C_DIM, false);
 
         String bal = balance + " ◆";
-        int bw = textRenderer.getWidth(bal) + 16;
+        int bw = font.width(bal) + 16;
         int bx = px + pw - bw - PAD;
         ctx.fill(bx, py + 8, bx + bw, py + 28, C_SURFACE);
         ctx.fill(bx, py + 8, bx + 2, py + 28, C_GOLD);
-        ctx.drawText(textRenderer, bal, bx + 9, py + 14, C_GOLD, false);
+        ctx.drawString(font, bal, bx + 9, py + 14, C_GOLD, false);
 
         // ── Rangée 2 : onglets sur toute la largeur ──
         // Ils étaient sur la même ligne que le titre et passaient sous le solde dès
@@ -338,14 +341,14 @@ public class MarcheScreen extends Screen {
     }
 
     /** Texte centré sans ombre — l'ombre rend les libellés gras et illisibles. */
-    private void centre(DrawContext ctx, String texte, int cx, int y, int couleur) {
-        ctx.drawText(textRenderer, texte, cx - textRenderer.getWidth(texte) / 2, y, couleur, false);
+    private void centre(GuiGraphics ctx, String texte, int cx, int y, int couleur) {
+        ctx.drawString(font, texte, cx - font.width(texte) / 2, y, couleur, false);
     }
 
     // ── Liste d'annonces ──────────────────────────────────────────────────────
 
     private List<AnnonceData> annoncesFiltrees(boolean seulementMoi) {
-        String q = rechercheField != null ? rechercheField.getText().trim().toLowerCase() : "";
+        String q = rechercheField != null ? rechercheField.getValue().trim().toLowerCase() : "";
         String me = moi();
         return annonces.stream()
             .filter(a -> !seulementMoi || a.auteur().equalsIgnoreCase(me))
@@ -358,7 +361,7 @@ public class MarcheScreen extends Screen {
             .toList();
     }
 
-    private void renderAnnonces(DrawContext ctx, int mx, int my, int cy, int ch, boolean mesAnnonces) {
+    private void renderAnnonces(GuiGraphics ctx, int mx, int my, int cy, int ch, boolean mesAnnonces) {
         parquerChamps(rechercheField);
         // Barre de recherche, et bouton publier réservé au journal des annonces
         int barreH = 26;
@@ -366,7 +369,7 @@ public class MarcheScreen extends Screen {
         int finBarre = px + pw - PAD;
         if (!mesAnnonces) {
             String pubLbl = "+ Publier une annonce";
-            int pubW = textRenderer.getWidth(pubLbl) + 18;
+            int pubW = font.width(pubLbl) + 18;
             int pubX = px + pw - PAD - pubW;
             boolean pubHov = mx >= pubX && mx < pubX + pubW && my >= cy + 6 && my < cy + 26;
             ctx.fill(pubX, cy + 6, pubX + pubW, cy + 26, pubHov ? 0xFF1A8050 : C_GREEN);
@@ -389,7 +392,7 @@ public class MarcheScreen extends Screen {
         List<String> cats = filtresDisponibles();
         for (int i = 0; i < cats.size(); i++) {
             String c = cats.get(i);
-            int cw = textRenderer.getWidth(c) + 12;
+            int cw = font.width(c) + 12;
             if (fx + cw > px + pw - PAD) break;
             boolean actif = categorieFiltre.equals(c);
             boolean hov = mx >= fx && mx < fx + cw && my >= fy && my < fy + 16;
@@ -423,7 +426,7 @@ public class MarcheScreen extends Screen {
         renderScrollbar(ctx, px + PAD + rowW + 2, cy, listH, visRows, list.size());
     }
 
-    private void renderAnnonceRow(DrawContext ctx, AnnonceData a, int x, int y,
+    private void renderAnnonceRow(GuiGraphics ctx, AnnonceData a, int x, int y,
                                   int mx, int my, boolean mienne) {
         boolean hov = mx >= x && mx < x + rowW && my >= y && my < y + ROW_H;
         ctx.fill(x, y, x + rowW, y + ROW_H, hov ? C_HOVER : C_SURFACE);
@@ -436,28 +439,28 @@ public class MarcheScreen extends Screen {
 
         int tx = vigX + vigW + 10;
         int dispo = rowW - (tx - x) - 120;
-        ctx.drawText(textRenderer, tronquer(a.titre(), dispo), tx, y + 8, C_WHITE, false);
+        ctx.drawString(font, tronquer(a.titre(), dispo), tx, y + 8, C_WHITE, false);
 
         String meta = a.categorie() + "  ·  par " + a.auteur() + "  ·  " + ancienntete(a.creeLe());
-        ctx.drawText(textRenderer, tronquer(meta, dispo), tx, y + 21, C_DIM, false);
+        ctx.drawString(font, tronquer(meta, dispo), tx, y + 21, C_DIM, false);
 
         String desc = a.description().replace("\n", " ");
-        ctx.drawText(textRenderer, "§7" + tronquer(desc, dispo), tx, y + 34, C_MID, false);
+        ctx.drawString(font, "§7" + tronquer(desc, dispo), tx, y + 34, C_MID, false);
 
         if (a.nbNotes() > 0) {
             String etoiles = etoiles(Math.round(a.noteMoyenne())) + " §8(" + a.nbNotes() + ")";
-            ctx.drawText(textRenderer, etoiles, tx, y + 46, C_GOLD, false);
+            ctx.drawString(font, etoiles, tx, y + 46, C_GOLD, false);
         } else {
-            ctx.drawText(textRenderer, "§8Pas encore noté", tx, y + 46, C_DIM, false);
+            ctx.drawString(font, "§8Pas encore noté", tx, y + 46, C_DIM, false);
         }
 
         // Prix + action à droite
         String prix = a.prix() + " ◆";
-        int prixW = textRenderer.getWidth(prix);
-        ctx.drawText(textRenderer, prix, x + rowW - prixW - 12, y + 10, C_GOLD, false);
+        int prixW = font.width(prix);
+        ctx.drawString(font, prix, x + rowW - prixW - 12, y + 10, C_GOLD, false);
 
         String lbl = mienne ? "Retirer" : "Voir";
-        int lw = textRenderer.getWidth(lbl) + 16;
+        int lw = font.width(lbl) + 16;
         int lx = x + rowW - lw - 12;
         int ly = y + ROW_H - BTN_H - 8;
         boolean lhov = mx >= lx && mx < lx + lw && my >= ly && my < ly + BTN_H;
@@ -473,10 +476,10 @@ public class MarcheScreen extends Screen {
     }
 
     /** Vignette d'annonce : image distante si disponible, pastille sinon. */
-    private void renderVignette(DrawContext ctx, String url, int x, int y, int w, int h, String categorie) {
+    private void renderVignette(GuiGraphics ctx, String url, int x, int y, int w, int h, String categorie) {
         ctx.fill(x, y, x + w, y + h, C_BG);
         if (url != null && !url.isEmpty()) {
-            Identifier tex = RemoteImage.texture(url);
+            ResourceLocation tex = RemoteImage.texture(url);
             if (tex != null) {
                 // Proportions conservées : une photo de téléphone (portrait) étirée
                 // dans un cadre paysage devient méconnaissable.
@@ -485,7 +488,7 @@ public class MarcheScreen extends Screen {
                 float k = Math.min(w / (float) iw, h / (float) ih);
                 int dw = Math.max(1, Math.round(iw * k));
                 int dh = Math.max(1, Math.round(ih * k));
-                ctx.drawTexture(tex, x + (w - dw) / 2, y + (h - dh) / 2, 0, 0, dw, dh, dw, dh);
+                ctx.blit(tex, x + (w - dw) / 2, y + (h - dh) / 2, 0, 0, dw, dh, dw, dh);
                 return;
             }
             if (RemoteImage.enCours(url)) {
@@ -527,7 +530,7 @@ public class MarcheScreen extends Screen {
 
     // ── Détail d'une annonce ──────────────────────────────────────────────────
 
-    private void renderDetail(DrawContext ctx, int mx, int my, int cy, int ch) {
+    private void renderDetail(GuiGraphics ctx, int mx, int my, int cy, int ch) {
         parquerChamps();
         AnnonceData a = detail;
         int x = px + PAD, w = pw - PAD * 2;
@@ -542,27 +545,27 @@ public class MarcheScreen extends Screen {
         int imgW = 180, imgH = 110;
         renderVignette(ctx, a.imageUrl(), ix, iy, imgW, imgH, a.categorie());
         if (a.imageUrl() != null && !a.imageUrl().isEmpty() && RemoteImage.echec(a.imageUrl()))
-            ctx.drawText(textRenderer, "§8Image indisponible", ix, iy + imgH + 4, C_DIM, false);
+            ctx.drawString(font, "§8Image indisponible", ix, iy + imgH + 4, C_DIM, false);
 
         int tx = ix + imgW + 14;
         int tw = w - (tx - x) - 16;
-        ctx.drawText(textRenderer, tronquer(a.titre(), tw), tx, iy, C_WHITE, false);
-        ctx.drawText(textRenderer, a.categorie() + " · par " + a.auteur(), tx, iy + 14, C_MID, false);
-        ctx.drawText(textRenderer, "Publiée " + ancienntete(a.creeLe()), tx, iy + 26, C_DIM, false);
-        ctx.drawText(textRenderer, a.nbNotes() > 0
+        ctx.drawString(font, tronquer(a.titre(), tw), tx, iy, C_WHITE, false);
+        ctx.drawString(font, a.categorie() + " · par " + a.auteur(), tx, iy + 14, C_MID, false);
+        ctx.drawString(font, "Publiée " + ancienntete(a.creeLe()), tx, iy + 26, C_DIM, false);
+        ctx.drawString(font, a.nbNotes() > 0
             ? etoiles(Math.round(a.noteMoyenne())) + " §8(" + a.nbNotes() + " avis)"
             : "§8Pas encore noté", tx, iy + 40, C_GOLD, false);
 
-        ctx.drawText(textRenderer, "§6" + a.prix() + " ◆ §7la prestation", tx, iy + 58, C_GOLD, false);
-        ctx.drawText(textRenderer, "§7Contact : §f" + a.contact(), tx, iy + 72, C_MID, false);
+        ctx.drawString(font, "§6" + a.prix() + " ◆ §7la prestation", tx, iy + 58, C_GOLD, false);
+        ctx.drawString(font, "§7Contact : §f" + a.contact(), tx, iy + 72, C_MID, false);
 
         // Description sur plusieurs lignes
         int dy = iy + imgH + 20;
-        ctx.drawText(textRenderer, "DESCRIPTION", ix, dy, C_DIM, false);
+        ctx.drawString(font, "DESCRIPTION", ix, dy, C_DIM, false);
         dy += 14;
         for (String ligne : decouper(a.description(), w - 28)) {
             if (dy > cy + ch - 70) break;
-            ctx.drawText(textRenderer, "§f" + ligne, ix, dy, C_WHITE, false);
+            ctx.drawString(font, "§f" + ligne, ix, dy, C_WHITE, false);
             dy += 11;
         }
 
@@ -572,7 +575,7 @@ public class MarcheScreen extends Screen {
         String lbl = mienne ? "Votre annonce"
                    : assez ? "Commander — " + a.prix() + " ◆"
                            : "Solde insuffisant";
-        int bw = Math.max(180, textRenderer.getWidth(lbl) + 24);
+        int bw = Math.max(180, font.width(lbl) + 24);
         int bx = px + pw - PAD - bw - 12;
         int by = py + ph - PAD - 26;
         boolean actif = !mienne && assez;
@@ -582,22 +585,22 @@ public class MarcheScreen extends Screen {
             actif ? C_WHITE : C_DIM);
         if (actif) bounds.add(new int[]{bx, by, bw, 24, CLIC_COMMANDER, a.id()});
 
-        ctx.drawText(textRenderer, "§8La moitié est versée à la commande, le reste à la validation.",
+        ctx.drawString(font, "§8La moitié est versée à la commande, le reste à la validation.",
             px + PAD + 12, by + 8, C_DIM, false);
     }
 
-    private void renderBoutonRetour(DrawContext ctx, int mx, int my, int x, int y) {
+    private void renderBoutonRetour(GuiGraphics ctx, int mx, int my, int x, int y) {
         String lbl = "← Retour";
-        int w = textRenderer.getWidth(lbl) + 16;
+        int w = font.width(lbl) + 16;
         boolean hov = mx >= x && mx < x + w && my >= y && my < y + 18;
         ctx.fill(x, y, x + w, y + 18, hov ? C_HOVER : C_SURFACE);
-        ctx.drawText(textRenderer, lbl, x + 8, y + 5, hov ? C_GOLD : C_MID, false);
+        ctx.drawString(font, lbl, x + 8, y + 5, hov ? C_GOLD : C_MID, false);
         bounds.add(new int[]{x, y, w, 18, 101, 0});
     }
 
     // ── Commandes / prestations ───────────────────────────────────────────────
 
-    private void renderCommandes(DrawContext ctx, int mx, int my, int cy, int ch,
+    private void renderCommandes(GuiGraphics ctx, int mx, int my, int cy, int ch,
                                  List<CommandeData> list, boolean cotePrestataire) {
         parquerChamps();
         cy += 8;
@@ -624,7 +627,7 @@ public class MarcheScreen extends Screen {
         renderScrollbar(ctx, px + PAD + rowW + 2, cy, listH, visRows, list.size());
     }
 
-    private void renderCommandeRow(DrawContext ctx, CommandeData c, int x, int y, int rh,
+    private void renderCommandeRow(GuiGraphics ctx, CommandeData c, int x, int y, int rh,
                                    int mx, int my, boolean cotePrestataire) {
         boolean hov = mx >= x && mx < x + rowW && my >= y && my < y + rh;
         ctx.fill(x, y, x + rowW, y + rh, hov ? C_HOVER : C_SURFACE);
@@ -632,12 +635,12 @@ public class MarcheScreen extends Screen {
         ctx.fill(x, y + rh - 1, x + rowW, y + rh, C_BORDER);
 
         int tx = x + 12;
-        ctx.drawText(textRenderer, tronquer(c.titre(), rowW - 240), tx, y + 8, C_WHITE, false);
+        ctx.drawString(font, tronquer(c.titre(), rowW - 240), tx, y + 8, C_WHITE, false);
 
         String autre = cotePrestataire ? "Client : " + c.client() : "Prestataire : " + c.prestataire();
-        ctx.drawText(textRenderer, autre + "  ·  " + c.prix() + " ◆  ·  " + ancienntete(c.creeLe()),
+        ctx.drawString(font, autre + "  ·  " + c.prix() + " ◆  ·  " + ancienntete(c.creeLe()),
             tx, y + 22, C_DIM, false);
-        ctx.drawText(textRenderer, libelleStatut(c), tx, y + 36, couleurStatut(c), false);
+        ctx.drawString(font, libelleStatut(c), tx, y + 36, couleurStatut(c), false);
 
         int droite = x + rowW - 10;
 
@@ -662,10 +665,10 @@ public class MarcheScreen extends Screen {
             // Archive : la ligne entière ouvre le dossier complet
             if (c.note() > 0) {
                 String e = etoiles(c.note());
-                ctx.drawText(textRenderer, e, x + rowW - textRenderer.getWidth(e) - 12, y + 8, C_GOLD, false);
+                ctx.drawString(font, e, x + rowW - font.width(e) - 12, y + 8, C_GOLD, false);
             }
             String voir = "Consulter";
-            int vw = textRenderer.getWidth(voir) + 14;
+            int vw = font.width(voir) + 14;
             int vx = x + rowW - vw - 12;
             int vy = y + rh - BTN_H - 8;
             boolean vhov = mx >= x && mx < x + rowW && my >= y && my < y + rh;
@@ -676,9 +679,9 @@ public class MarcheScreen extends Screen {
         }
     }
 
-    private int bouton(DrawContext ctx, String label, int droite, int y, int mx, int my,
+    private int bouton(GuiGraphics ctx, String label, int droite, int y, int mx, int my,
                        int couleur, int action, int id) {
-        int w = textRenderer.getWidth(label) + 14;
+        int w = font.width(label) + 14;
         int x = droite - w;
         boolean hov = mx >= x && mx < x + w && my >= y && my < y + BTN_H;
         ctx.fill(x, y, x + w, y + BTN_H, hov ? couleur : C_SURFACE);
@@ -719,7 +722,7 @@ public class MarcheScreen extends Screen {
      * Le chat disparaissait avec la commande une fois close : l'historique
      * existait toujours dans leboncube.json mais n'était plus consultable.
      */
-    private void renderArchiveDetail(DrawContext ctx, int mx, int my, int cy, int ch) {
+    private void renderArchiveDetail(GuiGraphics ctx, int mx, int my, int cy, int ch) {
         parquerChamps();
         CommandeData c = archiveOuverte;
         if (c == null) return;
@@ -727,9 +730,9 @@ public class MarcheScreen extends Screen {
 
         renderBoutonRetour(ctx, mx, my, x, cy + 8);
         boolean annulee = "ANNULEE".equals(c.statut());
-        ctx.drawText(textRenderer, tronquer(c.titre(), w - 200), x + 90, cy + 13, C_WHITE, false);
+        ctx.drawString(font, tronquer(c.titre(), w - 200), x + 90, cy + 13, C_WHITE, false);
         String etat = annulee ? "✖ Annulée" : "✅ Terminée";
-        ctx.drawText(textRenderer, etat, x + w - textRenderer.getWidth(etat) - 4, cy + 13,
+        ctx.drawString(font, etat, x + w - font.width(etat) - 4, cy + 13,
             annulee ? C_RED : C_GREEN, false);
         cy += 32;
 
@@ -739,17 +742,17 @@ public class MarcheScreen extends Screen {
         ctx.fill(x, cy, x + 3, cy + ficheH, annulee ? C_RED : C_GREEN);
 
         boolean jeSuisClient = c.client().equalsIgnoreCase(moi());
-        ctx.drawText(textRenderer, "§7Prestataire : §f" + c.prestataire(), x + 12, cy + 10, C_MID, false);
-        ctx.drawText(textRenderer, "§7Client : §f" + c.client(), x + 12, cy + 24, C_MID, false);
-        ctx.drawText(textRenderer, "§8" + (jeSuisClient ? "Vous étiez le client"
+        ctx.drawString(font, "§7Prestataire : §f" + c.prestataire(), x + 12, cy + 10, C_MID, false);
+        ctx.drawString(font, "§7Client : §f" + c.client(), x + 12, cy + 24, C_MID, false);
+        ctx.drawString(font, "§8" + (jeSuisClient ? "Vous étiez le client"
                                                        : "Vous étiez le prestataire"),
             x + 12, cy + 38, C_DIM, false);
 
         int cx2 = x + w / 2 + 10;
-        ctx.drawText(textRenderer, "§7Prix : §6" + c.prix() + " ◆", cx2, cy + 10, C_GOLD, false);
-        ctx.drawText(textRenderer, "§8Acompte versé : " + c.acompte() + " ◆", cx2, cy + 24, C_DIM, false);
-        ctx.drawText(textRenderer, "§8Commandée le " + dateComplete(c.creeLe()), cx2, cy + 38, C_DIM, false);
-        ctx.drawText(textRenderer, "§8" + (annulee ? "Annulée le " : "Terminée le ")
+        ctx.drawString(font, "§7Prix : §6" + c.prix() + " ◆", cx2, cy + 10, C_GOLD, false);
+        ctx.drawString(font, "§8Acompte versé : " + c.acompte() + " ◆", cx2, cy + 24, C_DIM, false);
+        ctx.drawString(font, "§8Commandée le " + dateComplete(c.creeLe()), cx2, cy + 38, C_DIM, false);
+        ctx.drawString(font, "§8" + (annulee ? "Annulée le " : "Terminée le ")
             + dateComplete(c.termineeLe()), cx2, cy + 50, C_DIM, false);
         cy += ficheH + 6;
 
@@ -761,15 +764,15 @@ public class MarcheScreen extends Screen {
             ctx.fill(x, cy, x + 3, cy + avisH, C_GOLD);
             String note = etoiles(c.note()) + " §8· laissé par " + c.client()
                 + " le " + dateComplete(c.termineeLe());
-            ctx.drawText(textRenderer, note, x + 12, cy + 8, C_GOLD, false);
+            ctx.drawString(font, note, x + 12, cy + 8, C_GOLD, false);
             int ay = cy + 22;
             for (String l : lignes) {
-                ctx.drawText(textRenderer, "§f" + l, x + 12, ay, C_WHITE, false);
+                ctx.drawString(font, "§f" + l, x + 12, ay, C_WHITE, false);
                 ay += 11;
             }
             cy += avisH + 6;
         } else {
-            ctx.drawText(textRenderer, "§8Aucun avis laissé sur cette prestation.", x + 12, cy + 2, C_DIM, false);
+            ctx.drawString(font, "§8Aucun avis laissé sur cette prestation.", x + 12, cy + 2, C_DIM, false);
             cy += 16;
         }
 
@@ -777,7 +780,7 @@ public class MarcheScreen extends Screen {
         int zoneH = py + ph - PAD - cy;
         if (zoneH < 40) return;
         ctx.fill(x, cy, x + w, cy + zoneH, C_PANEL);
-        ctx.drawText(textRenderer, "CONVERSATION (" + c.messages().size() + ")", x + 12, cy + 6, C_DIM, false);
+        ctx.drawString(font, "CONVERSATION (" + c.messages().size() + ")", x + 12, cy + 6, C_DIM, false);
 
         List<MessageData> msgs = c.messages();
         if (msgs.isEmpty()) {
@@ -799,18 +802,18 @@ public class MarcheScreen extends Screen {
             y -= blocH + 3;
             if (y < haut - blocH) break;
 
-            int bulleW = textRenderer.getWidth(m.auteur() + "  " + dateCourte(m.envoyeLe()));
-            for (String l : lignes) bulleW = Math.max(bulleW, textRenderer.getWidth(l));
+            int bulleW = font.width(m.auteur() + "  " + dateCourte(m.envoyeLe()));
+            for (String l : lignes) bulleW = Math.max(bulleW, font.width(l));
             bulleW = Math.min(w - 40, bulleW + 16);
             int bx = deMoi ? x + w - bulleW - 10 : x + 10;
 
             ctx.fill(bx, y, bx + bulleW, y + blocH, deMoi ? 0xFF23343F : C_SURFACE);
             ctx.fill(bx, y, bx + 2, y + blocH, deMoi ? C_BLUE : C_GOLD);
-            ctx.drawText(textRenderer, "§8" + m.auteur() + "  " + dateCourte(m.envoyeLe()),
+            ctx.drawString(font, "§8" + m.auteur() + "  " + dateCourte(m.envoyeLe()),
                 bx + 8, y + 4, C_DIM, false);
             int ly = y + 16;
             for (String l : lignes) {
-                ctx.drawText(textRenderer, "§f" + l, bx + 8, ly, C_WHITE, false);
+                ctx.drawString(font, "§f" + l, bx + 8, ly, C_WHITE, false);
                 ly += 11;
             }
         }
@@ -833,7 +836,7 @@ public class MarcheScreen extends Screen {
 
     // ── Chat ──────────────────────────────────────────────────────────────────
 
-    private void renderChat(DrawContext ctx, int mx, int my, int cy, int ch) {
+    private void renderChat(GuiGraphics ctx, int mx, int my, int cy, int ch) {
         parquerChamps(fMessage);
         CommandeData c = chatOuvert;
         if (c == null) { chatOuvert = null; return; }
@@ -842,7 +845,7 @@ public class MarcheScreen extends Screen {
         renderBoutonRetour(ctx, mx, my, x, cy + 8);
         String titre = c.titre() + " — avec "
             + (c.client().equalsIgnoreCase(moi()) ? c.prestataire() : c.client());
-        ctx.drawText(textRenderer, tronquer(titre, w - 140), x + 90, cy + 13, C_WHITE, false);
+        ctx.drawString(font, tronquer(titre, w - 140), x + 90, cy + 13, C_WHITE, false);
         cy += 32;
 
         int zoneH = ch - 32 - 40;
@@ -861,17 +864,17 @@ public class MarcheScreen extends Screen {
 
             // La largeur doit tenir compte du pseudo, écrit au-dessus du texte :
             // ne mesurer que les lignes du message le laissait déborder de la bulle.
-            int bulleW = textRenderer.getWidth(m.auteur());
-            for (String l : lignes) bulleW = Math.max(bulleW, textRenderer.getWidth(l));
+            int bulleW = font.width(m.auteur());
+            for (String l : lignes) bulleW = Math.max(bulleW, font.width(l));
             bulleW = Math.min(w - 40, bulleW + 16);
             int bx = deMoi ? x + w - bulleW - 10 : x + 10;
 
             ctx.fill(bx, y, bx + bulleW, y + blocH, deMoi ? 0xFF23343F : C_SURFACE);
             ctx.fill(bx, y, bx + 2, y + blocH, deMoi ? C_BLUE : C_GOLD);
-            ctx.drawText(textRenderer, "§8" + m.auteur(), bx + 8, y + 3, C_DIM, false);
+            ctx.drawString(font, "§8" + m.auteur(), bx + 8, y + 3, C_DIM, false);
             int ly = y + 14;
             for (String l : lignes) {
-                ctx.drawText(textRenderer, "§f" + l, bx + 8, ly, C_WHITE, false);
+                ctx.drawString(font, "§f" + l, bx + 8, ly, C_WHITE, false);
                 ly += 11;
             }
         }
@@ -897,7 +900,7 @@ public class MarcheScreen extends Screen {
 
     // ── Validation avec note ──────────────────────────────────────────────────
 
-    private void renderValidation(DrawContext ctx, int mx, int my, int cy, int ch) {
+    private void renderValidation(GuiGraphics ctx, int mx, int my, int cy, int ch) {
         parquerChamps(fAvis);
         CommandeData c = validationEnCours;
         if (c == null) return;
@@ -908,22 +911,22 @@ public class MarcheScreen extends Screen {
         ctx.fill(x, y, x + w, y + h, C_SURFACE);
         cadre(ctx, x, y, w, h, C_GREEN);
 
-        ctx.drawText(textRenderer, "VALIDER LA PRESTATION", x + PAD, y + 10, C_GREEN, false);
-        ctx.drawText(textRenderer, tronquer(c.titre(), w - 24), x + PAD, y + 26, C_WHITE, false);
-        ctx.drawText(textRenderer, "§7Solde à verser : §6" + c.sequestre() + " ◆", x + PAD, y + 40, C_MID, false);
+        ctx.drawString(font, "VALIDER LA PRESTATION", x + PAD, y + 10, C_GREEN, false);
+        ctx.drawString(font, tronquer(c.titre(), w - 24), x + PAD, y + 26, C_WHITE, false);
+        ctx.drawString(font, "§7Solde à verser : §6" + c.sequestre() + " ◆", x + PAD, y + 40, C_MID, false);
 
-        ctx.drawText(textRenderer, "Votre note :", x + PAD, y + 60, C_DIM, false);
+        ctx.drawString(font, "Votre note :", x + PAD, y + 60, C_DIM, false);
         int ex = x + PAD + 70;
         for (int i = 1; i <= 5; i++) {
             boolean hov = mx >= ex && mx < ex + 16 && my >= y + 56 && my < y + 72;
             boolean plein = i <= noteChoisie;
-            ctx.drawText(textRenderer, plein ? "★" : "☆", ex + 3, y + 60,
+            ctx.drawString(font, plein ? "★" : "☆", ex + 3, y + 60,
                 plein || hov ? C_GOLD : C_DIM, false);
             bounds.add(new int[]{ex, y + 56, 16, 16, 103, i});
             ex += 16;
         }
         if (noteChoisie == 0)
-            ctx.drawText(textRenderer, "§8(facultatif)", ex + 8, y + 60, C_DIM, false);
+            ctx.drawString(font, "§8(facultatif)", ex + 8, y + 60, C_DIM, false);
 
         ctx.fill(x + PAD, y + 84, x + w - PAD, y + 104, C_BG);
         if (fAvis != null) {
@@ -949,12 +952,12 @@ public class MarcheScreen extends Screen {
 
     // ── Formulaire de publication ─────────────────────────────────────────────
 
-    private void renderFormulaire(DrawContext ctx, int mx, int my, int cy, int ch) {
+    private void renderFormulaire(GuiGraphics ctx, int mx, int my, int cy, int ch) {
         int x = px + PAD, w = pw - PAD * 2;
         parquerChamps(fTitre, fDescription, fImage, fNouvelleCategorie);
         categoriesCliquables.clear();
         renderBoutonRetour(ctx, mx, my, x, cy + 8);
-        ctx.drawText(textRenderer, "PUBLIER UNE ANNONCE", x + 90, cy + 13, C_GOLD, false);
+        ctx.drawString(font, "PUBLIER UNE ANNONCE", x + 90, cy + 13, C_GOLD, false);
         cy += 34;
 
         int gauche = x, largeurG = w / 2 - 8;
@@ -966,17 +969,17 @@ public class MarcheScreen extends Screen {
         // Colonne droite : prix, contact, catégorie
         int droite = x + w / 2 + 8, largeurD = w / 2 - 8;
         int dy = py + TOP_H + 44;
-        ctx.drawText(textRenderer, "PRIX DE LA PRESTATION", droite, dy, C_DIM, false);
+        ctx.drawString(font, "PRIX DE LA PRESTATION", droite, dy, C_DIM, false);
         dy += 12;
-        fPrix.render(ctx, textRenderer, droite, dy, largeurD, mx, my);
+        fPrix.render(ctx, font, droite, dy, largeurD, mx, my);
         dy += NumberInput.H + 8;
 
-        ctx.drawText(textRenderer, "COMMENT VOUS CONTACTER", droite, dy, C_DIM, false);
+        ctx.drawString(font, "COMMENT VOUS CONTACTER", droite, dy, C_DIM, false);
         dy += 14;
         int cx = droite;
         for (int i = 0; i < ServiceManager.CONTACTS.length; i++) {
             String s = ServiceManager.CONTACTS[i];
-            int cw = textRenderer.getWidth(s) + 16;
+            int cw = font.width(s) + 16;
             boolean actif = fContact == i;
             boolean hov = mx >= cx && mx < cx + cw && my >= dy && my < dy + 18;
             ctx.fill(cx, dy, cx + cw, dy + 18, actif ? C_GOLD : (hov ? C_HOVER : C_SURFACE));
@@ -988,11 +991,11 @@ public class MarcheScreen extends Screen {
 
         // Catégories : celles déjà utilisées sur le serveur, plus un champ pour en
         // créer une nouvelle. Ce sont les joueurs qui font vivre cette liste.
-        ctx.drawText(textRenderer, "CATÉGORIE", droite, dy, C_DIM, false);
+        ctx.drawString(font, "CATÉGORIE", droite, dy, C_DIM, false);
         dy += 14;
         int gx = droite, gy = dy;
         for (String c : categories) {
-            int cw = textRenderer.getWidth(c) + 14;
+            int cw = font.width(c) + 14;
             if (gx + cw > droite + largeurD) { gx = droite; gy += 22; }
             boolean actif = c.equalsIgnoreCase(fCategorie);
             boolean hov = mx >= gx && mx < gx + cw && my >= gy && my < gy + 18;
@@ -1003,11 +1006,11 @@ public class MarcheScreen extends Screen {
             gx += cw + 4;
         }
         if (categories.isEmpty()) {
-            ctx.drawText(textRenderer, "§8Aucune encore — créez la première", droite, gy + 4, C_DIM, false);
+            ctx.drawString(font, "§8Aucune encore — créez la première", droite, gy + 4, C_DIM, false);
         }
         gy += 24;
 
-        ctx.drawText(textRenderer, "§8ou créez-en une :", droite, gy, C_DIM, false);
+        ctx.drawString(font, "§8ou créez-en une :", droite, gy, C_DIM, false);
         gy += 11;
         ctx.fill(droite, gy, droite + largeurD, gy + 18, C_BG);
         cadre(ctx, droite, gy, largeurD, 18, fNouvelleCategorie.isFocused() ? C_GOLD : C_BORDER);
@@ -1019,7 +1022,7 @@ public class MarcheScreen extends Screen {
 
         // Le champ libre prend le pas sur la sélection : taper une catégorie est un
         // choix plus explicite que la pastille restée active.
-        String saisie = ServiceManager.normaliserCategorie(fNouvelleCategorie.getText());
+        String saisie = ServiceManager.normaliserCategorie(fNouvelleCategorie.getValue());
         String categorieRetenue = !saisie.isEmpty() ? saisie : fCategorie;
 
         // Image : de retour en colonne gauche, taille normale. Seule sa longueur
@@ -1029,7 +1032,7 @@ public class MarcheScreen extends Screen {
         iy = champLabel(ctx, mx, my, "IMAGE (facultatif)", fImage, gauche, iy, largeurG);
         for (String ligne : decouper("Lien direct " + ServiceImages.hotesLisibles()
                 + " (" + ServiceImages.extensionsLisibles() + ")", largeurG)) {
-            ctx.drawText(textRenderer, "§8" + ligne, gauche, iy, C_DIM, false);
+            ctx.drawString(font, "§8" + ligne, gauche, iy, C_DIM, false);
             iy += 10;
         }
 
@@ -1037,10 +1040,10 @@ public class MarcheScreen extends Screen {
         int prix = fPrix.getValue();
         int taxe = ServiceManager.taxePublication(Math.max(1, prix));
         int by = py + ph - PAD - 26;
-        ctx.drawText(textRenderer, "§7Taxe de publication : §6" + taxe + " ◆ §8(reversée au serveur)",
+        ctx.drawString(font, "§7Taxe de publication : §6" + taxe + " ◆ §8(reversée au serveur)",
             x, by + 8, C_MID, false);
 
-        boolean ok = !fTitre.getText().isBlank() && !fDescription.getText().isBlank()
+        boolean ok = !fTitre.getValue().isBlank() && !fDescription.getValue().isBlank()
                   && prix > 0 && balance >= taxe && !categorieRetenue.isEmpty();
         String lbl = balance < taxe ? "Taxe insuffisante"
                    : categorieRetenue.isEmpty() ? "Choisis une catégorie" : "Publier";
@@ -1052,9 +1055,9 @@ public class MarcheScreen extends Screen {
         if (ok) bounds.add(new int[]{bx, by, bw, 24, 108, 0});
     }
 
-    private int champLabel(DrawContext ctx, int mx, int my, String label,
-                           TextFieldWidget f, int x, int y, int w) {
-        ctx.drawText(textRenderer, label, x, y, C_DIM, false);
+    private int champLabel(GuiGraphics ctx, int mx, int my, String label,
+                           EditBox f, int x, int y, int w) {
+        ctx.drawString(font, label, x, y, C_DIM, false);
         y += 12;
         ctx.fill(x, y, x + w, y + 20, C_BG);
         cadre(ctx, x, y, w, 20, f.isFocused() ? C_GOLD : C_BORDER);
@@ -1067,7 +1070,7 @@ public class MarcheScreen extends Screen {
 
     // ── Communs ───────────────────────────────────────────────────────────────
 
-    private void renderScrollbar(DrawContext ctx, int trackX, int trackY, int trackH,
+    private void renderScrollbar(GuiGraphics ctx, int trackX, int trackY, int trackH,
                                  int visUnits, int total) {
         if (total <= visUnits) return;
         ctx.fill(trackX, trackY, trackX + 6, trackY + trackH, C_BORDER);
@@ -1076,16 +1079,16 @@ public class MarcheScreen extends Screen {
         ctx.fill(trackX, thumbY, trackX + 6, thumbY + thumbH, C_GOLD);
     }
 
-    private void renderToast(DrawContext ctx) {
+    private void renderToast(GuiGraphics ctx) {
         if (toastMsg == null) return;
         if (System.currentTimeMillis() > toastEnd) { toastMsg = null; return; }
-        int tw = textRenderer.getWidth(toastMsg) + 28;
+        int tw = font.width(toastMsg) + 28;
         int th = 26;
         int tx = px + pw - tw - 12;
         int ty = py + ph - th - 12;
         ctx.fill(tx, ty, tx + tw, ty + th, C_SURFACE);
         ctx.fill(tx, ty, tx + 3, ty + th, toastOk ? C_GREEN : C_RED);
-        ctx.drawText(textRenderer, toastMsg, tx + 11, ty + (th - textRenderer.fontHeight) / 2, C_WHITE, false);
+        ctx.drawString(font, toastMsg, tx + 11, ty + (th - font.lineHeight) / 2, C_WHITE, false);
     }
 
     private String etoiles(int n) {
@@ -1108,8 +1111,8 @@ public class MarcheScreen extends Screen {
 
     private String tronquer(String s, int maxPx) {
         if (s == null) return "";
-        if (textRenderer.getWidth(s) <= maxPx) return s;
-        while (s.length() > 1 && textRenderer.getWidth(s + "…") > maxPx)
+        if (font.width(s) <= maxPx) return s;
+        while (s.length() > 1 && font.width(s + "…") > maxPx)
             s = s.substring(0, s.length() - 1);
         return s + "…";
     }
@@ -1120,7 +1123,7 @@ public class MarcheScreen extends Screen {
         StringBuilder ligne = new StringBuilder();
         for (String mot : texte.split("\\s+")) {
             String essai = ligne.isEmpty() ? mot : ligne + " " + mot;
-            if (textRenderer.getWidth(essai) > maxPx && !ligne.isEmpty()) {
+            if (font.width(essai) > maxPx && !ligne.isEmpty()) {
                 out.add(ligne.toString());
                 ligne = new StringBuilder(mot);
             } else {
@@ -1136,7 +1139,7 @@ public class MarcheScreen extends Screen {
     @Override
     public boolean mouseClicked(double mx0, double my0, int btn) {
         int x = (int) mx0, y = (int) my0;
-        if (x < px || x > px + pw || y < py || y > py + ph) { close(); return true; }
+        if (x < px || x > px + pw || y < py || y > py + ph) { onClose(); return true; }
 
         if (HubBackButton.clicked(px + PAD, py + (TITRE_H - HubBackButton.H) / 2, x, y)) return true;
 
@@ -1179,7 +1182,7 @@ public class MarcheScreen extends Screen {
             case CLIC_VALIDER   -> {
                 validationEnCours = retrouver(id);
                 noteChoisie = 0;
-                if (fAvis != null) fAvis.setText("");
+                if (fAvis != null) fAvis.setValue("");
             }
             case CLIC_OUVRIR_CHAT -> { chatOuvert = retrouver(id); detail = null; }
             case CLIC_ARCHIVE -> {
@@ -1195,24 +1198,24 @@ public class MarcheScreen extends Screen {
             case 101 -> { detail = null; chatOuvert = null; formOuvert = false;
                           validationEnCours = null; archiveOuverte = null; }
             case 102 -> {
-                if (fMessage != null && !fMessage.getText().isBlank())
-                    envoyer(ServiceNetworking.ACTION_MESSAGE, fMessage.getText(), "", "", "", "", id, 0);
+                if (fMessage != null && !fMessage.getValue().isBlank())
+                    envoyer(ServiceNetworking.ACTION_MESSAGE, fMessage.getValue(), "", "", "", "", id, 0);
             }
             case 103 -> noteChoisie = id;
             case 104 -> validationEnCours = null;
             case 105 -> envoyer(ServiceNetworking.ACTION_VALIDER,
-                fAvis != null ? fAvis.getText() : "", "", "", "", "", id, noteChoisie);
+                fAvis != null ? fAvis.getValue() : "", "", "", "", "", id, noteChoisie);
             case 106 -> fContact = id;
             case 107 -> {
                 if (id < categoriesCliquables.size()) {
                     fCategorie = categoriesCliquables.get(id);
-                    if (fNouvelleCategorie != null) fNouvelleCategorie.setText("");
+                    if (fNouvelleCategorie != null) fNouvelleCategorie.setValue("");
                 }
             }
             case 108 -> {
-                String saisie = ServiceManager.normaliserCategorie(fNouvelleCategorie.getText());
+                String saisie = ServiceManager.normaliserCategorie(fNouvelleCategorie.getValue());
                 envoyer(ServiceNetworking.ACTION_PUBLIER,
-                    fTitre.getText(), fDescription.getText(), fImage.getText(),
+                    fTitre.getValue(), fDescription.getValue(), fImage.getValue(),
                     ServiceManager.CONTACTS[fContact],
                     !saisie.isEmpty() ? saisie : fCategorie,
                     fPrix.getValue(), 0);
@@ -1223,10 +1226,10 @@ public class MarcheScreen extends Screen {
 
     private void envoyer(int action, String s1, String s2, String s3, String s4, String s5,
                          int i1, int i2) {
-        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
         buf.writeInt(action);
-        buf.writeString(s1); buf.writeString(s2); buf.writeString(s3);
-        buf.writeString(s4); buf.writeString(s5);
+        buf.writeUtf(s1); buf.writeUtf(s2); buf.writeUtf(s3);
+        buf.writeUtf(s4); buf.writeUtf(s5);
         buf.writeInt(i1); buf.writeInt(i2);
         NtNet.versServeur(ServiceNetworking.MARCHE_ACTION, buf);
     }
@@ -1253,8 +1256,8 @@ public class MarcheScreen extends Screen {
         }
         // Entrée envoie le message quand le chat est ouvert
         if (key == 257 && chatOuvert != null && fMessage != null && fMessage.isFocused()
-            && !fMessage.getText().isBlank()) {
-            envoyer(ServiceNetworking.ACTION_MESSAGE, fMessage.getText(), "", "", "", "", chatOuvert.id(), 0);
+            && !fMessage.getValue().isBlank()) {
+            envoyer(ServiceNetworking.ACTION_MESSAGE, fMessage.getValue(), "", "", "", "", chatOuvert.id(), 0);
             return true;
         }
         if (formOuvert && fPrix.keyPressed(key)) return true;

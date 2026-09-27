@@ -3,10 +3,10 @@ package com.nouvelleterrebridge.commands;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.nouvelleterrebridge.http.EventDispatcher;
-import net.minecraft.server.command.CommandManager;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
+import net.minecraft.commands.Commands;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.Component;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -18,23 +18,23 @@ import java.util.Map;
  */
 public class EventNarratifCommand {
 
-    public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
+    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(
-            CommandManager.literal("evenement")
+            Commands.literal("evenement")
                 // Réservé aux opérateurs (niveau 2)
-                .requires(src -> src.hasPermissionLevel(2))
-                .then(CommandManager.argument("message", StringArgumentType.greedyString())
+                .requires(src -> src.hasPermission(2))
+                .then(Commands.argument("message", StringArgumentType.greedyString())
                     .executes(ctx -> executerEvenementNarratif(ctx.getSource(),
                         StringArgumentType.getString(ctx, "message"))))
         );
     }
 
-    private static int executerEvenementNarratif(ServerCommandSource source, String message) {
-        String auteur = source.getEntity() instanceof ServerPlayerEntity joueur
+    private static int executerEvenementNarratif(CommandSourceStack source, String message) {
+        String auteur = source.getEntity() instanceof ServerPlayer joueur
             ? joueur.getName().getString()
             : "Console";
 
-        source.sendFeedback(() -> Text.literal(
+        source.sendSuccess(() -> Component.literal(
             String.format("§d📜 Événement narratif envoyé à Discord : %s", message)
         ), true);
 

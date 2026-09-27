@@ -1,6 +1,6 @@
-// Build Gradle pour le mod NouvelleTerreBridge (Fabric 1.21.1)
+// Build Gradle pour le mod NouvelleTerreBridge (portage natif NeoForge 1.21.1)
 plugins {
-	id 'fabric-loom' version '1.10.5'
+	id 'net.neoforged.moddev' version '2.0.147'
 	id 'maven-publish'
 }
 
@@ -11,58 +11,65 @@ base {
 	archivesName = project.archives_base_name
 }
 
+neoForge {
+	version = project.neoforge_version
+
+	runs {
+		client {
+			client()
+		}
+		server {
+			server()
+		}
+	}
+
+	mods {
+		"nouvelle_terre_bridge" {
+			sourceSet sourceSets.main
+		}
+	}
+}
+
 repositories {
-	maven { url "https://maven.terraformersmc.com/releases" }
+	mavenCentral()
 }
 
 dependencies {
-	minecraft "com.mojang:minecraft:${project.minecraft_version}"
-	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
-	// modCompileOnly "com.terraformersmc:modmenu:7.2.2" // Serveur maven.terraformersmc.com down - réactiver quand disponible
-
 	// HTTP via java.net.http.HttpClient (JDK intégré - aucune dépendance externe)
 	// Cadmus n'a pas de build 1.21.1 à ce jour : intégration par réflexion suspendue
-	// (voir NouvelleTerreBridge, recherche de FabricLoader.isModLoaded("cadmus")).
+	// (voir NouvelleTerreBridge, recherche de ModList.get().isLoaded("cadmus")).
 }
 
 processResources {
 	inputs.property "version", project.version
 	filteringCharset "UTF-8"
 
-	filesMatching("fabric.mod.json") {
+	filesMatching("META-INF/neoforge.mods.toml") {
 		expand "version": project.version
 	}
 }
 
 tasks.withType(JavaCompile).configureEach {
+	it.options.encoding = 'UTF-8'
 	it.options.release = 21
 }
 
 java {
 	// Minecraft 1.21.1 exige Java 21, quel que soit le loader. La toolchain le
-	// fait récupérer par Gradle plutôt que de dépendre du JDK du poste (ici : 17).
+	// fait récupérer par Gradle plutôt que de dépendre du JDK du poste.
 	toolchain {
 		languageVersion = JavaLanguageVersion.of(21)
 	}
 }
 
 jar {
-	from("LICENSE") {
-		rename { "${it}_${project.base.archivesName.get()}"}
-	}
-}
-
-tasks.named('remapJar') {
+	// Purge les anciens JAR : un reliquat d'un build précédent (autre version ou
+	// autre qualificatif +neoforge.N) s'y retrouverait sinon.
 	doFirst {
 		delete fileTree(dir: layout.buildDirectory.dir('libs').get().asFile, include: '*.jar')
 	}
-}
 
-// Supprime les anciens jars de dev (build/devlibs) avant chaque build
-tasks.named('jar') {
-	doFirst {
-		delete fileTree(dir: layout.buildDirectory.dir('devlibs').get().asFile, include: '*.jar')
+	from("LICENSE") {
+		rename { "${it}_${project.base.archivesName.get()}" }
 	}
 }

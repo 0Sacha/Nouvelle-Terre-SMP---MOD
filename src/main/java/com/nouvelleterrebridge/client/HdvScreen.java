@@ -4,24 +4,21 @@ import com.nouvelleterrebridge.network.NtNet;
 
 import com.nouvelleterrebridge.network.HdvNetworking;
 import com.nouvelleterrebridge.market.FrenchItemNames;
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import com.nouvelleterrebridge.market.ItemComponentCodec;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.registry.Registries;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import io.netty.buffer.Unpooled;
 
 import java.util.*;
 
-@Environment(EnvType.CLIENT)
 public class HdvScreen extends Screen {
 
     // ── Data ──────────────────────────────────────────────────────────────────
@@ -135,7 +132,7 @@ public class HdvScreen extends Screen {
     private SortMode sortMode = SortMode.PRICE_ASC;
     private int scrollOffset = 0;
 
-    private TextFieldWidget searchField;
+    private EditBox searchField;
     private ListingData hoveredCard = null;
     private int gridMaxScroll = 0;
     private int tabsStartX = 0;
@@ -161,7 +158,7 @@ public class HdvScreen extends Screen {
     // ── Constructeur ──────────────────────────────────────────────────────────
 
     public HdvScreen(int balance, List<ListingData> listings) {
-        super(Text.literal("HDV — Nouvelle Terre"));
+        super(Component.literal("HDV — Nouvelle Terre"));
         this.balance  = balance;
         this.listings = new ArrayList<>(listings);
     }
@@ -180,10 +177,10 @@ public class HdvScreen extends Screen {
         super.init();
         computeWin();
 
-        searchField = new TextFieldWidget(textRenderer, winX + SIDE_W + PAD, winY + TOP_H + PAD, 180, 18, Text.literal(""));
-        searchField.setPlaceholder(Text.literal("Rechercher..."));
-        searchField.setChangedListener(s -> scrollOffset = 0);
-        addSelectableChild(searchField);
+        searchField = new EditBox(font, winX + SIDE_W + PAD, winY + TOP_H + PAD, 180, 18, Component.literal(""));
+        searchField.setHint(Component.literal("Rechercher..."));
+        searchField.setResponder(s -> scrollOffset = 0);
+        addRenderableWidget(searchField);
 
         sellPriceInput.setPlaceholder("Prix/u...");
         sellQtyInput.setPlaceholder("Quantité...");
@@ -193,14 +190,14 @@ public class HdvScreen extends Screen {
     }
 
     private void refreshSellInv() {
-        if (client == null || client.player == null) return;
+        if (this.minecraft == null || this.minecraft.player == null) return;
         // Clé = id + NBT : les variantes enchantées restent des entrées distinctes,
         // sinon on risquerait de vendre une pile pour une autre.
         Map<String, SellItem> byId = new LinkedHashMap<>();
-        for (ItemStack stack : client.player.getInventory().main) {
+        for (ItemStack stack : this.minecraft.player.getInventory().items) {
             if (stack.isEmpty()) continue;
-            String id  = Registries.ITEM.getId(stack.getItem()).toString();
-            String nbt = ItemComponentCodec.capturer(stack, client.world.getRegistryManager());
+            String id  = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+            String nbt = ItemComponentCodec.capturer(stack, this.minecraft.level.registryAccess());
             byId.merge(id + "|" + nbt, new SellItem(stack.getItem(), id, stack.getCount(), nbt),
                 (a, b) -> new SellItem(a.item(), a.itemId(), a.qty() + b.qty(), a.nbt()));
         }
@@ -230,7 +227,13 @@ public class HdvScreen extends Screen {
     // ── Render principal ──────────────────────────────────────────────────────
 
     @Override
-    public void render(DrawContext ctx, int mx, int my, float delta) {
+    public void renderBackground(GuiGraphics ctx, int mx, int my, float delta) {
+        // No-op — cet écran dessine son propre fond ; super.render() (appelé en dernier
+        // pour les widgets vanilla) réappliquerait sinon flou + texture menu par-dessus.
+    }
+
+    @Override
+    public void render(GuiGraphics ctx, int mx, int my, float delta) {
         ctx.fill(0, 0, width, height, 0x78000000);
         computeWin();
         // Window shadow
@@ -240,6 +243,9 @@ public class HdvScreen extends Screen {
         renderTopBar(ctx, mx, my);
         hoveredCard     = null;   // réarmés par le rendu de l'onglet courant
         hoveredSellItem = null;
+        // Masqué hors de Marché — sinon super.render() le dessine à sa dernière
+        // position quel que soit l'onglet courant.
+        if (activeTab != Tab.MARKET && searchField != null) searchField.setY(-200);
         switch (activeTab) {
             case MARKET  -> { renderSidebar(ctx, mx, my); renderMarket(ctx, mx, my); }
             case SELL    -> renderSell(ctx, mx, my);
@@ -249,7 +255,7 @@ public class HdvScreen extends Screen {
         if (buyingListing != null) renderBuyModal(ctx, mx, my);
         else if (hoveredCard != null) renderListingTooltip(ctx, hoveredCard, mx, my);
         else if (hoveredSellItem != null)
-            ctx.drawTooltip(textRenderer, Screen.getTooltipFromItem(client, sellStack(hoveredSellItem)), mx, my);
+            ctx.renderTooltip(font, Screen.getTooltipFromItem(this.minecraft, sellStack(hoveredSellItem)), java.util.Optional.empty(), mx, my);
         renderToast(ctx);
         super.render(ctx, mx, my, delta);
     }
@@ -258,37 +264,37 @@ public class HdvScreen extends Screen {
      * Tooltip vanilla de l'annonce survolée : nom de l'item et, s'il en a,
      * ses enchantements — plus une ligne vendeur/prix.
      */
-    private void renderListingTooltip(DrawContext ctx, ListingData l, int mx, int my) {
+    private void renderListingTooltip(GuiGraphics ctx, ListingData l, int mx, int my) {
         ItemStack stack = itemStack(l);
-        List<Text> lines = new ArrayList<>(Screen.getTooltipFromItem(client, stack));
-        lines.add(Text.literal("§8" + "─".repeat(12)));
-        lines.add(Text.literal("§7Vendeur : §f" + l.seller()));
-        lines.add(Text.literal("§7Prix : §6" + l.pricePerUnit() + " ◆§7/u  ·  Stock : §f" + l.quantity()));
-        ctx.drawTooltip(textRenderer, lines, mx, my);
+        List<Component> lines = new ArrayList<>(Screen.getTooltipFromItem(this.minecraft, stack));
+        lines.add(Component.literal("§8" + "─".repeat(12)));
+        lines.add(Component.literal("§7Vendeur : §f" + l.seller()));
+        lines.add(Component.literal("§7Prix : §6" + l.pricePerUnit() + " ◆§7/u  ·  Stock : §f" + l.quantity()));
+        ctx.renderTooltip(font, lines, java.util.Optional.empty(), mx, my);
     }
 
     // ── Top bar ───────────────────────────────────────────────────────────────
 
-    private void renderTopBar(DrawContext ctx, int mx, int my) {
+    private void renderTopBar(GuiGraphics ctx, int mx, int my) {
         // Panel bg
         ctx.fill(winX, winY, winX + winW, winY + TOP_H, 0xE01B1D22);
         // Bottom border line
         ctx.fill(winX, winY + TOP_H - 1, winX + winW, winY + TOP_H, C_BORDER);
 
-        int ty = winY + (TOP_H - textRenderer.fontHeight) / 2;
+        int ty = winY + (TOP_H - font.lineHeight) / 2;
         int tx = winX + PAD;
 
         // Retour au Parchemin
-        HubBackButton.render(ctx, textRenderer, tx, winY + (TOP_H - HubBackButton.H) / 2, mx, my);
+        HubBackButton.render(ctx, font, tx, winY + (TOP_H - HubBackButton.H) / 2, mx, my);
         tx += HubBackButton.W + 8;
 
         // Logo
-        ctx.drawText(textRenderer, "HDV", tx, ty, C_GOLD, false);
-        tx += textRenderer.getWidth("HDV") + 8;
+        ctx.drawString(font, "HDV", tx, ty, C_GOLD, false);
+        tx += font.width("HDV") + 8;
         ctx.fill(tx, winY + (TOP_H - 16) / 2, tx + 1, winY + (TOP_H + 16) / 2, C_BORDER);
         tx += 9;
-        ctx.drawText(textRenderer, "Nouvelle Terre", tx, ty, C_MID, false);
-        tx += textRenderer.getWidth("Nouvelle Terre") + 20;
+        ctx.drawString(font, "Nouvelle Terre", tx, ty, C_MID, false);
+        tx += font.width("Nouvelle Terre") + 20;
 
         // Position réelle des onglets, relue par handleTabClick (évite toute dérive
         // entre le calcul du rendu et celui du clic)
@@ -297,43 +303,43 @@ public class HdvScreen extends Screen {
         // Tabs — pill style: active = gold bg dark text, hover = subtle, normal = muted
         for (Tab tab : Tab.values()) {
             boolean active = activeTab == tab;
-            int tw = textRenderer.getWidth(tab.label) + 18;
+            int tw = font.width(tab.label) + 18;
             boolean hov = mx >= tx && mx <= tx + tw && my >= winY && my <= winY + TOP_H - 1;
             int tabY = winY + (TOP_H - 22) / 2;
 
             if (active) {
                 ctx.fill(tx, tabY, tx + tw, tabY + 22, C_GOLD);
-                ctx.drawText(textRenderer, tab.label, tx + tw / 2 - textRenderer.getWidth(tab.label) / 2, tabY + 7, C_BG, false);
+                ctx.drawString(font, tab.label, tx + tw / 2 - font.width(tab.label) / 2, tabY + 7, C_BG, false);
             } else if (hov) {
                 ctx.fill(tx, tabY, tx + tw, tabY + 22, C_HOVER);
-                ctx.drawCenteredTextWithShadow(textRenderer, tab.label, tx + tw / 2, tabY + 7, C_WHITE);
+                ctx.drawCenteredString(font, tab.label, tx + tw / 2, tabY + 7, C_WHITE);
             } else {
-                ctx.drawCenteredTextWithShadow(textRenderer, tab.label, tx + tw / 2, tabY + 7, C_DIM);
+                ctx.drawCenteredString(font, tab.label, tx + tw / 2, tabY + 7, C_DIM);
             }
             tx += tw + 4;
         }
 
         // Balance — right-aligned chip
         String bal = balance + " ◆";
-        int bw = textRenderer.getWidth(bal) + 18;
+        int bw = font.width(bal) + 18;
         int bx = winX + winW - bw - PAD;
         int by = winY + (TOP_H - 20) / 2;
         ctx.fill(bx, by, bx + bw, by + 20, C_STRIP);
         ctx.fill(bx, by, bx + 2, by + 20, C_GOLD);
-        ctx.drawText(textRenderer, bal, bx + 10, by + 6, C_GOLD, false);
+        ctx.drawString(font, bal, bx + 10, by + 6, C_GOLD, false);
     }
 
     // ── Sidebar ───────────────────────────────────────────────────────────────
 
-    private void renderSidebar(DrawContext ctx, int mx, int my) {
+    private void renderSidebar(GuiGraphics ctx, int mx, int my) {
         ctx.fill(winX, winY + TOP_H, winX + SIDE_W, winY + winH, 0xE01B1D22);
         ctx.fill(winX + SIDE_W - 1, winY + TOP_H, winX + SIDE_W, winY + winH, C_BORDER);
 
         int y = winY + TOP_H + PAD;
-        ctx.drawText(textRenderer, "CATEGORIES", winX + PAD, y, C_DIM, false);
-        y += textRenderer.fontHeight + 10;
+        ctx.drawString(font, "CATEGORIES", winX + PAD, y, C_DIM, false);
+        y += font.lineHeight + 10;
 
-        String me = client != null && client.player != null ? client.player.getName().getString() : "";
+        String me = this.minecraft != null && this.minecraft.player != null ? this.minecraft.player.getName().getString() : "";
         List<ListingData> forCount = listings.stream().filter(l -> !l.seller().equalsIgnoreCase(me)).toList();
 
         for (String[] cat : CATS) {
@@ -349,20 +355,20 @@ public class HdvScreen extends Screen {
             }
 
             String iconId = CAT_ICONS.getOrDefault(cat[0], "minecraft:stone");
-            ctx.drawItem(itemStack(iconId), winX + PAD + 2, y + (rh - 16) / 2);
+            ctx.renderItem(itemStack(iconId), winX + PAD + 2, y + (rh - 16) / 2);
 
             int textColor = active ? C_GOLD : (hov ? C_WHITE : C_MID);
-            ctx.drawText(textRenderer, cat[1], winX + PAD + 24, y + (rh - textRenderer.fontHeight) / 2, textColor, false);
+            ctx.drawString(font, cat[1], winX + PAD + 24, y + (rh - font.lineHeight) / 2, textColor, false);
 
             long count = "tous".equals(cat[0]) ? forCount.size()
                 : forCount.stream().filter(l -> matchCat(l.itemId(), cat[0])).count();
             if (count > 0) {
                 String badge = String.valueOf(count);
-                int badgeW = textRenderer.getWidth(badge) + 6;
+                int badgeW = font.width(badge) + 6;
                 int badgeX = winX + SIDE_W - badgeW - 10;
                 int badgeY = y + (rh - 11) / 2;
                 ctx.fill(badgeX, badgeY, badgeX + badgeW, badgeY + 11, active ? C_GOLD_DIM : 0x10FFFFFF);
-                ctx.drawText(textRenderer, badge, badgeX + 3, badgeY + 1, active ? C_GOLD : C_DARK, false);
+                ctx.drawString(font, badge, badgeX + 3, badgeY + 1, active ? C_GOLD : C_DARK, false);
             }
             y += rh + 2;
         }
@@ -371,8 +377,8 @@ public class HdvScreen extends Screen {
     // ── Marché ────────────────────────────────────────────────────────────────
 
     private List<ListingData> filteredListings() {
-        String q  = searchField != null ? searchField.getText().trim().toLowerCase() : "";
-        String me = client != null && client.player != null ? client.player.getName().getString() : "";
+        String q  = searchField != null ? searchField.getValue().trim().toLowerCase() : "";
+        String me = this.minecraft != null && this.minecraft.player != null ? this.minecraft.player.getName().getString() : "";
 
         Comparator<ListingData> comp = switch (sortMode) {
             case PRICE_ASC  -> Comparator.comparingInt(ListingData::pricePerUnit);
@@ -401,7 +407,7 @@ public class HdvScreen extends Screen {
         return false;
     }
 
-    private void renderMarket(DrawContext ctx, int mx, int my) {
+    private void renderMarket(GuiGraphics ctx, int mx, int my) {
         int cx = winX + SIDE_W + PAD;
         int cw = winW - SIDE_W - PAD * 2;
 
@@ -417,7 +423,7 @@ public class HdvScreen extends Screen {
         int sfW2 = searchField != null ? Math.min(220, cw - 110) : 0;
         String sortLabel = "⇅ " + sortMode.label;
         // Sort button style
-        int sortW = textRenderer.getWidth(sortLabel) + 16;
+        int sortW = font.width(sortLabel) + 16;
         int sortX = cx + sfW2 + 8;
         int sortY = winY + TOP_H + PAD;
         boolean sortHov = mx >= sortX && mx < sortX + sortW && my >= sortY && my < sortY + 18;
@@ -426,7 +432,7 @@ public class HdvScreen extends Screen {
         ctx.fill(sortX, sortY + 17, sortX + sortW, sortY + 18, C_BORDER);
         ctx.fill(sortX, sortY, sortX + 1, sortY + 18, C_BORDER);
         ctx.fill(sortX + sortW - 1, sortY, sortX + sortW, sortY + 18, C_BORDER);
-        ctx.drawText(textRenderer, sortLabel, sortX + 8, sortY + 5, sortHov ? C_GOLD : C_MID, false);
+        ctx.drawString(font, sortLabel, sortX + 8, sortY + 5, sortHov ? C_GOLD : C_MID, false);
 
         int gridY = winY + TOP_H + PAD + 26;
         int gridH = winH - (TOP_H + PAD + 26) - 28;
@@ -436,17 +442,17 @@ public class HdvScreen extends Screen {
         renderListRows(ctx, mx, my, items, cx, gridY, gridW, gridH, false);
 
         if (items.isEmpty()) {
-            String me = client != null && client.player != null ? client.player.getName().getString() : "";
+            String me = this.minecraft != null && this.minecraft.player != null ? this.minecraft.player.getName().getString() : "";
             boolean hasOwn = listings.stream().anyMatch(l -> l.seller().equalsIgnoreCase(me));
             String emptyMsg = hasOwn
                 ? "Vos annonces sont visibles dans l'onglet 'Mon Shop'"
                 : "Aucun article disponible";
-            ctx.drawCenteredTextWithShadow(textRenderer, emptyMsg, cx + cw / 2, gridY + gridH / 2, C_DIM);
+            ctx.drawCenteredString(font, emptyMsg, cx + cw / 2, gridY + gridH / 2, C_DIM);
         }
 
         String pg = items.size() + " article" + (items.size() > 1 ? "s" : "");
         if (gridMaxScroll > 0) pg += "  •  molette ou barre pour faire défiler";
-        ctx.drawCenteredTextWithShadow(textRenderer, pg, cx + cw / 2, winY + winH - 20, C_DIM);
+        ctx.drawCenteredString(font, pg, cx + cw / 2, winY + winH - 20, C_DIM);
     }
 
     /**
@@ -454,7 +460,7 @@ public class HdvScreen extends Screen {
      * détail Boutiques). Clippe le contenu, dessine la scrollbar et mémorise la
      * ligne survolée (`hoveredCard`) pour la détection de clic.
      */
-    private void renderListRows(DrawContext ctx, int mx, int my, List<ListingData> items,
+    private void renderListRows(GuiGraphics ctx, int mx, int my, List<ListingData> items,
                                 int gx, int gy, int gw, int gh, boolean ownRows) {
         int visRows = Math.max(1, gh / (ROW_H + ROW_GAP));
         gridMaxScroll = Math.max(0, items.size() - visRows);
@@ -481,7 +487,7 @@ public class HdvScreen extends Screen {
      * Scrollbar générique : piste + pouce or opaque, position mémorisée dans
      * scrollTrackX/Y/H + scrollThumbH pour le drag (mouseClicked/mouseDragged).
      */
-    private void renderScrollbar(DrawContext ctx, int trackX, int trackY, int trackH, int visUnits, int maxScrollUnits) {
+    private void renderScrollbar(GuiGraphics ctx, int trackX, int trackY, int trackH, int visUnits, int maxScrollUnits) {
         scrollTrackX = trackX; scrollTrackY = trackY; scrollTrackH = trackH;
         if (maxScrollUnits <= 0) { scrollThumbH = 0; return; }
         int totalUnits = visUnits + maxScrollUnits;
@@ -501,7 +507,7 @@ public class HdvScreen extends Screen {
     }
 
     /** Ligne d'annonce achetable : icône à gauche, prix + bouton Acheter à droite. */
-    private void renderListRow(DrawContext ctx, int x, int y, int w, ListingData l, boolean hov) {
+    private void renderListRow(GuiGraphics ctx, int x, int y, int w, ListingData l, boolean hov) {
         ctx.fill(x, y, x + w, y + ROW_H, hov ? C_HOVER : C_PANEL);
         if (hov) {
             ctx.fill(x, y, x + w, y + 1, C_GOLD);
@@ -520,27 +526,27 @@ public class HdvScreen extends Screen {
         // Nom + vendeur/stock
         int tx = x + 50;
         String name = truncate(FrenchItemNames.toDisplay(l.itemId()), w - 190);
-        ctx.drawText(textRenderer, name, tx, y + 9, C_WHITE, false);
+        ctx.drawString(font, name, tx, y + 9, C_WHITE, false);
         String sub = "Vendu par " + l.seller() + "  ·  x" + l.quantity() + " en stock";
-        ctx.drawText(textRenderer, truncate(sub, w - 190), tx, y + 22, C_DIM, false);
+        ctx.drawString(font, truncate(sub, w - 190), tx, y + 22, C_DIM, false);
 
         // Prix + bouton Acheter à droite
         int btnW = 82, btnH = 22;
         int btnX = x + w - btnW - 10;
         int btnY = y + (ROW_H - btnH) / 2;
         String price = l.pricePerUnit() + " ◆/u";
-        ctx.drawText(textRenderer, price, btnX - textRenderer.getWidth(price) - 14,
-            y + (ROW_H - textRenderer.fontHeight) / 2, C_GOLD, false);
+        ctx.drawString(font, price, btnX - font.width(price) - 14,
+            y + (ROW_H - font.lineHeight) / 2, C_GOLD, false);
         ctx.fill(btnX, btnY, btnX + btnW, btnY + btnH, hov ? C_GOLD : C_STRIP);
         if (!hov) { ctx.fill(btnX, btnY, btnX + btnW, btnY + 1, C_BORDER); ctx.fill(btnX, btnY + btnH - 1, btnX + btnW, btnY + btnH, C_BORDER); }
-        ctx.drawCenteredTextWithShadow(textRenderer, "Acheter", btnX + btnW / 2, btnY + 7, hov ? C_BG : C_MID);
+        ctx.drawCenteredString(font, "Acheter", btnX + btnW / 2, btnY + 7, hov ? C_BG : C_MID);
     }
 
     // ── Modal achat ───────────────────────────────────────────────────────────
 
-    private void renderBuyModal(DrawContext ctx, int mx, int my) {
-        ctx.getMatrices().push();
-        ctx.getMatrices().translate(0, 0, 300);
+    private void renderBuyModal(GuiGraphics ctx, int mx, int my) {
+        ctx.pose().pushPose();
+        ctx.pose().translate(0, 0, 300);
         // Overlay
         ctx.fill(winX, winY, winX + winW, winY + winH, 0x88000000);
         ListingData l = buyingListing;
@@ -559,8 +565,8 @@ public class HdvScreen extends Screen {
         // Header — item info
         int fy = y + 14;
         drawItemScaled(ctx, itemStack(l), x + 24, fy + 14, 2.0f);
-        ctx.drawText(textRenderer, FrenchItemNames.toDisplay(l.itemId()), x + 52, fy + 5, C_WHITE, false);
-        ctx.drawText(textRenderer, "Vendu par " + l.seller(), x + 52, fy + 17, C_DIM, false);
+        ctx.drawString(font, FrenchItemNames.toDisplay(l.itemId()), x + 52, fy + 5, C_WHITE, false);
+        ctx.drawString(font, "Vendu par " + l.seller(), x + 52, fy + 17, C_DIM, false);
         fy += 40;
 
         // Separator
@@ -569,31 +575,31 @@ public class HdvScreen extends Screen {
 
         // Prix unitaire + stock
         ctx.fill(x + 10, fy, x + MODAL_W - 10, fy + 36, C_STRIP);
-        ctx.drawText(textRenderer, "Prix unitaire", x + 18, fy + 8, C_DIM, false);
+        ctx.drawString(font, "Prix unitaire", x + 18, fy + 8, C_DIM, false);
         String pu = l.pricePerUnit() + " ◆";
-        ctx.drawText(textRenderer, pu, x + MODAL_W - textRenderer.getWidth(pu) - 18, fy + 8, C_GOLD, false);
-        ctx.drawText(textRenderer, "Stock disponible", x + 18, fy + 22, C_DIM, false);
+        ctx.drawString(font, pu, x + MODAL_W - font.width(pu) - 18, fy + 8, C_GOLD, false);
+        ctx.drawString(font, "Stock disponible", x + 18, fy + 22, C_DIM, false);
         String st = "x" + l.quantity();
-        ctx.drawText(textRenderer, st, x + MODAL_W - textRenderer.getWidth(st) - 18, fy + 22, C_MID, false);
+        ctx.drawString(font, st, x + MODAL_W - font.width(st) - 18, fy + 22, C_MID, false);
         fy += 44;
 
-        ctx.drawText(textRenderer, "QUANTITE", x + 18, fy, C_DIM, false);
-        fy += textRenderer.fontHeight + 4;
-        buyQtyInput.render(ctx, textRenderer, x + 14, fy, MODAL_W - 28, mx, my);
+        ctx.drawString(font, "QUANTITE", x + 18, fy, C_DIM, false);
+        fy += font.lineHeight + 4;
+        buyQtyInput.render(ctx, font, x + 14, fy, MODAL_W - 28, mx, my);
         fy += NumberInput.H + 10;
 
         // Total
         int buyQty = buyQtyInput.getValue();
         int total = l.pricePerUnit() * buyQty;
         boolean canAfford = balance >= total;
-        ctx.drawText(textRenderer, "Total a payer", x + 18, fy, C_MID, false);
+        ctx.drawString(font, "Total a payer", x + 18, fy, C_MID, false);
         String tot = total + " ◆";
-        ctx.drawText(textRenderer, tot, x + MODAL_W - textRenderer.getWidth(tot) - 18, fy, canAfford ? C_GOLD : C_RED, false);
+        ctx.drawString(font, tot, x + MODAL_W - font.width(tot) - 18, fy, canAfford ? C_GOLD : C_RED, false);
         fy += 16;
 
         if (!canAfford) {
             ctx.fill(x + 10, fy, x + MODAL_W - 10, fy + 16, C_RED_DIM);
-            ctx.drawText(textRenderer, "Solde insuffisant (" + balance + " ◆)", x + 16, fy + 4, C_RED, false);
+            ctx.drawString(font, "Solde insuffisant (" + balance + " ◆)", x + 16, fy + 4, C_RED, false);
         }
 
         // Buttons — same positions as before for handleModalClick
@@ -602,22 +608,22 @@ public class HdvScreen extends Screen {
         ctx.fill(x + 10, btnY, x + 10 + half, btnY + 24, C_HOVER);
         ctx.fill(x + 10, btnY, x + 10 + half, btnY + 1, C_BORDER);
         ctx.fill(x + 10, btnY + 23, x + 10 + half, btnY + 24, C_BORDER);
-        ctx.drawCenteredTextWithShadow(textRenderer, "Annuler", x + 10 + half / 2, btnY + 8, C_MID);
+        ctx.drawCenteredString(font, "Annuler", x + 10 + half / 2, btnY + 8, C_MID);
         ctx.fill(x + MODAL_W - 10 - half, btnY, x + MODAL_W - 10, btnY + 24, canAfford ? C_GOLD : C_DARK);
-        ctx.drawCenteredTextWithShadow(textRenderer, "Acheter", x + MODAL_W - 10 - half / 2, btnY + 8, canAfford ? C_BG : C_DIM);
-        ctx.getMatrices().pop();
+        ctx.drawCenteredString(font, "Acheter", x + MODAL_W - 10 - half / 2, btnY + 8, canAfford ? C_BG : C_DIM);
+        ctx.pose().popPose();
     }
 
     // ── Onglet Vendre ─────────────────────────────────────────────────────────
 
-    private void renderSell(DrawContext ctx, int mx, int my) {
+    private void renderSell(GuiGraphics ctx, int mx, int my) {
         int formW = 290;
         int formX = winX + winW - formW - PAD;
         int invW  = formX - (winX + PAD * 2);
         int py    = winY + TOP_H + PAD;
 
-        ctx.drawText(textRenderer, "INVENTAIRE — " + sellInv.size() + " items", winX + PAD, py, C_DIM, false);
-        py += textRenderer.fontHeight + 8;
+        ctx.drawString(font, "INVENTAIRE — " + sellInv.size() + " items", winX + PAD, py, C_DIM, false);
+        py += font.lineHeight + 8;
 
         int cellCols = 5;
         int gridW = invW - SCROLL_W - 4;
@@ -661,45 +667,45 @@ public class HdvScreen extends Screen {
             drawItemScaled(ctx, sellStack(si), cx + cellW / 2, cy + iconAreaH / 2, 2.0f);
 
             String badge = "x" + si.qty();
-            int bw = textRenderer.getWidth(badge) + 4;
+            int bw = font.width(badge) + 4;
             ctx.fill(cx + cellW - bw - 2, cy + 2, cx + cellW - 2, cy + 12, 0xAA000000);
-            ctx.drawText(textRenderer, badge, cx + cellW - bw, cy + 3, C_DIM, false);
+            ctx.drawString(font, badge, cx + cellW - bw, cy + 3, C_DIM, false);
 
             String name = truncate(FrenchItemNames.toDisplay(si.itemId()), cellW - 6);
-            ctx.drawCenteredTextWithShadow(textRenderer, name, cx + cellW / 2, cy + iconAreaH + 5, sel ? C_WHITE : C_MID);
+            ctx.drawCenteredString(font, name, cx + cellW / 2, cy + iconAreaH + 5, sel ? C_WHITE : C_MID);
         }
         ctx.disableScissor();
 
         if (sellInv.isEmpty()) {
-            ctx.drawCenteredTextWithShadow(textRenderer, "Inventaire vide", winX + PAD + invW / 2, winY + TOP_H + (winH - TOP_H) / 2, C_DIM);
+            ctx.drawCenteredString(font, "Inventaire vide", winX + PAD + invW / 2, winY + TOP_H + (winH - TOP_H) / 2, C_DIM);
         }
 
         ctx.fill(formX, winY + TOP_H + PAD, formX + formW, winY + winH - PAD, C_SURFACE);
         int fy = winY + TOP_H + PAD + 14;
-        ctx.drawText(textRenderer, "Creer une annonce", formX + 12, fy, C_WHITE, false);
-        fy += textRenderer.fontHeight + 12;
+        ctx.drawString(font, "Creer une annonce", formX + 12, fy, C_WHITE, false);
+        fy += font.lineHeight + 12;
 
         if (selectedSellItem != null) {
             ctx.fill(formX + 8, fy, formX + formW - 8, fy + 36, C_STRIP);
             drawItemScaled(ctx, sellStack(selectedSellItem), formX + 26, fy + 18, 2.0f);
-            ctx.drawText(textRenderer, truncate(FrenchItemNames.toDisplay(selectedSellItem.itemId()), formW - 60), formX + 44, fy + 8, C_WHITE, false);
+            ctx.drawString(font, truncate(FrenchItemNames.toDisplay(selectedSellItem.itemId()), formW - 60), formX + 44, fy + 8, C_WHITE, false);
             String stockLine = "En stock : " + selectedSellItem.qty();
             if (selectedSellItem.hasNBT()) stockLine += "  §b✦ enchanté";
-            ctx.drawText(textRenderer, stockLine, formX + 44, fy + 20, C_DIM, false);
+            ctx.drawString(font, stockLine, formX + 44, fy + 20, C_DIM, false);
         } else {
             ctx.fill(formX + 8, fy, formX + formW - 8, fy + 36, C_STRIP);
-            ctx.drawCenteredTextWithShadow(textRenderer, "<- Choisissez un item", formX + formW / 2, fy + 14, C_DARK);
+            ctx.drawCenteredString(font, "<- Choisissez un item", formX + formW / 2, fy + 14, C_DARK);
         }
         fy += 46;
 
-        ctx.drawText(textRenderer, "QUANTITE", formX + 12, fy, C_DIM, false);
-        fy += textRenderer.fontHeight + 4;
-        sellQtyInput.render(ctx, textRenderer, formX + 12, fy, formW - 24, mx, my);
+        ctx.drawString(font, "QUANTITE", formX + 12, fy, C_DIM, false);
+        fy += font.lineHeight + 4;
+        sellQtyInput.render(ctx, font, formX + 12, fy, formW - 24, mx, my);
         fy += NumberInput.H + 8;
 
-        ctx.drawText(textRenderer, "PRIX PAR UNITE (◆)", formX + 12, fy, C_DIM, false);
-        fy += textRenderer.fontHeight + 4;
-        sellPriceInput.render(ctx, textRenderer, formX + 12, fy, formW - 24, mx, my);
+        ctx.drawString(font, "PRIX PAR UNITE (◆)", formX + 12, fy, C_DIM, false);
+        fy += font.lineHeight + 4;
+        sellPriceInput.render(ctx, font, formX + 12, fy, formW - 24, mx, my);
         fy += NumberInput.H + 8;
 
         int sellQty   = sellQtyInput.getValue();
@@ -709,36 +715,36 @@ public class HdvScreen extends Screen {
             int commission = (int) (gross * 0.05);
             int net        = gross - commission;
             ctx.fill(formX + 8, fy, formX + formW - 8, fy + 52, C_STRIP);
-            ctx.drawText(textRenderer, sellQty + "x a " + sellPrice + " ◆", formX + 14, fy + 6, C_DIM, false);
+            ctx.drawString(font, sellQty + "x a " + sellPrice + " ◆", formX + 14, fy + 6, C_DIM, false);
             String gs = gross + " ◆";
-            ctx.drawText(textRenderer, gs, formX + formW - textRenderer.getWidth(gs) - 14, fy + 6, C_MID, false);
-            ctx.drawText(textRenderer, "Commission 5%", formX + 14, fy + 18, C_DIM, false);
+            ctx.drawString(font, gs, formX + formW - font.width(gs) - 14, fy + 6, C_MID, false);
+            ctx.drawString(font, "Commission 5%", formX + 14, fy + 18, C_DIM, false);
             String cs = "-" + commission + " ◆";
-            ctx.drawText(textRenderer, cs, formX + formW - textRenderer.getWidth(cs) - 14, fy + 18, C_RED, false);
+            ctx.drawString(font, cs, formX + formW - font.width(cs) - 14, fy + 18, C_RED, false);
             ctx.fill(formX + 8, fy + 31, formX + formW - 8, fy + 32, C_BORDER);
-            ctx.drawText(textRenderer, "Net recu", formX + 14, fy + 36, C_DIM, false);
+            ctx.drawString(font, "Net recu", formX + 14, fy + 36, C_DIM, false);
             String ns = net + " ◆";
-            ctx.drawText(textRenderer, ns, formX + formW - textRenderer.getWidth(ns) - 14, fy + 36, C_GOLD, false);
+            ctx.drawString(font, ns, formX + formW - font.width(ns) - 14, fy + 36, C_GOLD, false);
         }
 
         boolean canSell = selectedSellItem != null && sellPrice > 0 && sellQty > 0 && sellQty <= selectedSellItem.qty();
         int btnY = winY + winH - PAD - 28;
         ctx.fill(formX + 8, btnY, formX + formW - 8, btnY + 22, canSell ? C_GOLD : C_BORDER);
-        ctx.drawCenteredTextWithShadow(textRenderer, "Mettre en vente", formX + formW / 2, btnY + 7, canSell ? C_BG : C_DARK);
+        ctx.drawCenteredString(font, "Mettre en vente", formX + formW / 2, btnY + 7, canSell ? C_BG : C_DARK);
     }
 
     // ── Onglet Mon Shop ───────────────────────────────────────────────────────
 
-    private void renderMyShop(DrawContext ctx, int mx, int my) {
-        String me = client != null && client.player != null ? client.player.getName().getString() : "";
+    private void renderMyShop(GuiGraphics ctx, int mx, int my) {
+        String me = this.minecraft != null && this.minecraft.player != null ? this.minecraft.player.getName().getString() : "";
         List<ListingData> mine = listings.stream().filter(l -> l.seller().equalsIgnoreCase(me)).toList();
 
         int py = winY + TOP_H + PAD;
-        ctx.drawText(textRenderer, "MES ANNONCES — " + mine.size(), winX + PAD, py, C_DIM, false);
-        py += textRenderer.fontHeight + 10;
+        ctx.drawString(font, "MES ANNONCES — " + mine.size(), winX + PAD, py, C_DIM, false);
+        py += font.lineHeight + 10;
 
         if (mine.isEmpty()) {
-            ctx.drawCenteredTextWithShadow(textRenderer, "Vous n'avez aucune annonce.", winX + winW / 2, py + 50, C_DIM);
+            ctx.drawCenteredString(font, "Vous n'avez aucune annonce.", winX + winW / 2, py + 50, C_DIM);
             return;
         }
 
@@ -748,7 +754,7 @@ public class HdvScreen extends Screen {
     }
 
     /** Ligne d'annonce possédée : icône à gauche, infos au centre, bouton Retirer rouge à droite. */
-    private void renderOwnListRow(DrawContext ctx, int x, int y, int w, ListingData l, boolean hov) {
+    private void renderOwnListRow(GuiGraphics ctx, int x, int y, int w, ListingData l, boolean hov) {
         ctx.fill(x, y, x + w, y + ROW_H, hov ? C_HOVER : C_PANEL);
         if (hov) {
             ctx.fill(x, y, x + w, y + 1, C_GOLD);
@@ -765,21 +771,21 @@ public class HdvScreen extends Screen {
 
         int tx = x + 50;
         String name = truncate(FrenchItemNames.toDisplay(l.itemId()), w - 180);
-        ctx.drawText(textRenderer, name, tx, y + 9, C_WHITE, false);
+        ctx.drawString(font, name, tx, y + 9, C_WHITE, false);
         String sub = l.quantity() + " en stock  ·  " + l.pricePerUnit() + " ◆/u";
-        ctx.drawText(textRenderer, truncate(sub, w - 180), tx, y + 22, C_DIM, false);
+        ctx.drawString(font, truncate(sub, w - 180), tx, y + 22, C_DIM, false);
 
         int btnW = 74, btnH = 22;
         int btnX = x + w - btnW - 10;
         int btnY = y + (ROW_H - btnH) / 2;
         ctx.fill(btnX, btnY, btnX + btnW, btnY + btnH, hov ? C_RED : C_STRIP);
         if (!hov) { ctx.fill(btnX, btnY, btnX + btnW, btnY + 1, C_BORDER); ctx.fill(btnX, btnY + btnH - 1, btnX + btnW, btnY + btnH, C_BORDER); }
-        ctx.drawCenteredTextWithShadow(textRenderer, "Retirer", btnX + btnW / 2, btnY + 7, hov ? C_WHITE : C_MID);
+        ctx.drawCenteredString(font, "Retirer", btnX + btnW / 2, btnY + 7, hov ? C_WHITE : C_MID);
     }
 
     // ── Onglet Boutiques ──────────────────────────────────────────────────────
 
-    private void renderShops(DrawContext ctx, int mx, int my) {
+    private void renderShops(GuiGraphics ctx, int mx, int my) {
         int py = winY + TOP_H + PAD;
 
         if (selectedShop != null) {
@@ -788,11 +794,11 @@ public class HdvScreen extends Screen {
             ctx.fill(winX + PAD, py + 17, winX + PAD + 72, py + 18, C_BORDER);
             ctx.fill(winX + PAD, py, winX + PAD + 1, py + 18, C_BORDER);
             ctx.fill(winX + PAD + 71, py, winX + PAD + 72, py + 18, C_BORDER);
-            ctx.drawText(textRenderer, "<- Retour", winX + PAD + 8, py + 5, C_MID, false);
+            ctx.drawString(font, "<- Retour", winX + PAD + 8, py + 5, C_MID, false);
             py += 26;
 
-            ctx.drawText(textRenderer, selectedShop, winX + PAD, py, C_WHITE, false);
-            py += textRenderer.fontHeight + 10;
+            ctx.drawString(font, selectedShop, winX + PAD, py, C_WHITE, false);
+            py += font.lineHeight + 10;
 
             List<ListingData> items = listings.stream().filter(l -> l.seller().equals(selectedShop)).toList();
             int gridW = winW - PAD * 2 - SCROLL_W - 4;
@@ -800,8 +806,8 @@ public class HdvScreen extends Screen {
             renderListRows(ctx, mx, my, items, winX + PAD, py, gridW, gridH, false);
         } else {
             List<String> sellers = shopSellers();
-            ctx.drawText(textRenderer, "BOUTIQUES DES JOUEURS — " + sellers.size(), winX + PAD, py, C_DIM, false);
-            py += textRenderer.fontHeight + 10;
+            ctx.drawString(font, "BOUTIQUES DES JOUEURS — " + sellers.size(), winX + PAD, py, C_DIM, false);
+            py += font.lineHeight + 10;
 
             int rowH    = 48, step = rowH + 6;
             int listH   = winY + winH - PAD - py;
@@ -827,9 +833,9 @@ public class HdvScreen extends Screen {
                     ctx.fill(winX + PAD, ry, winX + PAD + 1, ry + rowH, C_GOLD);
                     ctx.fill(winX + PAD + listW - 1, ry, winX + PAD + listW, ry + rowH, C_GOLD);
                 }
-                ctx.drawText(textRenderer, seller, winX + PAD + 12, ry + 10, C_WHITE, false);
-                ctx.drawText(textRenderer, cnt + " article" + (cnt > 1 ? "s" : ""), winX + PAD + 12, ry + 24, C_DIM, false);
-                ctx.drawText(textRenderer, "›", winX + PAD + listW - 16, ry + rowH / 2 - textRenderer.fontHeight / 2, C_DARK, false);
+                ctx.drawString(font, seller, winX + PAD + 12, ry + 10, C_WHITE, false);
+                ctx.drawString(font, cnt + " article" + (cnt > 1 ? "s" : ""), winX + PAD + 12, ry + 24, C_DIM, false);
+                ctx.drawString(font, "›", winX + PAD + listW - 16, ry + rowH / 2 - font.lineHeight / 2, C_DARK, false);
             }
             ctx.disableScissor();
         }
@@ -837,7 +843,7 @@ public class HdvScreen extends Screen {
 
     /** Vendeurs distincts affichables dans Boutiques — exclut le Shop Serveur et soi-même. */
     private List<String> shopSellers() {
-        String me = client != null && client.player != null ? client.player.getName().getString() : "";
+        String me = this.minecraft != null && this.minecraft.player != null ? this.minecraft.player.getName().getString() : "";
         return listings.stream()
             .map(ListingData::seller)
             .filter(s -> !s.equals("$Serveur"))
@@ -849,10 +855,10 @@ public class HdvScreen extends Screen {
 
     // ── Toast ─────────────────────────────────────────────────────────────────
 
-    private void renderToast(DrawContext ctx) {
+    private void renderToast(GuiGraphics ctx) {
         if (toastMsg == null) return;
         if (System.currentTimeMillis() > toastEnd) { toastMsg = null; return; }
-        int tw = textRenderer.getWidth(toastMsg) + 28;
+        int tw = font.width(toastMsg) + 28;
         int th = 26;
         int tx = winX + winW - tw - 12;
         int ty = winY + winH - th - 12;
@@ -861,7 +867,7 @@ public class HdvScreen extends Screen {
         ctx.fill(tx, ty + th - 1, tx + tw, ty + th, C_BORDER);
         ctx.fill(tx + tw - 1, ty, tx + tw, ty + th, C_BORDER);
         ctx.fill(tx, ty, tx + 3, ty + th, toastOk ? C_GREEN : C_RED);
-        ctx.drawText(textRenderer, toastMsg, tx + 11, ty + (th - textRenderer.fontHeight) / 2, C_WHITE, false);
+        ctx.drawString(font, toastMsg, tx + 11, ty + (th - font.lineHeight) / 2, C_WHITE, false);
     }
 
     // ── Clics souris ──────────────────────────────────────────────────────────
@@ -872,7 +878,7 @@ public class HdvScreen extends Screen {
 
         // Clic hors fenêtre → fermer
         if (x < winX || x > winX + winW || y < winY || y > winY + winH) {
-            close();
+            onClose();
             return true;
         }
 
@@ -916,7 +922,7 @@ public class HdvScreen extends Screen {
         if (HubBackButton.clicked(winX + PAD, winY + (TOP_H - HubBackButton.H) / 2, mx, my)) return;
         int tx = tabsStartX;
         for (Tab tab : Tab.values()) {
-            int tw = textRenderer.getWidth(tab.label) + 18;
+            int tw = font.width(tab.label) + 18;
             if (mx >= tx && mx <= tx + tw) {
                 activeTab    = tab;
                 scrollOffset = 0;
@@ -929,7 +935,7 @@ public class HdvScreen extends Screen {
     }
 
     private void handleCatClick(int mx, int my) {
-        int y = winY + TOP_H + PAD + textRenderer.fontHeight + 10;
+        int y = winY + TOP_H + PAD + font.lineHeight + 10;
         for (String[] cat : CATS) {
             int rh = 30;
             if (my >= y && my < y + rh) {
@@ -946,7 +952,7 @@ public class HdvScreen extends Screen {
         int cw   = winW - SIDE_W - PAD * 2;
         int sfW  = Math.min(220, cw - 110);
         String sortLabel = "⇅ " + sortMode.label;
-        int sortW = textRenderer.getWidth(sortLabel) + 16;
+        int sortW = font.width(sortLabel) + 16;
         int sortX = cx + sfW + 8;
         int sortY = winY + TOP_H + PAD;
         if (mx >= sortX && mx < sortX + sortW && my >= sortY && my < sortY + 18) {
@@ -1029,7 +1035,7 @@ public class HdvScreen extends Screen {
             }
             if (hoveredCard != null) openBuyModal(hoveredCard);
         } else {
-            py += textRenderer.fontHeight + 10;
+            py += font.lineHeight + 10;
             List<String> sellers = shopSellers();
             int rowH = 48, step = rowH + 6;
             int listH = winY + winH - PAD - py;
@@ -1101,26 +1107,26 @@ public class HdvScreen extends Screen {
     // ── Envoi paquets ─────────────────────────────────────────────────────────
 
     private void sendBuy(String itemId, int qty, String nbt) {
-        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
         buf.writeInt(HdvNetworking.ACTION_BUY);
-        buf.writeString(itemId);
+        buf.writeUtf(itemId);
         buf.writeInt(qty);
-        buf.writeString(nbt != null ? nbt : "");
+        buf.writeUtf(nbt != null ? nbt : "");
         NtNet.versServeur(HdvNetworking.HDV_ACTION, buf);
     }
 
     private void sendSell(String itemId, int qty, int price, String nbt) {
-        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
         buf.writeInt(HdvNetworking.ACTION_SELL);
-        buf.writeString(itemId);
+        buf.writeUtf(itemId);
         buf.writeInt(qty);
         buf.writeInt(price);
-        buf.writeString(nbt != null ? nbt : "");
+        buf.writeUtf(nbt != null ? nbt : "");
         NtNet.versServeur(HdvNetworking.HDV_ACTION, buf);
     }
 
     private void sendWithdraw(int listingId) {
-        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
         buf.writeInt(HdvNetworking.ACTION_WITHDRAW);
         buf.writeInt(listingId);
         NtNet.versServeur(HdvNetworking.HDV_ACTION, buf);
@@ -1129,17 +1135,17 @@ public class HdvScreen extends Screen {
     // ── Utilitaires ───────────────────────────────────────────────────────────
 
 
-    private void drawItemScaled(DrawContext ctx, ItemStack stack, int centerX, int centerY, float scale) {
-        ctx.getMatrices().push();
-        ctx.getMatrices().translate(centerX - 8 * scale, centerY - 8 * scale, 0);
-        ctx.getMatrices().scale(scale, scale, 1.0f);
-        ctx.drawItem(stack, 0, 0);
-        ctx.getMatrices().pop();
+    private void drawItemScaled(GuiGraphics ctx, ItemStack stack, int centerX, int centerY, float scale) {
+        ctx.pose().pushPose();
+        ctx.pose().translate(centerX - 8 * scale, centerY - 8 * scale, 0);
+        ctx.pose().scale(scale, scale, 1.0f);
+        ctx.renderItem(stack, 0, 0);
+        ctx.pose().popPose();
     }
 
     private ItemStack itemStack(String itemId) {
         try {
-            Item item = Registries.ITEM.get(Identifier.tryParse(itemId));
+            Item item = BuiltInRegistries.ITEM.get(ResourceLocation.tryParse(itemId));
             return item == Items.AIR ? new ItemStack(Items.BARRIER) : new ItemStack(item);
         } catch (Exception e) {
             return new ItemStack(Items.BARRIER);
@@ -1150,7 +1156,7 @@ public class HdvScreen extends Screen {
     private ItemStack itemStack(ListingData l) {
         ItemStack stack = itemStack(l.itemId());
         if (l.hasNBT()) {
-            ItemComponentCodec.appliquer(stack, l.itemNBT(), client.world.getRegistryManager());
+            ItemComponentCodec.appliquer(stack, l.itemNBT(), this.minecraft.level.registryAccess());
         }
         return stack;
     }
@@ -1159,18 +1165,18 @@ public class HdvScreen extends Screen {
     private ItemStack sellStack(SellItem si) {
         ItemStack stack = new ItemStack(si.item());
         if (si.hasNBT()) {
-            ItemComponentCodec.appliquer(stack, si.nbt(), client.world.getRegistryManager());
+            ItemComponentCodec.appliquer(stack, si.nbt(), this.minecraft.level.registryAccess());
         }
         return stack;
     }
 
     private String truncate(String s, int maxPx) {
-        if (textRenderer.getWidth(s) <= maxPx) return s;
-        while (s.length() > 1 && textRenderer.getWidth(s + "…") > maxPx)
+        if (font.width(s) <= maxPx) return s;
+        while (s.length() > 1 && font.width(s + "…") > maxPx)
             s = s.substring(0, s.length() - 1);
         return s + "…";
     }
 
-    @Override public boolean shouldPause()       { return false; }
+    @Override public boolean isPauseScreen()       { return false; }
     @Override public boolean shouldCloseOnEsc() { return true; }
 }

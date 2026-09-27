@@ -1,19 +1,16 @@
 package com.nouvelleterrebridge.client.hud;
 
 import com.nouvelleterrebridge.client.ClientConfig;
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
 
-@Environment(EnvType.CLIENT)
 public class CoordsWidget extends HudWidget {
 
     public CoordsWidget() {
         super("coords", "Coordonnées", 0.01f, 0.06f, false);
     }
 
-    private String coords(MinecraftClient mc) {
+    private String coords(Minecraft mc) {
         if (mc.player == null) return "? / ? / ?";
         double x = mc.player.getX(), y = mc.player.getY(), z = mc.player.getZ();
         return ClientConfig.get().coordsShowDecimals
@@ -22,29 +19,29 @@ public class CoordsWidget extends HudWidget {
     }
 
     @Override
-    public void render(DrawContext ctx, MinecraftClient mc) {
+    public void render(GuiGraphics ctx, Minecraft mc) {
         String c = coords(mc);
-        int sw = mc.getWindow().getScaledWidth(), sh = mc.getWindow().getScaledHeight();
+        int sw = mc.getWindow().getGuiScaledWidth(), sh = mc.getWindow().getGuiScaledHeight();
         int px = getPixelX(sw, mc), py = getPixelY(sh, mc);
         int w = getWidth(mc), h = getHeight(mc);
-        int labelW = mc.textRenderer.getWidth("XYZ ");
+        int labelW = mc.font.width("XYZ ");
         ctx.fill(px, py, px + w, py + h, C_PANEL);
         ctx.fill(px, py, px + 2, py + h, C_GOLD);
-        ctx.drawText(mc.textRenderer, "XYZ", px + 8, py + 3, C_MID, false);
-        ctx.drawText(mc.textRenderer, c,     px + 8 + labelW, py + 3, C_WHITE, false);
+        ctx.drawString(mc.font, "XYZ", px + 8, py + 3, C_MID, false);
+        ctx.drawString(mc.font, c,     px + 8 + labelW, py + 3, C_WHITE, false);
     }
 
     @Override
-    public int getWidth(MinecraftClient mc)  { return mc.textRenderer.getWidth("XYZ " + coords(mc)) + 18; }
+    public int getWidth(Minecraft mc)  { return mc.font.width("XYZ " + coords(mc)) + 18; }
     @Override
-    public int getHeight(MinecraftClient mc) { return 14; }
+    public int getHeight(Minecraft mc) { return 14; }
 
     @Override public boolean hasSettings()  { return true; }
     @Override public int     settingsHeight() { return 26; }
 
     @Override
-    public void renderSettings(DrawContext ctx, MinecraftClient mc, int panelX, int sy, int panelW, int mx, int my) {
-        renderCheckbox(ctx, mc.textRenderer, panelX + 10, sy + 7, "Décimales", ClientConfig.get().coordsShowDecimals, mx, my);
+    public void renderSettings(GuiGraphics ctx, Minecraft mc, int panelX, int sy, int panelW, int mx, int my) {
+        renderCheckbox(ctx, mc.font, panelX + 10, sy + 7, "Décimales", ClientConfig.get().coordsShowDecimals, mx, my);
     }
 
     @Override

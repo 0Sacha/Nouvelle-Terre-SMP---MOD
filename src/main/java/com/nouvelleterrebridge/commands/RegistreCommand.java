@@ -5,44 +5,43 @@ import com.nouvelleterrebridge.network.NtNet;
 import com.mojang.brigadier.CommandDispatcher;
 import com.nouvelleterrebridge.http.EventDispatcher;
 import com.nouvelleterrebridge.network.RegistreNetworking;
-import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.server.command.CommandManager;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.commands.Commands;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.Component;
 
 import java.util.Map;
 
 public class RegistreCommand {
 
-    public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
-        dispatcher.register(CommandManager.literal("registre")
+    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
+        dispatcher.register(Commands.literal("registre")
             .executes(ctx -> {
-                ServerCommandSource src = ctx.getSource();
-                if (!(src.getEntity() instanceof ServerPlayerEntity player)) return 0;
+                CommandSourceStack src = ctx.getSource();
+                if (!(src.getEntity() instanceof ServerPlayer player)) return 0;
 
-                src.sendFeedback(() -> Text.literal("§8[Nouvelle Terre] §7Chargement du registre..."), false);
+                src.sendSuccess(() -> Component.literal("§8[Nouvelle Terre] §7Chargement du registre..."), false);
                 open(player);
                 return 1;
             }));
     }
 
     /** Récupère les personnages auprès du bot puis envoie REGISTRE_OPEN au joueur. */
-    public static void open(ServerPlayerEntity player) {
+    public static void open(ServerPlayer player) {
         var server = player.getServer();
         EventDispatcher.fetchPersonnages(server, personnages -> {
             // Statut en ligne : le serveur fait foi (la DB du bot peut être désynchronisée)
             var enLigneMC = new java.util.HashSet<String>();
-            for (ServerPlayerEntity sp : server.getPlayerManager().getPlayerList())
+            for (ServerPlayer sp : server.getPlayerList().getPlayers())
                 enLigneMC.add(sp.getName().getString().toLowerCase());
 
-            PacketByteBuf buf = PacketByteBufs.create();
+            FriendlyByteBuf buf = com.nouvelleterrebridge.network.NtNet.buffer();
             buf.writeInt(personnages.size());
             for (Map<String, Object> p : personnages) {
                 String pseudoMc = (String) p.getOrDefault("pseudo_mc", "");
-                buf.writeString((String) p.getOrDefault("nom_rp", "Inconnu"));
-                buf.writeString(pseudoMc);
+                buf.writeUtf((String) p.getOrDefault("nom_rp", "Inconnu"));
+                buf.writeUtf(pseudoMc);
                 buf.writeBoolean(enLigneMC.contains(pseudoMc.toLowerCase()));
             }
             NtNet.versClient(player, RegistreNetworking.REGISTRE_OPEN, buf);

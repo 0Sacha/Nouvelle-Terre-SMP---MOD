@@ -1,10 +1,10 @@
 package com.nouvelleterrebridge.economy;
 
 import com.nouvelleterrebridge.NouvelleTerreBridge;
-import net.minecraft.item.ItemStack;
-import net.minecraft.recipe.Ingredient;
-import net.minecraft.recipe.Recipe;
-import net.minecraft.registry.Registries;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.Ingredient;
+import net.minecraft.world.item.crafting.Recipe;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.MinecraftServer;
 
 import java.util.HashMap;
@@ -117,10 +117,10 @@ public final class PrixDeriveur {
         }
 
         // ── Crafts : plusieurs passes, une recette pouvant dépendre d'une autre ──
-        // getRecipeManager().values() renvoie des RecipeEntry<?> (id + recette) depuis
-        // la 1.21 : seule la recette elle-même nous intéresse ici.
-        List<Recipe<?>> recettes = server.getRecipeManager().values().stream()
-            .<Recipe<?>>map(net.minecraft.recipe.RecipeEntry::value)
+        // getRecipeManager().values() renvoie des RecipeHolder<?> (id + recette) :
+        // seule la recette elle-même nous intéresse ici.
+        List<Recipe<?>> recettes = server.getRecipeManager().getRecipes().stream()
+            .<Recipe<?>>map(net.minecraft.world.item.crafting.RecipeHolder::value)
             .toList();
         for (int passe = 0; passe < PASSES; passe++) {
             boolean change = false;
@@ -151,24 +151,24 @@ public final class PrixDeriveur {
      */
     private static boolean appliquer(Recipe<?> recette, Map<String, Integer> prix,
                                      Set<String> figes, MinecraftServer server) {
-        ItemStack sortie = recette.getResult(server.getRegistryManager());
+        ItemStack sortie = recette.getResultItem(server.registryAccess());
         if (sortie == null || sortie.isEmpty()) return false;
 
-        String idSortie = Registries.ITEM.getId(sortie.getItem()).toString();
+        String idSortie = BuiltInRegistries.ITEM.getKey(sortie.getItem()).toString();
         if (figes.contains(idSortie)) return false;   // valeur de référence : intouchable
         int nbSortie = Math.max(1, sortie.getCount());
 
         int total = 0;
         for (Ingredient ing : recette.getIngredients()) {
             if (ing.isEmpty()) continue;
-            ItemStack[] options = ing.getMatchingStacks();
+            ItemStack[] options = ing.getItems();
             if (options.length == 0) continue;
 
             // Un ingrédient peut accepter plusieurs objets (tag « planches », par
             // exemple) : on retient le moins cher, celui que le joueur utilisera.
             Integer moinsCher = null;
             for (ItemStack opt : options) {
-                Integer p = prix.get(Registries.ITEM.getId(opt.getItem()).toString());
+                Integer p = prix.get(BuiltInRegistries.ITEM.getKey(opt.getItem()).toString());
                 if (p != null && (moinsCher == null || p < moinsCher)) moinsCher = p;
             }
             if (moinsCher == null) return false;   // ingrédient non tarifé : on repassera

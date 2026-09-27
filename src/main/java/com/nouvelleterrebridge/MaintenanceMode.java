@@ -2,7 +2,7 @@ package com.nouvelleterrebridge;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import net.fabricmc.loader.api.FabricLoader;
+import net.neoforged.fml.loading.FMLPaths;
 
 import java.io.Reader;
 import java.io.Writer;
@@ -43,7 +43,7 @@ public final class MaintenanceMode {
     private MaintenanceMode() {}
 
     private static Path chemin() {
-        return FabricLoader.getInstance().getGameDir().resolve(NOM_FICHIER);
+        return FMLPaths.GAMEDIR.get().resolve(NOM_FICHIER);
     }
 
     public static void load() {
