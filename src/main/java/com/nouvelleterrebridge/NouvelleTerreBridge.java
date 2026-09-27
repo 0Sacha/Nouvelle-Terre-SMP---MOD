@@ -1,5 +1,7 @@
 package com.nouvelleterrebridge;
 
+import com.nouvelleterrebridge.network.NtNet;
+
 import com.nouvelleterrebridge.commands.BankCommand;
 import com.nouvelleterrebridge.commands.ConflitCommand;
 import com.nouvelleterrebridge.commands.EconomieCommand;
@@ -19,7 +21,6 @@ import com.nouvelleterrebridge.economy.FirstJoinTracker;
 import com.nouvelleterrebridge.economy.PlayerLevelManager;
 import com.nouvelleterrebridge.economy.QuestManager;
 import com.nouvelleterrebridge.network.QuestNetworking;
-import net.fabricmc.fabric.api.entity.event.v1.ServerEntityCombatEvents;
 import com.nouvelleterrebridge.economy.Loan;
 import com.nouvelleterrebridge.economy.LoanManager;
 import com.nouvelleterrebridge.economy.LocalEconomy;
@@ -35,11 +36,13 @@ import com.nouvelleterrebridge.economy.ShopThresholds;
 import com.nouvelleterrebridge.economy.ServerShopActions;
 import com.nouvelleterrebridge.economy.ServerShopPriceManager;
 import com.nouvelleterrebridge.economy.TransactionLog;
-import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
-import net.minecraft.block.Block;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.server.world.ServerWorld;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Rarity;
+import net.minecraft.world.item.CreativeModeTabs;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.server.level.ServerLevel;
 import com.nouvelleterrebridge.events.PlayerEvents;
 import com.nouvelleterrebridge.events.ServerEvents;
 import com.nouvelleterrebridge.http.EventDispatcher;
@@ -54,17 +57,26 @@ import com.nouvelleterrebridge.market.FrenchItemNames;
 import com.nouvelleterrebridge.market.MarketActions;
 import com.nouvelleterrebridge.market.MarketListing;
 import com.nouvelleterrebridge.market.MarketManager;
-import net.fabricmc.api.ModInitializer;
-import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
-import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.network.PacketByteBuf;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
+import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.level.BlockDropsEvent;
+import net.neoforged.neoforge.event.server.ServerStartedEvent;
+import net.neoforged.neoforge.event.server.ServerStoppingEvent;
+import net.neoforged.neoforge.event.tick.ServerTickEvent;
+import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
+import net.neoforged.neoforge.registries.DeferredRegister;
 
 import java.util.HashMap;
 import java.util.List;
@@ -72,9 +84,18 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
-public class NouvelleTerreBridge implements ModInitializer {
+@Mod(NouvelleTerreBridge.NEOFORGE_ID)
+public class NouvelleTerreBridge {
 
+    // ⚠ Namespace de ressources (items, canaux réseau) — distinct du modId NeoForge
+    // technique ci-dessous. NeoForge impose un modId sans tiret ([a-z0-9_]) pour
+    // @Mod/neoforge.mods.toml/ModList, mais le namespace des ressources doit rester
+    // "nouvelle-terre-bridge" : le changer ferait disparaître tous les Shards et
+    // Parchemins déjà en circulation chez les joueurs. Les deux sont indépendants,
+    // ne jamais les unifier.
     public static final String MOD_ID = "nouvelle-terre-bridge";
+    /** modId technique NeoForge — @Mod, neoforge.mods.toml, ModList uniquement. */
+    public static final String NEOFORGE_ID = "nouvelle_terre_bridge";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     public static ModConfig config;
@@ -95,59 +116,49 @@ public class NouvelleTerreBridge implements ModInitializer {
     // Purement du rangement : retirer 5 000 ◆ en pièces de 1 remplissait 78 piles.
     // `shard` garde son identifiant d'origine — le renommer aurait fait disparaître
     // tous les Shards déjà en circulation chez les joueurs.
+    private static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(MOD_ID);
 
     /** Shard ◆ — 1 ◆. Retrait via /bank, dépôt par clic droit. */
-    public static final net.minecraft.item.Item SHARD     = coupure(1);
-    public static final net.minecraft.item.Item SHARD_5   = coupure(5);
-    public static final net.minecraft.item.Item SHARD_10  = coupure(10);
-    public static final net.minecraft.item.Item SHARD_20  = coupure(20);
-    public static final net.minecraft.item.Item SHARD_50  = coupure(50);
-    public static final net.minecraft.item.Item SHARD_100 = coupure(100);
+    public static final net.neoforged.neoforge.registries.DeferredItem<Item> SHARD     = ITEMS.register("shard",     () -> coupure(1));
+    public static final net.neoforged.neoforge.registries.DeferredItem<Item> SHARD_5   = ITEMS.register("shard_5",   () -> coupure(5));
+    public static final net.neoforged.neoforge.registries.DeferredItem<Item> SHARD_10  = ITEMS.register("shard_10",  () -> coupure(10));
+    public static final net.neoforged.neoforge.registries.DeferredItem<Item> SHARD_20  = ITEMS.register("shard_20",  () -> coupure(20));
+    public static final net.neoforged.neoforge.registries.DeferredItem<Item> SHARD_50  = ITEMS.register("shard_50",  () -> coupure(50));
+    public static final net.neoforged.neoforge.registries.DeferredItem<Item> SHARD_100 = ITEMS.register("shard_100", () -> coupure(100));
 
-    private static net.minecraft.item.Item coupure(int valeur) {
-        return new com.nouvelleterrebridge.item.ShardItem(
-            new net.minecraft.item.Item.Settings().rarity(net.minecraft.util.Rarity.UNCOMMON), valeur);
+    private static Item coupure(int valeur) {
+        return new com.nouvelleterrebridge.item.ShardItem(new Item.Properties().rarity(Rarity.UNCOMMON), valeur);
     }
 
     /** Parchemin — terminal portatif ouvrant le hub des fenêtres du mod. */
-    public static final net.minecraft.item.Item PARCHEMIN = new com.nouvelleterrebridge.item.ParcheminItem(
-        new net.minecraft.item.Item.Settings()
-            .maxCount(1)
-            .fireproof()
-            .rarity(net.minecraft.util.Rarity.RARE));
+    public static final net.neoforged.neoforge.registries.DeferredItem<Item> PARCHEMIN = ITEMS.register("parchemin",
+        () -> new com.nouvelleterrebridge.item.ParcheminItem(new Item.Properties()
+            .stacksTo(1)
+            .fireResistant()
+            .rarity(Rarity.RARE)));
 
-    @Override
-    public void onInitialize() {
+    public NouvelleTerreBridge(IEventBus modEventBus) {
         LOGGER.info("[NouvelleTerreBridge] Initialisation du mod...");
 
-        net.minecraft.registry.Registry.register(net.minecraft.registry.Registries.ITEM,
-            new net.minecraft.util.Identifier(MOD_ID, "shard"), SHARD);
-        net.minecraft.registry.Registry.register(net.minecraft.registry.Registries.ITEM,
-            new net.minecraft.util.Identifier(MOD_ID, "shard_5"), SHARD_5);
-        net.minecraft.registry.Registry.register(net.minecraft.registry.Registries.ITEM,
-            new net.minecraft.util.Identifier(MOD_ID, "shard_10"), SHARD_10);
-        net.minecraft.registry.Registry.register(net.minecraft.registry.Registries.ITEM,
-            new net.minecraft.util.Identifier(MOD_ID, "shard_20"), SHARD_20);
-        net.minecraft.registry.Registry.register(net.minecraft.registry.Registries.ITEM,
-            new net.minecraft.util.Identifier(MOD_ID, "shard_50"), SHARD_50);
-        net.minecraft.registry.Registry.register(net.minecraft.registry.Registries.ITEM,
-            new net.minecraft.util.Identifier(MOD_ID, "shard_100"), SHARD_100);
-        net.minecraft.registry.Registry.register(net.minecraft.registry.Registries.ITEM,
-            new net.minecraft.util.Identifier(MOD_ID, "parchemin"), PARCHEMIN);
-        net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents
-            .modifyEntriesEvent(net.minecraft.item.ItemGroups.INGREDIENTS)
-            .register(entries -> {
-                // Une entrée par coupure : entries.add() n'a pas de variante varargs
-                entries.add(SHARD);
-                entries.add(SHARD_5);
-                entries.add(SHARD_10);
-                entries.add(SHARD_20);
-                entries.add(SHARD_50);
-                entries.add(SHARD_100);
-            });
-        net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents
-            .modifyEntriesEvent(net.minecraft.item.ItemGroups.TOOLS)
-            .register(entries -> entries.add(PARCHEMIN));
+        // Doit être fait avant tout le reste : force le chargement des 34 canaux,
+        // y compris ceux (comme WikiNetworking) qui ne sont sinon référencés que
+        // depuis l'intérieur d'un lambda jamais évalué à ce stade.
+        NtNet.precharger();
+
+        ITEMS.register(modEventBus);
+        modEventBus.addListener(this::onBuildCreativeTabs);
+        modEventBus.addListener(NtNet::enregistrer);
+        NeoForge.EVENT_BUS.register(this);
+
+        // Enregistrement explicite plutôt que @EventBusSubscriber : ce mod garde un
+        // seul sourceSet client+serveur (comme côté Fabric), et la découverte par
+        // annotation ne s'y est pas montrée fiable — onClientSetup n'était jamais
+        // appelé. La classe cliente n'est chargée que si on est bien sur le client :
+        // sans ce test, un serveur dédié planterait en touchant des classes qui
+        // référencent Minecraft/KeyMapping.
+        if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient()) {
+            com.nouvelleterrebridge.NouvelleTerreBridgeClient.init(modEventBus);
+        }
 
         config = ModConfig.charger();
         MaintenanceMode.load();
@@ -156,17 +167,9 @@ public class NouvelleTerreBridge implements ModInitializer {
         EventQueue.getInstance().charger();
         EventDispatcher.init(config);
 
-        // Référence serveur partagée — enregistrée ici et non dans ServerEvents,
-        // qui se désactive entièrement si les événements bot sont coupés en config.
-        net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STARTED
-            .register(s -> {
-                serveur = s;
-                // Les recettes ne sont chargées qu'au démarrage du serveur : c'est
-                // le seul moment où les prix dérivés peuvent être calculés.
-                ShopThresholds.deriverEtMigrer(s);
-            });
-        net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPED
-            .register(s -> serveur = null);
+        // Référence serveur partagée — mise à jour dans onServerStarted/onServerStopped
+        // (ci-dessous) et non dans ServerEvents, qui se désactive entièrement si les
+        // événements bot sont coupés en config.
 
         ServerEvents.register();
         PlayerEvents.register();
@@ -184,53 +187,6 @@ public class NouvelleTerreBridge implements ModInitializer {
         FirstJoinTracker.getInstance().load();
         com.nouvelleterrebridge.economy.DailyBonusTracker.load();
 
-        // Blocs cassés → drops réels (fortune/silk touch inclus)
-        PlayerBlockBreakEvents.AFTER.register((world, player, pos, state, blockEntity) -> {
-            if (!(world instanceof ServerWorld sw)) return;
-
-            // Un bloc posé par un joueur puis recassé n'est pas de la production :
-            // sans ce garde-fou, poser/casser le même bloc en boucle débloquait
-            // n'importe quel item au Shop Serveur.
-            if (PlacedBlockTracker.estPoseParJoueur(world, pos)) return;
-
-            String pName = player.getName().getString();
-            List<ItemStack> drops = Block.getDroppedStacks(state, sw, pos, blockEntity, player, player.getMainHandStack());
-            for (ItemStack drop : drops) {
-                String itemId = Registries.ITEM.getId(drop.getItem()).toString();
-                ProductionTracker.add(itemId, drop.getCount());
-                QuestManager.onItemHarvested(pName, itemId, drop.getCount(), sw.getServer());
-            }
-        });
-
-        // Mobs tués par un joueur → quêtes KILL
-        ServerEntityCombatEvents.AFTER_KILLED_OTHER_ENTITY.register((world, entity, killedEntity) -> {
-            if (!(entity instanceof ServerPlayerEntity player)) return;
-            String typeId = Registries.ENTITY_TYPE.getId(killedEntity.getType()).toString();
-            QuestManager.onMobKilled(player.getName().getString(), typeId, player.getServer());
-        });
-
-        // Rollover des quêtes journalières (00h heure réelle, vérifié chaque minute)
-        net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register(QuestManager::tick);
-
-        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-            HdvCommand.register(dispatcher);
-            ShopCommand.register(dispatcher);
-            BankCommand.register(dispatcher);
-            EconomieCommand.register(dispatcher);
-            PayCommand.register(dispatcher);
-            LierCommand.register(dispatcher);
-            ConflitCommand.register(dispatcher);
-            EventNarratifCommand.register(dispatcher);
-            ProductionCommand.register(dispatcher);
-            QuetesCommand.register(dispatcher);
-            RegistreCommand.register(dispatcher);
-            WikiCommand.register(dispatcher);
-            MarcheCommand.register(dispatcher);
-            ServerAdminCommand.register(dispatcher);
-            com.nouvelleterrebridge.commands.SauvegardeCommand.register(dispatcher);
-            com.nouvelleterrebridge.commands.MaintenanceCommand.register(dispatcher);
-        });
-
         com.nouvelleterrebridge.service.ServiceNetworkHandler.register();
         registerHdvNetworking();
         registerBankNetworking();
@@ -241,26 +197,200 @@ public class NouvelleTerreBridge implements ModInitializer {
         registerHubNetworking();
         registerShopNetworking();
 
-        // Envoie le solde au joueur dès qu'il est en jeu + refresh pool quêtes
-        // + garantit qu'il possède son Parchemin
-        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
-            server.execute(() -> {
-                sendBalanceToPlayer(handler.getPlayer());
-                QuestManager.refreshPlayerPool(handler.getPlayer().getName().getString(), server);
-                donnerParcheminSiAbsent(handler.getPlayer());
-            }));
-
-        // Le Parchemin est rendu après une mort, même sans keepInventory
-        net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents.AFTER_RESPAWN.register(
-            (oldPlayer, newPlayer, alive) -> donnerParcheminSiAbsent(newPlayer));
-
         LOGGER.info("[NouvelleTerreBridge] Mod initialisé avec succès.");
     }
 
+    private void onBuildCreativeTabs(BuildCreativeModeTabContentsEvent event) {
+        // Une entrée par coupure : entries.add() n'a pas de variante varargs
+        if (event.getTabKey() == CreativeModeTabs.INGREDIENTS) {
+            event.accept(SHARD.get());
+            event.accept(SHARD_5.get());
+            event.accept(SHARD_10.get());
+            event.accept(SHARD_20.get());
+            event.accept(SHARD_50.get());
+            event.accept(SHARD_100.get());
+        } else if (event.getTabKey() == CreativeModeTabs.TOOLS_AND_UTILITIES) {
+            event.accept(PARCHEMIN.get());
+        }
+    }
+
+    @net.neoforged.bus.api.SubscribeEvent
+    public void onServerStarted(ServerStartedEvent event) {
+        serveur = event.getServer();
+        // Les recettes ne sont chargées qu'au démarrage du serveur : c'est
+        // le seul moment où les prix dérivés peuvent être calculés.
+        ShopThresholds.deriverEtMigrer(event.getServer());
+    }
+
+    @net.neoforged.bus.api.SubscribeEvent
+    public void onServerStopping(ServerStoppingEvent event) {
+        serveur = null;
+    }
+
+    // Blocs cassés → drops réels (fortune/silk touch inclus)
+    @net.neoforged.bus.api.SubscribeEvent
+    public void onBlockDrops(BlockDropsEvent event) {
+        ServerLevel sw = event.getLevel();
+        var pos = event.getPos();
+
+        // Un bloc posé par un joueur puis recassé n'est pas de la production :
+        // sans ce garde-fou, poser/casser le même bloc en boucle débloquait
+        // n'importe quel item au Shop Serveur.
+        if (PlacedBlockTracker.estPoseParJoueur(sw, pos)) return;
+        if (!(event.getBreaker() instanceof ServerPlayer player)) return;
+
+        String pName = player.getName().getString();
+        for (var itemEntity : event.getDrops()) {
+            ItemStack drop = itemEntity.getItem();
+            String itemId = BuiltInRegistries.ITEM.getKey(drop.getItem()).toString();
+            ProductionTracker.add(itemId, drop.getCount());
+            QuestManager.onItemHarvested(pName, itemId, drop.getCount(), sw.getServer());
+        }
+    }
+
+    // Mobs tués par un joueur → quêtes KILL
+    @net.neoforged.bus.api.SubscribeEvent
+    public void onLivingDeath(LivingDeathEvent event) {
+        if (!(event.getSource().getEntity() instanceof ServerPlayer player)) return;
+        String typeId = BuiltInRegistries.ENTITY_TYPE.getKey(event.getEntity().getType()).toString();
+        QuestManager.onMobKilled(player.getName().getString(), typeId, player.getServer());
+    }
+
+    // Mort d'un joueur → webhook Discord (anciennement LivingEntityMixin)
+    @net.neoforged.bus.api.SubscribeEvent
+    public void onPlayerDeath(LivingDeathEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer joueur)) return;
+        String pseudo = joueur.getName().getString();
+        String causeTexte = event.getSource().getLocalizedDeathMessage(joueur).getString();
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("player",  pseudo);
+        data.put("uuid",    joueur.getStringUUID());
+        data.put("message", causeTexte);
+        data.put("cause",   event.getSource().getMsgId());
+        EventDispatcher.envoyer("PLAYER_DEATH", data);
+    }
+
+    // Drops d'un mob tué par un joueur → production (anciennement MobDropMixin+EntityDropMixin)
+    @net.neoforged.bus.api.SubscribeEvent
+    public void onLivingDrops(net.neoforged.neoforge.event.entity.living.LivingDropsEvent event) {
+        if (event.getEntity() instanceof ServerPlayer) return;
+        if (!(event.getSource().getEntity() instanceof ServerPlayer)) return;
+        for (net.minecraft.world.entity.item.ItemEntity itemEntity : event.getDrops()) {
+            ItemStack stack = itemEntity.getItem();
+            if (stack.isEmpty()) continue;
+            ProductionTracker.add(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), stack.getCount());
+        }
+    }
+
+    // Pose de bloc par un joueur → marquage anti-exploit (anciennement BlockItemMixin)
+    @net.neoforged.bus.api.SubscribeEvent
+    public void onBlockPlace(net.neoforged.neoforge.event.level.BlockEvent.EntityPlaceEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer)) return;
+        PlacedBlockTracker.marquer((net.minecraft.world.level.Level) event.getLevel(), event.getPos());
+    }
+
+    // Craft d'un item → production + quêtes (anciennement CraftingResultSlotMixin)
+    @net.neoforged.bus.api.SubscribeEvent
+    public void onItemCrafted(PlayerEvent.ItemCraftedEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        ItemStack stack = event.getCrafting();
+        if (stack.isEmpty()) return;
+
+        // Décompactage (1 bloc → 4/9 unités) : ne crédite rien et retire 1 du
+        // compteur du bloc source, sinon compacter/décompacter en boucle gonflait
+        // le compteur à l'infini. Le compactage (9 → 1) reste compté.
+        net.minecraft.world.item.Item decompacte = ingredientDecompacte(event.getInventory(), stack);
+        if (decompacte != null) {
+            ProductionTracker.remove(BuiltInRegistries.ITEM.getKey(decompacte).toString(), 1);
+            return;
+        }
+
+        String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+        ProductionTracker.add(itemId, stack.getCount());
+        QuestManager.onItemHarvested(player.getName().getString(), itemId, stack.getCount(), player.getServer());
+    }
+
+    /**
+     * Si la recette est un décompactage (un seul bloc en entrée, 4 ou 9 unités en
+     * sortie), retourne l'item d'entrée ; sinon null.
+     */
+    private static net.minecraft.world.item.Item ingredientDecompacte(net.minecraft.world.Container input, ItemStack resultat) {
+        net.minecraft.world.item.Item ingredient = null;
+        int total = 0;
+        for (int i = 0; i < input.getContainerSize(); i++) {
+            ItemStack s = input.getItem(i);
+            if (s.isEmpty()) continue;
+            if (ingredient == null) ingredient = s.getItem();
+            else if (ingredient != s.getItem()) return null;   // recette composite
+            total += s.getCount();
+        }
+        if (ingredient == null || ingredient == resultat.getItem()) return null;
+        if (total != 1) return null;
+        int sortie = resultat.getCount();
+        return (sortie == 9 || sortie == 4) ? ingredient : null;
+    }
+
+    // Bloque le jet du Parchemin, touche lâcher ou glisser hors inventaire
+    // (anciennement ParcheminDropMixin — couvre en prime le glisser, une limite
+    // documentée du mixin d'origine)
+    @net.neoforged.bus.api.SubscribeEvent
+    public void onItemToss(net.neoforged.neoforge.event.entity.item.ItemTossEvent event) {
+        if (event.getEntity().getItem().is(PARCHEMIN.get())) {
+            event.setCanceled(true);
+        }
+    }
+
+    // Rollover des quêtes journalières (00h heure réelle, vérifié chaque minute)
+    @net.neoforged.bus.api.SubscribeEvent
+    public void onServerTick(ServerTickEvent.Post event) {
+        QuestManager.tick(event.getServer());
+    }
+
+    @net.neoforged.bus.api.SubscribeEvent
+    public void onRegisterCommands(RegisterCommandsEvent event) {
+        var dispatcher = event.getDispatcher();
+        HdvCommand.register(dispatcher);
+        ShopCommand.register(dispatcher);
+        BankCommand.register(dispatcher);
+        EconomieCommand.register(dispatcher);
+        PayCommand.register(dispatcher);
+        LierCommand.register(dispatcher);
+        ConflitCommand.register(dispatcher);
+        EventNarratifCommand.register(dispatcher);
+        ProductionCommand.register(dispatcher);
+        QuetesCommand.register(dispatcher);
+        RegistreCommand.register(dispatcher);
+        WikiCommand.register(dispatcher);
+        MarcheCommand.register(dispatcher);
+        ServerAdminCommand.register(dispatcher);
+        com.nouvelleterrebridge.commands.SauvegardeCommand.register(dispatcher);
+        com.nouvelleterrebridge.commands.MaintenanceCommand.register(dispatcher);
+    }
+
+    // Envoie le solde au joueur dès qu'il est en jeu + refresh pool quêtes
+    // + garantit qu'il possède son Parchemin
+    @net.neoforged.bus.api.SubscribeEvent
+    public void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer joueur)) return;
+        MinecraftServer server = joueur.getServer();
+        server.execute(() -> {
+            sendBalanceToPlayer(joueur);
+            QuestManager.refreshPlayerPool(joueur.getName().getString(), server);
+            donnerParcheminSiAbsent(joueur);
+        });
+    }
+
+    // Le Parchemin est rendu après une mort, même sans keepInventory
+    @net.neoforged.bus.api.SubscribeEvent
+    public void onPlayerRespawn(PlayerEvent.PlayerRespawnEvent event) {
+        if (event.getEntity() instanceof ServerPlayer joueur) donnerParcheminSiAbsent(joueur);
+    }
+
     private void registerHdvNetworking() {
-        ServerPlayNetworking.registerGlobalReceiver(HdvNetworking.HDV_ACTION, (server, player, handler, buf, responseSender) -> {
+        NtNet.surServeur(HdvNetworking.HDV_ACTION, (server, player, buf) -> {
             // ── Lecture du paquet : obligatoirement ici ──
-            // Le PacketByteBuf est libéré dès le retour de ce callback : tout doit être
+            // Le FriendlyByteBuf est libéré dès le retour de ce callback : tout doit être
             // extrait maintenant, et rien de ce qui suit ne doit retoucher au buffer.
             int type = buf.readInt();
             final String sItemId;
@@ -269,11 +399,11 @@ public class NouvelleTerreBridge implements ModInitializer {
 
             switch (type) {
                 case HdvNetworking.ACTION_BUY -> {
-                    sItemId = buf.readString(); sQty = buf.readInt(); sNbt = buf.readString();
+                    sItemId = buf.readUtf(); sQty = buf.readInt(); sNbt = buf.readUtf();
                     sPrice = 0; sListingId = 0;
                 }
                 case HdvNetworking.ACTION_SELL -> {
-                    sItemId = buf.readString(); sQty = buf.readInt(); sPrice = buf.readInt(); sNbt = buf.readString();
+                    sItemId = buf.readUtf(); sQty = buf.readInt(); sPrice = buf.readInt(); sNbt = buf.readUtf();
                     sListingId = 0;
                 }
                 case HdvNetworking.ACTION_WITHDRAW -> {
@@ -305,11 +435,11 @@ public class NouvelleTerreBridge implements ModInitializer {
         });
     }
 
-    public static void sendBalanceToPlayer(ServerPlayerEntity player) {
+    public static void sendBalanceToPlayer(ServerPlayer player) {
         int balance = LocalEconomy.getInstance().getBalance(player.getName().getString());
-        PacketByteBuf buf = PacketByteBufs.create();
+        FriendlyByteBuf buf = com.nouvelleterrebridge.network.NtNet.buffer();
         buf.writeInt(balance);
-        ServerPlayNetworking.send(player, HdvNetworking.NT_BALANCE, buf);
+        NtNet.versClient(player, HdvNetworking.NT_BALANCE, buf);
     }
 
     // Couleurs des toasts NT_TOAST — dupliquées de NotificationHud exprès : le code
@@ -319,66 +449,66 @@ public class NouvelleTerreBridge implements ModInitializer {
     public static final int TOAST_OR    = 0xFFE8A838;
     public static final int TOAST_ROUGE = 0xFFBF2040;
 
-    public static void sendToast(ServerPlayerEntity player, int color, String... lines) {
-        PacketByteBuf buf = PacketByteBufs.create();
+    public static void sendToast(ServerPlayer player, int color, String... lines) {
+        FriendlyByteBuf buf = com.nouvelleterrebridge.network.NtNet.buffer();
         buf.writeInt(color);
         buf.writeInt(lines.length);
-        for (String line : lines) buf.writeString(line);
-        ServerPlayNetworking.send(player, HdvNetworking.NT_TOAST, buf);
+        for (String line : lines) buf.writeUtf(line);
+        NtNet.versClient(player, HdvNetworking.NT_TOAST, buf);
     }
 
-    public static void sendHdvResult(ServerPlayerEntity player, String message, MinecraftServer server) {
+    public static void sendHdvResult(ServerPlayer player, String message, MinecraftServer server) {
         boolean ok = !message.contains("§c");
-        PacketByteBuf resp = PacketByteBufs.create();
+        FriendlyByteBuf resp = com.nouvelleterrebridge.network.NtNet.buffer();
         resp.writeBoolean(ok);
-        resp.writeString(message);
+        resp.writeUtf(message);
         resp.writeInt(LocalEconomy.getInstance().getBalance(player.getName().getString()));
         writeListings(resp);
-        ServerPlayNetworking.send(player, HdvNetworking.HDV_RESULT, resp);
+        NtNet.versClient(player, HdvNetworking.HDV_RESULT, resp);
     }
 
-    public static PacketByteBuf buildHdvOpenPacket(ServerPlayerEntity player, MinecraftServer server) {
-        PacketByteBuf buf = PacketByteBufs.create();
+    public static FriendlyByteBuf buildHdvOpenPacket(ServerPlayer player, MinecraftServer server) {
+        FriendlyByteBuf buf = com.nouvelleterrebridge.network.NtNet.buffer();
         buf.writeInt(LocalEconomy.getInstance().getBalance(player.getName().getString()));
         writeListings(buf);
         return buf;
     }
 
-    private static void writeListings(PacketByteBuf buf) {
+    private static void writeListings(FriendlyByteBuf buf) {
         List<MarketListing> listings = MarketManager.getInstance().getAll();
         buf.writeInt(listings.size());
         for (MarketListing l : listings) {
             buf.writeInt(l.id);
-            buf.writeString(l.seller);
-            buf.writeString(l.item);
+            buf.writeUtf(l.seller);
+            buf.writeUtf(l.item);
             buf.writeInt(l.quantity);
             buf.writeInt(l.pricePerUnit);
-            buf.writeString(l.itemNBT != null ? l.itemNBT : "");
+            buf.writeUtf(l.itemNBT != null ? l.itemNBT : "");
         }
     }
 
     // ── Hub (Parchemin) ──────────────────────────────────────────────────────
 
     /** Donne le Parchemin au joueur s'il ne l'a pas déjà (connexion, respawn). */
-    public static void donnerParcheminSiAbsent(ServerPlayerEntity player) {
+    public static void donnerParcheminSiAbsent(ServerPlayer player) {
         if (player == null) return;
-        for (net.minecraft.item.ItemStack s : player.getInventory().main)
-            if (s.isOf(PARCHEMIN)) return;
-        if (player.getInventory().offHand.stream().anyMatch(s -> s.isOf(PARCHEMIN))) return;
+        for (net.minecraft.world.item.ItemStack s : player.getInventory().items)
+            if (s.is(PARCHEMIN.get())) return;
+        if (player.getInventory().offhand.stream().anyMatch(s -> s.is(PARCHEMIN.get()))) return;
 
-        net.minecraft.item.ItemStack stack = new net.minecraft.item.ItemStack(PARCHEMIN);
-        if (!player.getInventory().insertStack(stack)) player.dropItem(stack, false);
+        net.minecraft.world.item.ItemStack stack = new net.minecraft.world.item.ItemStack(PARCHEMIN.get());
+        if (!player.getInventory().add(stack)) player.drop(stack, false);
     }
 
     /** Catalogue du Shop Serveur : tous les items connus des seuils, avec prix d'achat et de rachat. */
-    public static PacketByteBuf buildShopOpenPacket(ServerPlayerEntity player) {
-        PacketByteBuf buf = PacketByteBufs.create();
+    public static FriendlyByteBuf buildShopOpenPacket(ServerPlayer player) {
+        FriendlyByteBuf buf = com.nouvelleterrebridge.network.NtNet.buffer();
         buf.writeInt(LocalEconomy.getInstance().getBalance(player.getName().getString()));
         writeShopEntries(buf, player.getName().getString());
         return buf;
     }
 
-    private static void writeShopEntries(PacketByteBuf buf, String pseudo) {
+    private static void writeShopEntries(FriendlyByteBuf buf, String pseudo) {
         // Seuls les items dont la production naturelle a atteint le seuil sont
         // au catalogue : c'est ce qui rend le shop dépendant de l'activité du serveur.
         var debloques = ShopThresholds.all().entrySet().stream()
@@ -390,7 +520,7 @@ public class NouvelleTerreBridge implements ModInitializer {
         buf.writeInt(debloques.size());
         for (String itemId : debloques) {
             var pe = ServerShopPriceManager.getOrCreate(itemId);
-            buf.writeString(itemId);
+            buf.writeUtf(itemId);
             // Prix taxe de fortune comprise : le client doit afficher ce que ce
             // joueur-là paiera réellement, pas un tarif théorique.
             buf.writeInt(ServerShopPriceManager.getPricePour(itemId, pseudo));
@@ -400,9 +530,9 @@ public class NouvelleTerreBridge implements ModInitializer {
     }
 
     private void registerShopNetworking() {
-        ServerPlayNetworking.registerGlobalReceiver(ShopNetworking.SHOP_ACTION, (server, player, handler, buf, responseSender) -> {
+        NtNet.surServeur(ShopNetworking.SHOP_ACTION, (server, player, buf) -> {
             int action    = buf.readInt();
-            String itemId = buf.readString();
+            String itemId = buf.readUtf();
             int quantity  = buf.readInt();
 
             server.execute(() -> {
@@ -413,28 +543,28 @@ public class NouvelleTerreBridge implements ModInitializer {
                     default -> "§cAction inconnue.";
                 };
 
-                PacketByteBuf resp = PacketByteBufs.create();
+                FriendlyByteBuf resp = com.nouvelleterrebridge.network.NtNet.buffer();
                 resp.writeBoolean(!result.contains("§c"));
-                resp.writeString(result);
+                resp.writeUtf(result);
                 resp.writeInt(LocalEconomy.getInstance().getBalance(player.getName().getString()));
                 writeShopEntries(resp, player.getName().getString());
-                ServerPlayNetworking.send(player, ShopNetworking.SHOP_RESULT, resp);
+                NtNet.versClient(player, ShopNetworking.SHOP_RESULT, resp);
                 sendBalanceToPlayer(player);
             });
         });
     }
 
     private void registerHubNetworking() {
-        ServerPlayNetworking.registerGlobalReceiver(HubNetworking.HUB_ACTION, (server, player, handler, buf, responseSender) -> {
+        NtNet.surServeur(HubNetworking.HUB_ACTION, (server, player, buf) -> {
             int action = buf.readInt();
             server.execute(() -> {
                 switch (action) {
                     case HubNetworking.ACTION_HDV ->
-                        ServerPlayNetworking.send(player, HdvNetworking.HDV_OPEN, buildHdvOpenPacket(player, server));
+                        NtNet.versClient(player, HdvNetworking.HDV_OPEN, buildHdvOpenPacket(player, server));
                     case HubNetworking.ACTION_BANK ->
-                        ServerPlayNetworking.send(player, BankNetworking.BANK_OPEN, buildBankOpenPacket(player, server));
+                        NtNet.versClient(player, BankNetworking.BANK_OPEN, buildBankOpenPacket(player, server));
                     case HubNetworking.ACTION_SHOP ->
-                        ServerPlayNetworking.send(player, ShopNetworking.SHOP_OPEN, buildShopOpenPacket(player));
+                        NtNet.versClient(player, ShopNetworking.SHOP_OPEN, buildShopOpenPacket(player));
                     case HubNetworking.ACTION_MARCHE ->
                         com.nouvelleterrebridge.service.ServiceNetworkHandler.ouvrir(player);
                     case HubNetworking.ACTION_QUETES     -> sendQuestOpen(player);
@@ -442,8 +572,7 @@ public class NouvelleTerreBridge implements ModInitializer {
                     case HubNetworking.ACTION_REGISTRE   -> RegistreCommand.open(player);
                     case HubNetworking.ACTION_CONFLIT    -> ConflitCommand.open(player);
                     case HubNetworking.ACTION_WIKI ->
-                        ServerPlayNetworking.send(player, com.nouvelleterrebridge.network.WikiNetworking.WIKI_OPEN,
-                                                  PacketByteBufs.empty());
+                        NtNet.versClient(player, com.nouvelleterrebridge.network.WikiNetworking.WIKI_OPEN, com.nouvelleterrebridge.network.NtNet.buffer());
                     default -> LOGGER.warn("[Hub] Action inconnue : {}", action);
                 }
             });
@@ -453,16 +582,16 @@ public class NouvelleTerreBridge implements ModInitializer {
     // ── Bank networking ──────────────────────────────────────────────────────
 
     private void registerBankNetworking() {
-        ServerPlayNetworking.registerGlobalReceiver(BankNetworking.BANK_REQUEST, (server, player, handler, buf, responseSender) -> {
-            server.execute(() -> ServerPlayNetworking.send(player, BankNetworking.BANK_OPEN, buildBankOpenPacket(player, server)));
+        NtNet.surServeur(BankNetworking.BANK_REQUEST, (server, player, buf) -> {
+            server.execute(() -> NtNet.versClient(player, BankNetworking.BANK_OPEN, buildBankOpenPacket(player, server)));
         });
 
-        ServerPlayNetworking.registerGlobalReceiver(BankNetworking.BANK_ACTION, (server, player, handler, buf, responseSender) -> {
+        NtNet.surServeur(BankNetworking.BANK_ACTION, (server, player, buf) -> {
             int type = buf.readInt();
             final String result;
             switch (type) {
                 case BankNetworking.ACTION_LOAN_REQUEST -> {
-                    String borrowerName = buf.readString();
+                    String borrowerName = buf.readUtf();
                     int amount          = buf.readInt();
                     int durationDays    = buf.readInt();
                     int penaltyBase     = buf.readInt();
@@ -481,8 +610,8 @@ public class NouvelleTerreBridge implements ModInitializer {
                         } else {
                             result = "§a✅ Proposition envoyee a §f" + borrowerName + "§a — en attente de son accord.";
                             server.execute(() -> {
-                                ServerPlayerEntity bp = server.getPlayerManager().getPlayer(borrowerName);
-                                if (bp != null) bp.sendMessage(Text.literal(
+                                ServerPlayer bp = server.getPlayerList().getPlayerByName(borrowerName);
+                                if (bp != null) bp.sendSystemMessage(Component.literal(
                                     "§e[Banque] §f" + lender + " §evous propose un credit de §f" + amount
                                     + " ◆§e (duree " + durationDays + " j, penalite " + penaltyBase
                                     + " ◆/j de retard). §7Ouvre /bank → Credits pour accepter ou refuser."));
@@ -502,9 +631,9 @@ public class NouvelleTerreBridge implements ModInitializer {
                             + "§a ! A rembourser sous " + req.durationDays + " j.";
                         server.execute(() -> {
                             sendBalanceToPlayer(player);
-                            ServerPlayerEntity lp = server.getPlayerManager().getPlayer(req.lender);
+                            ServerPlayer lp = server.getPlayerList().getPlayerByName(req.lender);
                             if (lp != null) {
-                                lp.sendMessage(Text.literal(
+                                lp.sendSystemMessage(Component.literal(
                                     "§a[Banque] §f" + borrowerName + " §aa accepte votre credit — §f"
                                     + req.principal + " ◆§a transferes."));
                                 sendBalanceToPlayer(lp);
@@ -527,8 +656,8 @@ public class NouvelleTerreBridge implements ModInitializer {
                             ? "§e[Banque] §f" + who + " §ea annule sa proposition de credit (" + req.principal + " ◆)."
                             : "§c[Banque] §f" + who + " §ca refuse votre proposition de credit (" + req.principal + " ◆).";
                         server.execute(() -> {
-                            ServerPlayerEntity op = server.getPlayerManager().getPlayer(autre);
-                            if (op != null) op.sendMessage(Text.literal(msg));
+                            ServerPlayer op = server.getPlayerList().getPlayerByName(autre);
+                            if (op != null) op.sendSystemMessage(Component.literal(msg));
                         });
                     }
                 }
@@ -543,8 +672,8 @@ public class NouvelleTerreBridge implements ModInitializer {
                         result = "§a✅ Credit rembourse !";
                         if (loan != null) {
                             server.execute(() -> {
-                                ServerPlayerEntity lp = server.getPlayerManager().getPlayer(loan.lender);
-                                if (lp != null) lp.sendMessage(Text.literal(
+                                ServerPlayer lp = server.getPlayerList().getPlayerByName(loan.lender);
+                                if (lp != null) lp.sendSystemMessage(Component.literal(
                                     "§a[Nouvelle Terre] §f" + borrowerName + " §aa rembourse son credit de §f" + loan.principal + " ◆§a !"));
                             });
                         }
@@ -556,7 +685,7 @@ public class NouvelleTerreBridge implements ModInitializer {
                     result = err != null ? "§c" + err : "§a✅ Credit pardonne.";
                 }
                 case BankNetworking.ACTION_TRANSFER -> {
-                    String target = buf.readString();
+                    String target = buf.readUtf();
                     int amount = buf.readInt();
                     String sender = player.getName().getString();
                     if (sender.equalsIgnoreCase(target)) {
@@ -566,8 +695,8 @@ public class NouvelleTerreBridge implements ModInitializer {
                         if (ok) {
                             result = "§a✅ " + amount + " ◆ envoyés à §f" + target + "§a.";
                             server.execute(() -> {
-                                ServerPlayerEntity t = server.getPlayerManager().getPlayer(target);
-                                if (t != null) t.sendMessage(Text.literal(
+                                ServerPlayer t = server.getPlayerList().getPlayerByName(target);
+                                if (t != null) t.sendSystemMessage(Component.literal(
                                     "§a[Nouvelle Terre] §f" + sender + " §avous a envoyé §f" + amount + " ◆§a !"));
                             });
                         } else {
@@ -576,7 +705,7 @@ public class NouvelleTerreBridge implements ModInitializer {
                     }
                 }
                 case BankNetworking.ACTION_RECURRING_CREATE -> {
-                    String to = buf.readString();
+                    String to = buf.readUtf();
                     int amount = buf.readInt();
                     int intervalTicks = buf.readInt();
                     String from = player.getName().getString();
@@ -660,33 +789,33 @@ public class NouvelleTerreBridge implements ModInitializer {
         });
     }
 
-    public static void sendBankResult(ServerPlayerEntity player, String message, MinecraftServer server) {
+    public static void sendBankResult(ServerPlayer player, String message, MinecraftServer server) {
         boolean ok = !message.contains("§c");
-        PacketByteBuf resp = PacketByteBufs.create();
+        FriendlyByteBuf resp = com.nouvelleterrebridge.network.NtNet.buffer();
         resp.writeBoolean(ok);
-        resp.writeString(message);
+        resp.writeUtf(message);
         writeBankData(resp, player, server);
-        ServerPlayNetworking.send(player, BankNetworking.BANK_RESULT, resp);
+        NtNet.versClient(player, BankNetworking.BANK_RESULT, resp);
     }
 
-    public static PacketByteBuf buildBankOpenPacket(ServerPlayerEntity player, MinecraftServer server) {
-        PacketByteBuf buf = PacketByteBufs.create();
+    public static FriendlyByteBuf buildBankOpenPacket(ServerPlayer player, MinecraftServer server) {
+        FriendlyByteBuf buf = com.nouvelleterrebridge.network.NtNet.buffer();
         writeBankData(buf, player, server);
         return buf;
     }
 
-    private static void writeBankData(PacketByteBuf buf, ServerPlayerEntity player, MinecraftServer server) {
+    private static void writeBankData(FriendlyByteBuf buf, ServerPlayer player, MinecraftServer server) {
         String name = player.getName().getString();
         LocalEconomy eco = LocalEconomy.getInstance();
 
         buf.writeInt(eco.getBalance(name));
-        buf.writeInt(PlaytimeTracker.getTicksUntilReward(player.getUuid()));
+        buf.writeInt(PlaytimeTracker.getTicksUntilReward(player.getUUID()));
 
         // Transactions
         List<TransactionLog.Entry> txs = TransactionLog.getLast(name, 20);
         buf.writeInt(txs.size());
         for (TransactionLog.Entry e : txs) {
-            buf.writeInt(e.type()); buf.writeString(e.label()); buf.writeInt(e.amount()); buf.writeLong(e.timestamp());
+            buf.writeInt(e.type()); buf.writeUtf(e.label()); buf.writeInt(e.amount()); buf.writeLong(e.timestamp());
         }
 
         // Stats économiques — les comptes système ($Serveur) sont exclus
@@ -739,7 +868,7 @@ public class NouvelleTerreBridge implements ModInitializer {
             .collect(Collectors.toList());
         buf.writeInt(top.size());
         for (Map.Entry<String, Integer> e : top) {
-            buf.writeString(casing.getOrDefault(e.getKey(), e.getKey()));
+            buf.writeUtf(casing.getOrDefault(e.getKey(), e.getKey()));
             buf.writeInt(e.getValue());
         }
 
@@ -770,23 +899,23 @@ public class NouvelleTerreBridge implements ModInitializer {
             .sorted(String.CASE_INSENSITIVE_ORDER)
             .collect(Collectors.toList());
         buf.writeInt(known.size());
-        for (String p : known) buf.writeString(p);
+        for (String p : known) buf.writeUtf(p);
 
         // Virements récurrents du joueur
         List<RecurringTransfer> recurring = RecurringTransferManager.getInstance().getForPlayer(name);
         buf.writeInt(recurring.size());
         for (RecurringTransfer rt : recurring) {
             buf.writeInt(rt.id);
-            buf.writeString(rt.to);
+            buf.writeUtf(rt.to);
             buf.writeInt(rt.amount);
             buf.writeInt(rt.intervalTicks);
             buf.writeInt(rt.intervalTicks - rt.ticksSince);
         }
     }
 
-    private static void writeLoanData(PacketByteBuf buf, String other, Loan l) {
+    private static void writeLoanData(FriendlyByteBuf buf, String other, Loan l) {
         buf.writeInt(l.id);
-        buf.writeString(other);
+        buf.writeUtf(other);
         buf.writeInt(l.principal);
         buf.writeLong(l.dueTimestamp);
         buf.writeInt(l.daysOverdue);
@@ -795,9 +924,9 @@ public class NouvelleTerreBridge implements ModInitializer {
         buf.writeBoolean(l.repaid);
     }
 
-    private static void writeLoanRequest(PacketByteBuf buf, String other, LoanManager.LoanRequest r) {
+    private static void writeLoanRequest(FriendlyByteBuf buf, String other, LoanManager.LoanRequest r) {
         buf.writeInt(r.id);
-        buf.writeString(other);
+        buf.writeUtf(other);
         buf.writeInt(r.principal);
         buf.writeInt(r.durationDays);
         buf.writeInt(r.penaltyBase);
@@ -805,7 +934,7 @@ public class NouvelleTerreBridge implements ModInitializer {
 
     private static Map<String, String> buildCasingMap(MinecraftServer server, LocalEconomy eco) {
         Map<String, String> casing = new HashMap<>();
-        server.getPlayerManager().getPlayerList().forEach(p ->
+        server.getPlayerList().getPlayers().forEach(p ->
             casing.putIfAbsent(p.getName().getString().toLowerCase(), p.getName().getString()));
         MarketManager.getInstance().getAll().forEach(l ->
             casing.putIfAbsent(l.seller.toLowerCase(), l.seller));
@@ -815,7 +944,7 @@ public class NouvelleTerreBridge implements ModInitializer {
     // ── Quest networking ─────────────────────────────────────────────────────
 
     /** Ouvre le GUI Quêtes chez le joueur (/quetes, hub du Parchemin). */
-    public static void sendQuestOpen(ServerPlayerEntity player) {
+    public static void sendQuestOpen(ServerPlayer player) {
         sendQuestData(player, true);
     }
 
@@ -827,19 +956,19 @@ public class NouvelleTerreBridge implements ModInitializer {
      * client ouvrait l'écran à chaque fois — les quêtes s'ouvraient toutes seules
      * au lancement du jeu.
      */
-    public static void sendQuestUpdate(ServerPlayerEntity player) {
+    public static void sendQuestUpdate(ServerPlayer player) {
         sendQuestData(player, false);
     }
 
-    private static void sendQuestData(ServerPlayerEntity player, boolean ouvrir) {
-        PacketByteBuf buf = PacketByteBufs.create();
+    private static void sendQuestData(ServerPlayer player, boolean ouvrir) {
+        FriendlyByteBuf buf = com.nouvelleterrebridge.network.NtNet.buffer();
         buf.writeBoolean(ouvrir);
         writeFullQuestData(buf, player.getName().getString());
-        ServerPlayNetworking.send(player, QuestNetworking.QUEST_OPEN, buf);
+        NtNet.versClient(player, QuestNetworking.QUEST_OPEN, buf);
     }
 
     private void registerQuestNetworking() {
-        ServerPlayNetworking.registerGlobalReceiver(QuestNetworking.QUEST_ACTION, (server, player, handler, buf, responseSender) -> {
+        NtNet.surServeur(QuestNetworking.QUEST_ACTION, (server, player, buf) -> {
             int action = buf.readInt();
             int param  = buf.readInt();   // questId or index depending on action
             String pName = player.getName().getString();
@@ -858,15 +987,15 @@ public class NouvelleTerreBridge implements ModInitializer {
         });
     }
 
-    public static void sendQuestResult(ServerPlayerEntity player, boolean ok, String message, MinecraftServer server) {
-        PacketByteBuf buf = PacketByteBufs.create();
+    public static void sendQuestResult(ServerPlayer player, boolean ok, String message, MinecraftServer server) {
+        FriendlyByteBuf buf = com.nouvelleterrebridge.network.NtNet.buffer();
         buf.writeBoolean(ok);
-        buf.writeString(message);
+        buf.writeUtf(message);
         writeFullQuestData(buf, player.getName().getString());
-        ServerPlayNetworking.send(player, QuestNetworking.QUEST_RESULT, buf);
+        NtNet.versClient(player, QuestNetworking.QUEST_RESULT, buf);
     }
 
-    private static void writeFullQuestData(PacketByteBuf buf, String playerName) {
+    private static void writeFullQuestData(FriendlyByteBuf buf, String playerName) {
         int level = PlayerLevelManager.getLevel(playerName);
         int xp    = PlayerLevelManager.getXp(playerName);
         buf.writeInt(level);
@@ -887,15 +1016,15 @@ public class NouvelleTerreBridge implements ModInitializer {
             buf.writeInt(aq.progress);
             buf.writeBoolean(aq.turnedIn);
             buf.writeInt(aq.groupParticipants.size());
-            for (String p : aq.groupParticipants) buf.writeString(p);
+            for (String p : aq.groupParticipants) buf.writeUtf(p);
         }
 
         // Récompenses en attente (items à récupérer)
         List<QuestManager.PendingReward> pending = QuestManager.getPending(playerName);
         buf.writeInt(pending.size());
         for (QuestManager.PendingReward pr : pending) {
-            buf.writeString(pr.questLabel);
-            buf.writeString(pr.rewardItem != null ? pr.rewardItem : "");
+            buf.writeUtf(pr.questLabel);
+            buf.writeUtf(pr.rewardItem != null ? pr.rewardItem : "");
             buf.writeInt(pr.rewardItemQty);
             buf.writeLong(pr.completedAt);
         }
@@ -911,20 +1040,20 @@ public class NouvelleTerreBridge implements ModInitializer {
         // Classements
         var topCompleted = QuestManager.getLeaderboardByCompleted(10);
         buf.writeInt(topCompleted.size());
-        for (var e : topCompleted) { buf.writeString(e.getKey()); buf.writeInt(e.getValue()); }
+        for (var e : topCompleted) { buf.writeUtf(e.getKey()); buf.writeInt(e.getValue()); }
 
         var topLevel = PlayerLevelManager.getLeaderboardByLevel(10);
         buf.writeInt(topLevel.size());
-        for (var e : topLevel) { buf.writeString(e.getKey()); buf.writeInt(e.getValue()); }
+        for (var e : topLevel) { buf.writeUtf(e.getKey()); buf.writeInt(e.getValue()); }
 
         // Quête communautaire du jour
         QuestManager.CommunityState cs = QuestManager.getCommunity();
         boolean hasCommunity = cs != null && cs.quest != null;
         buf.writeBoolean(hasCommunity);
         if (hasCommunity) {
-            buf.writeString(cs.quest.label);
-            buf.writeString(cs.quest.type != null ? cs.quest.type : "");
-            buf.writeString(cs.quest.target != null ? cs.quest.target : "");
+            buf.writeUtf(cs.quest.label);
+            buf.writeUtf(cs.quest.type != null ? cs.quest.type : "");
+            buf.writeUtf(cs.quest.target != null ? cs.quest.target : "");
             buf.writeInt(cs.quest.quantity);
             buf.writeInt(cs.progress);
             buf.writeInt(cs.quest.rewardShards);
@@ -936,18 +1065,18 @@ public class NouvelleTerreBridge implements ModInitializer {
     // ── Production networking ────────────────────────────────────────────────
 
     /** Envoie l'état de la production au joueur (ouvre le GUI côté client). */
-    public static void sendProductionOpen(ServerPlayerEntity player) {
-        PacketByteBuf buf = PacketByteBufs.create();
+    public static void sendProductionOpen(ServerPlayer player) {
+        FriendlyByteBuf buf = com.nouvelleterrebridge.network.NtNet.buffer();
         writeProductionData(buf, player);
-        ServerPlayNetworking.send(player, ProductionNetworking.PROD_OPEN, buf);
+        NtNet.versClient(player, ProductionNetworking.PROD_OPEN, buf);
     }
 
-    private static void writeProductionData(PacketByteBuf buf, ServerPlayerEntity player) {
-        buf.writeBoolean(player.hasPermissionLevel(2));
+    private static void writeProductionData(FriendlyByteBuf buf, ServerPlayer player) {
+        buf.writeBoolean(player.hasPermissions(2));
         Map<String, ShopThresholds.Entry> all = ShopThresholds.all();
         buf.writeInt(all.size());
         for (Map.Entry<String, ShopThresholds.Entry> e : all.entrySet()) {
-            buf.writeString(e.getKey());
+            buf.writeUtf(e.getKey());
             buf.writeLong(ProductionTracker.get(e.getKey()));
             buf.writeLong(e.getValue().seuil);
             buf.writeInt(e.getValue().prix);
@@ -964,15 +1093,15 @@ public class NouvelleTerreBridge implements ModInitializer {
     }
 
     private void registerProductionNetworking() {
-        ServerPlayNetworking.registerGlobalReceiver(ProductionNetworking.PROD_ACTION, (server, player, handler, buf, responseSender) -> {
+        NtNet.surServeur(ProductionNetworking.PROD_ACTION, (server, player, buf) -> {
             int action    = buf.readInt();
-            String itemId = buf.readString();
+            String itemId = buf.readUtf();
             int valeur    = buf.readInt();
             server.execute(() -> {
                 boolean ok;
                 String msg;
                 String nomItem = itemId.isEmpty() ? "" : FrenchItemNames.toDisplay(itemId);
-                if (!player.hasPermissionLevel(2)) {
+                if (!player.hasPermissions(2)) {
                     ok = false; msg = "§cRéservé aux opérateurs.";
                 } else if (action == ProductionNetworking.ACTION_RESET) {
                     ProductionTracker.reset();
@@ -1044,11 +1173,11 @@ public class NouvelleTerreBridge implements ModInitializer {
                 } else {
                     ok = false; msg = "§cAction inconnue.";
                 }
-                PacketByteBuf resp = PacketByteBufs.create();
+                FriendlyByteBuf resp = com.nouvelleterrebridge.network.NtNet.buffer();
                 resp.writeBoolean(ok);
-                resp.writeString(msg);
+                resp.writeUtf(msg);
                 writeProductionData(resp, player);
-                ServerPlayNetworking.send(player, ProductionNetworking.PROD_RESULT, resp);
+                NtNet.versClient(player, ProductionNetworking.PROD_RESULT, resp);
             });
         });
     }
@@ -1056,9 +1185,9 @@ public class NouvelleTerreBridge implements ModInitializer {
     // ── Conflit networking ───────────────────────────────────────────────────
 
     private void registerConflitNetworking() {
-        ServerPlayNetworking.registerGlobalReceiver(ConflitNetworking.CONFLIT_ACTION, (server, player, handler, buf, responseSender) -> {
-            String cible  = buf.readString();
-            String raison = buf.readString();
+        NtNet.surServeur(ConflitNetworking.CONFLIT_ACTION, (server, player, buf) -> {
+            String cible  = buf.readUtf();
+            String raison = buf.readUtf();
             server.execute(() -> {
                 String pseudo = player.getName().getString();
                 boolean ok;
@@ -1076,10 +1205,10 @@ public class NouvelleTerreBridge implements ModInitializer {
                     data.put("reason", raison.trim());
                     EventDispatcher.envoyer("CONFLICT_DECLARED", data);
                 }
-                PacketByteBuf resp = PacketByteBufs.create();
+                FriendlyByteBuf resp = com.nouvelleterrebridge.network.NtNet.buffer();
                 resp.writeBoolean(ok);
-                resp.writeString(msg);
-                ServerPlayNetworking.send(player, ConflitNetworking.CONFLIT_RESULT, resp);
+                resp.writeUtf(msg);
+                NtNet.versClient(player, ConflitNetworking.CONFLIT_RESULT, resp);
             });
         });
     }
@@ -1087,31 +1216,30 @@ public class NouvelleTerreBridge implements ModInitializer {
     // ── Registre networking ──────────────────────────────────────────────────
 
     private void registerRegistreNetworking() {
-        ServerPlayNetworking.registerGlobalReceiver(RegistreNetworking.REGISTRE_DETAIL_REQUEST,
-            (server, player, handler, buf, responseSender) -> {
-                String pseudo = buf.readString();
+        NtNet.surServeur(RegistreNetworking.REGISTRE_DETAIL_REQUEST, (server, player, buf) -> {
+                String pseudo = buf.readUtf();
                 EventDispatcher.fetchPersonnageDetail(pseudo, server, detail -> {
-                    PacketByteBuf resp = PacketByteBufs.create();
+                    FriendlyByteBuf resp = com.nouvelleterrebridge.network.NtNet.buffer();
                     if (detail == null) {
                         resp.writeBoolean(false);
-                        ServerPlayNetworking.send(player, RegistreNetworking.REGISTRE_DETAIL, resp);
+                        NtNet.versClient(player, RegistreNetworking.REGISTRE_DETAIL, resp);
                         return;
                     }
                     resp.writeBoolean(true);
-                    resp.writeString(sVal(detail, "nom_rp"));
-                    resp.writeString(sVal(detail, "pseudo_mc"));
+                    resp.writeUtf(sVal(detail, "nom_rp"));
+                    resp.writeUtf(sVal(detail, "pseudo_mc"));
                     resp.writeBoolean(bVal(detail, "en_ligne"));
-                    resp.writeString(sVal(detail, "metier"));
+                    resp.writeUtf(sVal(detail, "metier"));
                     resp.writeInt(iVal(detail, "age"));
-                    resp.writeString(sVal(detail, "origine"));
-                    resp.writeString(sVal(detail, "specialite"));
-                    resp.writeString(sVal(detail, "traits"));
-                    resp.writeString(sVal(detail, "passe"));
-                    resp.writeString(sVal(detail, "description_physique"));
-                    resp.writeString(sVal(detail, "description_personnage"));
-                    resp.writeString(sVal(detail, "objectifs"));
-                    resp.writeString(sVal(detail, "citation"));
-                    ServerPlayNetworking.send(player, RegistreNetworking.REGISTRE_DETAIL, resp);
+                    resp.writeUtf(sVal(detail, "origine"));
+                    resp.writeUtf(sVal(detail, "specialite"));
+                    resp.writeUtf(sVal(detail, "traits"));
+                    resp.writeUtf(sVal(detail, "passe"));
+                    resp.writeUtf(sVal(detail, "description_physique"));
+                    resp.writeUtf(sVal(detail, "description_personnage"));
+                    resp.writeUtf(sVal(detail, "objectifs"));
+                    resp.writeUtf(sVal(detail, "citation"));
+                    NtNet.versClient(player, RegistreNetworking.REGISTRE_DETAIL, resp);
                 });
             });
     }
@@ -1126,24 +1254,24 @@ public class NouvelleTerreBridge implements ModInitializer {
         Object v = m.get(k); return v instanceof Number n ? n.intValue() : 0;
     }
 
-    private static void writeQuest(PacketByteBuf buf, com.nouvelleterrebridge.economy.Quest q) {
+    private static void writeQuest(FriendlyByteBuf buf, com.nouvelleterrebridge.economy.Quest q) {
         buf.writeInt(q.id);
-        buf.writeString(q.type       != null ? q.type       : "");
-        buf.writeString(q.target     != null ? q.target     : "");
+        buf.writeUtf(q.type       != null ? q.type       : "");
+        buf.writeUtf(q.target     != null ? q.target     : "");
         buf.writeInt(q.quantity);
         buf.writeInt(q.levelRequired);
         buf.writeInt(q.maxPlayers);
-        buf.writeString(q.rewardType != null ? q.rewardType : "SHARDS");
+        buf.writeUtf(q.rewardType != null ? q.rewardType : "SHARDS");
         buf.writeInt(q.rewardShards);
-        buf.writeString(q.rewardItem != null ? q.rewardItem : "");
+        buf.writeUtf(q.rewardItem != null ? q.rewardItem : "");
         buf.writeInt(q.rewardItemQty);
         buf.writeInt(q.rewardXp);
         buf.writeInt(q.costShards);
-        buf.writeString(q.label      != null ? q.label      : "");
+        buf.writeUtf(q.label      != null ? q.label      : "");
         buf.writeLong(q.expiresAt);
         List<String> tags = q.tags != null ? q.tags : List.of();
         buf.writeInt(tags.size());
-        for (String t : tags) buf.writeString(t);
+        for (String t : tags) buf.writeUtf(t);
     }
 
 }

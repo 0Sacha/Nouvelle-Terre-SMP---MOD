@@ -1,17 +1,14 @@
 package com.nouvelleterrebridge.client;
 
 import com.nouvelleterrebridge.NouvelleTerreBridgeClient;
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.ChatScreen;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.text.Text;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.ChatScreen;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
 import java.util.List;
 
-@Environment(EnvType.CLIENT)
 public class WikiScreen extends Screen {
 
     // ── Couleurs ──────────────────────────────────────────────────────────────
@@ -46,7 +43,7 @@ public class WikiScreen extends Screen {
 
     private void buildSections() {
         String hudKey = NouvelleTerreBridgeClient.hudKey != null
-            ? NouvelleTerreBridgeClient.hudKey.getBoundKeyLocalizedText().getString()
+            ? NouvelleTerreBridgeClient.hudKey.getTranslatedKeyMessage().getString()
             : "H";
 
         sections = List.of(
@@ -445,7 +442,7 @@ public class WikiScreen extends Screen {
     // ── Constructor ───────────────────────────────────────────────────────────
 
     public WikiScreen() {
-        super(Text.literal("Wiki"));
+        super(Component.literal("Wiki"));
         buildSections();
     }
 
@@ -465,12 +462,18 @@ public class WikiScreen extends Screen {
         buildSections();
     }
 
-    @Override public boolean shouldPause() { return false; }
+    @Override public boolean isPauseScreen() { return false; }
 
     // ── Render ────────────────────────────────────────────────────────────────
 
     @Override
-    public void render(DrawContext ctx, int mx, int my, float delta) {
+    public void renderBackground(GuiGraphics ctx, int mx, int my, float delta) {
+        // No-op — cet écran dessine son propre fond ; super.render() (appelé en dernier
+        // pour les widgets vanilla) réappliquerait sinon flou + texture menu par-dessus.
+    }
+
+    @Override
+    public void render(GuiGraphics ctx, int mx, int my, float delta) {
         // Fond principal
         ctx.fill(px, py, px + pw, py + ph, C_BG);
         ctx.fill(px, py, px + pw, py + 1, C_BORDER);
@@ -481,10 +484,10 @@ public class WikiScreen extends Screen {
         // Header
         ctx.fill(px, py, px + pw, py + 36, C_PANEL);
         ctx.fill(px, py + 36, px + pw, py + 37, C_BORDER);
-        HubBackButton.render(ctx, textRenderer, px + PAD, py + (36 - HubBackButton.H) / 2, mx, my);
+        HubBackButton.render(ctx, font, px + PAD, py + (36 - HubBackButton.H) / 2, mx, my);
         int titleX = px + PAD + HubBackButton.W + 8;
-        ctx.drawText(textRenderer, "📖  Wiki — Nouvelle Terre", titleX, py + 8, C_GOLD, false);
-        ctx.drawText(textRenderer, "Guide du serveur SMP RP", titleX, py + 22, C_MID, false);
+        ctx.drawString(font, "📖  Wiki — Nouvelle Terre", titleX, py + 8, C_GOLD, false);
+        ctx.drawString(font, "Guide du serveur SMP RP", titleX, py + 22, C_MID, false);
 
         // Séparateur nav | contenu
         ctx.fill(px + NAV_W, py + 37, px + NAV_W + 1, py + ph - 1, C_BORDER);
@@ -501,12 +504,12 @@ public class WikiScreen extends Screen {
         ctx.fill(btnX, btnY, btnX + btnW, btnY + BTN_H, bhov ? 0xFF5865F2 : 0xFF3B4098);
         ctx.fill(btnX, btnY, btnX + btnW, btnY + 1, 0xFF7289DA);
         String dlbl = "Discord";
-        ctx.drawText(textRenderer, dlbl, btnX + (btnW - textRenderer.getWidth(dlbl)) / 2, btnY + 7, C_WHITE, false);
+        ctx.drawString(font, dlbl, btnX + (btnW - font.width(dlbl)) / 2, btnY + 7, C_WHITE, false);
 
         super.render(ctx, mx, my, delta);
     }
 
-    private void renderNav(DrawContext ctx, int mx, int my) {
+    private void renderNav(GuiGraphics ctx, int mx, int my) {
         navBounds.clear();
         int navX = px + PAD;
         int navY = py + 37 + PAD;
@@ -520,15 +523,15 @@ public class WikiScreen extends Screen {
             if (sel) ctx.fill(navX, navY, navX + 3, navY + 20, C_GOLD);
             String lbl = s.icon() + " " + s.title();
             // Tronquer si trop long pour la nav
-            while (textRenderer.getWidth(lbl) > navW - 8 && lbl.length() > 4)
+            while (font.width(lbl) > navW - 8 && lbl.length() > 4)
                 lbl = lbl.substring(0, lbl.length() - 1);
-            ctx.drawText(textRenderer, lbl, navX + (sel ? 8 : 5), navY + 6, sel ? C_GOLD : C_MID, false);
+            ctx.drawString(font, lbl, navX + (sel ? 8 : 5), navY + 6, sel ? C_GOLD : C_MID, false);
             navBounds.add(new int[]{navX, navY, navW, 20, i});
             navY += 22;
         }
     }
 
-    private void renderContent(DrawContext ctx, int mx, int my) {
+    private void renderContent(GuiGraphics ctx, int mx, int my) {
         if (sections == null || selectedSection >= sections.size()) return;
         Section s = sections.get(selectedSection);
 
@@ -539,7 +542,7 @@ public class WikiScreen extends Screen {
         int y = contentAreaY - contentScrollY;
 
         // Titre de section
-        ctx.drawText(textRenderer, "§f§l" + s.icon() + "  " + s.title(), x, y, C_GOLD, false);
+        ctx.drawString(font, "§f§l" + s.icon() + "  " + s.title(), x, y, C_GOLD, false);
         y += 18;
         ctx.fill(x, y, x + contentAreaW, y + 1, C_BORDER);
         y += 6;
@@ -551,14 +554,14 @@ public class WikiScreen extends Screen {
                 // y est déjà en coordonnées écran (contentAreaY - contentScrollY + offset_accumulé)
                 boolean cmdHov = mx >= x && mx < x + contentAreaW && my >= y && my < y + LINE_H + 2;
                 if (cmdHov) ctx.fill(x, y - 1, x + contentAreaW, y + LINE_H + 1, C_HOVER);
-                ctx.drawText(textRenderer, line.text(), x + 4, y + 1, cmdHov ? C_GOLD : 0xFFE8A838, false);
+                ctx.drawString(font, line.text(), x + 4, y + 1, cmdHov ? C_GOLD : 0xFFE8A838, false);
                 if (cmdHov) {
-                    int tw = textRenderer.getWidth(line.text()) + 8;
-                    ctx.drawText(textRenderer, "↵", x + tw + 2, y + 1, 0xFF5BA8D4, false);
+                    int tw = font.width(line.text()) + 8;
+                    ctx.drawString(font, "↵", x + tw + 2, y + 1, 0xFF5BA8D4, false);
                 }
                 cmdBounds.add(new Object[]{y, LINE_H + 2, line.command()});
             } else {
-                ctx.drawText(textRenderer, line.text(), x, y, C_WHITE, false);
+                ctx.drawString(font, line.text(), x, y, C_WHITE, false);
             }
             y += LINE_H;
         }
@@ -581,8 +584,8 @@ public class WikiScreen extends Screen {
         // Bouton Discord → copier le pseudo dans le presse-papier + toast
         if (imx >= discordBtnX && imx < discordBtnX + discordBtnW
                 && imy >= discordBtnY && imy < discordBtnY + BTN_H) {
-            assert client != null;
-            client.keyboard.setClipboard("sacha.lxv");
+            assert this.minecraft != null;
+            this.minecraft.keyboardHandler.setClipboard("sacha.lxv");
             NotificationHud.push(0xFF5865F2, "§bsacha.lxv §7copié !", "Ouvre Discord et envoie un message.");
             return true;
         }
@@ -601,8 +604,8 @@ public class WikiScreen extends Screen {
                 int screenY = (int) cb[0], h = (int) cb[1];
                 String cmd   = (String) cb[2];
                 if (imy >= screenY && imy < screenY + h) {
-                    assert client != null;
-                    client.setScreen(new ChatScreen(cmd));
+                    assert this.minecraft != null;
+                    this.minecraft.setScreen(new ChatScreen(cmd));
                     return true;
                 }
             }
@@ -612,7 +615,7 @@ public class WikiScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mx, double my, double amount) {
+    public boolean mouseScrolled(double mx, double my, double horizontalAmount, double amount) {
         if (mx >= contentAreaX) {
             int maxScroll = Math.max(0, contentHeight - contentAreaH + 10);
             contentScrollY = Math.max(0, Math.min(contentScrollY - (int)(amount * 12), maxScroll));

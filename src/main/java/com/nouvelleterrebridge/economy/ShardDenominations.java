@@ -1,9 +1,9 @@
 package com.nouvelleterrebridge.economy;
 
 import com.nouvelleterrebridge.NouvelleTerreBridge;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.server.level.ServerPlayer;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,23 +28,23 @@ public final class ShardDenominations {
     /** L'item correspondant à une coupure. */
     public static Item item(int valeur) {
         return switch (valeur) {
-            case 100 -> NouvelleTerreBridge.SHARD_100;
-            case 50  -> NouvelleTerreBridge.SHARD_50;
-            case 20  -> NouvelleTerreBridge.SHARD_20;
-            case 10  -> NouvelleTerreBridge.SHARD_10;
-            case 5   -> NouvelleTerreBridge.SHARD_5;
-            default  -> NouvelleTerreBridge.SHARD;
+            case 100 -> NouvelleTerreBridge.SHARD_100.get();
+            case 50  -> NouvelleTerreBridge.SHARD_50.get();
+            case 20  -> NouvelleTerreBridge.SHARD_20.get();
+            case 10  -> NouvelleTerreBridge.SHARD_10.get();
+            case 5   -> NouvelleTerreBridge.SHARD_5.get();
+            default  -> NouvelleTerreBridge.SHARD.get();
         };
     }
 
     /** Valeur d'un item de monnaie, 0 s'il n'en est pas un. */
     public static int valeur(Item item) {
-        if (item == NouvelleTerreBridge.SHARD_100) return 100;
-        if (item == NouvelleTerreBridge.SHARD_50)  return 50;
-        if (item == NouvelleTerreBridge.SHARD_20)  return 20;
-        if (item == NouvelleTerreBridge.SHARD_10)  return 10;
-        if (item == NouvelleTerreBridge.SHARD_5)   return 5;
-        if (item == NouvelleTerreBridge.SHARD)     return 1;
+        if (item == NouvelleTerreBridge.SHARD_100.get()) return 100;
+        if (item == NouvelleTerreBridge.SHARD_50.get())  return 50;
+        if (item == NouvelleTerreBridge.SHARD_20.get())  return 20;
+        if (item == NouvelleTerreBridge.SHARD_10.get())  return 10;
+        if (item == NouvelleTerreBridge.SHARD_5.get())   return 5;
+        if (item == NouvelleTerreBridge.SHARD.get())     return 1;
         return 0;
     }
 
@@ -53,10 +53,10 @@ public final class ShardDenominations {
     }
 
     /** Total en ◆ de tout l'argent physique porté par le joueur. */
-    public static int totalEnPoche(ServerPlayerEntity player) {
+    public static int totalEnPoche(ServerPlayer player) {
         int total = 0;
-        for (int i = 0; i < player.getInventory().size(); i++) {
-            ItemStack s = player.getInventory().getStack(i);
+        for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+            ItemStack s = player.getInventory().getItem(i);
             total += valeur(s.getItem()) * s.getCount();
         }
         return total;
@@ -82,9 +82,9 @@ public final class ShardDenominations {
     }
 
     /** Donne le montant au joueur en coupures ; ce qui ne rentre pas est lâché au sol. */
-    public static void donner(ServerPlayerEntity player, int montant) {
+    public static void donner(ServerPlayer player, int montant) {
         for (ItemStack pile : decomposer(montant)) {
-            if (!player.getInventory().insertStack(pile)) player.dropItem(pile, false);
+            if (!player.getInventory().add(pile)) player.drop(pile, false);
         }
     }
 
@@ -95,25 +95,25 @@ public final class ShardDenominations {
      * a un billet de 100 et sept pièces de 1 aurait cassé le billet pour rien.
      * Une coupure ne peut pas être coupée en deux, donc le total prélevé peut
      * dépasser le montant demandé — l'excédent est retourné par
-     * {@link #retirer(ServerPlayerEntity, int)} sous forme d'appoint.
+     * {@link #retirer(ServerPlayer, int)} sous forme d'appoint.
      *
      * @return le total réellement prélevé (≥ montant si les fonds suffisaient)
      */
-    public static int retirer(ServerPlayerEntity player, int montant) {
+    public static int retirer(ServerPlayer player, int montant) {
         if (montant <= 0) return 0;
         int prelevé = 0;
 
         // Plus petites coupures d'abord : on ne casse un gros billet qu'en dernier recours
         for (int i = VALEURS.length - 1; i >= 0 && prelevé < montant; i--) {
             int valeur = VALEURS[i];
-            for (int slot = 0; slot < player.getInventory().size() && prelevé < montant; slot++) {
-                ItemStack s = player.getInventory().getStack(slot);
+            for (int slot = 0; slot < player.getInventory().getContainerSize() && prelevé < montant; slot++) {
+                ItemStack s = player.getInventory().getItem(slot);
                 if (s.isEmpty() || s.getItem() != item(valeur)) continue;
 
                 int besoin = (montant - prelevé + valeur - 1) / valeur;   // arrondi au-dessus
                 int pris   = Math.min(besoin, s.getCount());
-                s.decrement(pris);
-                if (s.isEmpty()) player.getInventory().setStack(slot, ItemStack.EMPTY);
+                s.shrink(pris);
+                if (s.isEmpty()) player.getInventory().setItem(slot, ItemStack.EMPTY);
                 prelevé += pris * valeur;
             }
         }

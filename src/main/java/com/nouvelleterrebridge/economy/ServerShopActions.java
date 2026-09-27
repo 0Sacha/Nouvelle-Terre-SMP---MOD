@@ -2,12 +2,12 @@ package com.nouvelleterrebridge.economy;
 
 import com.nouvelleterrebridge.commands.EconomieCommand;
 import com.nouvelleterrebridge.market.FrenchItemNames;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.registry.Registries;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.Identifier;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.resources.ResourceLocation;
 
 /**
  * Achat et revente auprès du Shop Serveur ($Serveur).
@@ -24,7 +24,7 @@ public final class ServerShopActions {
 
     // ── Achat (joueur → serveur) ──────────────────────────────────────────────
 
-    public static String buy(ServerPlayerEntity player, String itemId, int qty) {
+    public static String buy(ServerPlayer player, String itemId, int qty) {
         if (qty <= 0) return "§cQuantité invalide.";
 
         Item item = resolve(itemId);
@@ -51,9 +51,9 @@ public final class ServerShopActions {
 
         int restant = qty;
         while (restant > 0) {
-            int sz = Math.min(restant, item.getMaxCount());
+            int sz = Math.min(restant, new ItemStack(item).getMaxStackSize());
             ItemStack stack = new ItemStack(item, sz);
-            if (!player.getInventory().insertStack(stack)) player.dropItem(stack, false);
+            if (!player.getInventory().add(stack)) player.drop(stack, false);
             restant -= sz;
         }
 
@@ -70,7 +70,7 @@ public final class ServerShopActions {
 
     // ── Revente (joueur → serveur) ────────────────────────────────────────────
 
-    public static String sell(ServerPlayerEntity player, String itemId, int qty) {
+    public static String sell(ServerPlayer player, String itemId, int qty) {
         if (qty <= 0) return "§cQuantité invalide.";
         // Le Parchemin est un outil d'interface distribué gratuitement : le revendre
         // reviendrait à imprimer des shards à volonté.
@@ -88,7 +88,7 @@ public final class ServerShopActions {
         // Seules les piles vierges sont rachetées : impossible d'évaluer
         // équitablement un objet enchanté, renommé ou abîmé.
         int disponible = 0;
-        for (ItemStack s : player.getInventory().main)
+        for (ItemStack s : player.getInventory().items)
             if (estRachetable(s, itemId)) disponible += s.getCount();
 
         if (disponible < qty)
@@ -112,11 +112,11 @@ public final class ServerShopActions {
         int total     = prixUnite * qty;
 
         int aRetirer = qty;
-        for (int i = 0; i < player.getInventory().main.size() && aRetirer > 0; i++) {
-            ItemStack s = player.getInventory().main.get(i);
+        for (int i = 0; i < player.getInventory().items.size() && aRetirer > 0; i++) {
+            ItemStack s = player.getInventory().items.get(i);
             if (estRachetable(s, itemId)) {
                 int pris = Math.min(aRetirer, s.getCount());
-                s.decrement(pris);
+                s.shrink(pris);
                 aRetirer -= pris;
             }
         }
@@ -133,13 +133,13 @@ public final class ServerShopActions {
     }
 
     /** Remet un Parchemin au joueur s'il n'en a plus. Toujours gratuit. */
-    public static String claimParchemin(ServerPlayerEntity player) {
-        for (ItemStack s : player.getInventory().main)
-            if (s.isOf(com.nouvelleterrebridge.NouvelleTerreBridge.PARCHEMIN))
+    public static String claimParchemin(ServerPlayer player) {
+        for (ItemStack s : player.getInventory().items)
+            if (s.is(com.nouvelleterrebridge.NouvelleTerreBridge.PARCHEMIN.get()))
                 return "§eTu as déjà ton Parchemin.";
 
-        ItemStack stack = new ItemStack(com.nouvelleterrebridge.NouvelleTerreBridge.PARCHEMIN);
-        if (!player.getInventory().insertStack(stack)) player.dropItem(stack, false);
+        ItemStack stack = new ItemStack(com.nouvelleterrebridge.NouvelleTerreBridge.PARCHEMIN.get());
+        if (!player.getInventory().add(stack)) player.drop(stack, false);
         return "§a✅ Parchemin récupéré — clic droit pour ouvrir le menu.";
     }
 
@@ -156,15 +156,15 @@ public final class ServerShopActions {
     }
 
     private static boolean estRachetable(ItemStack s, String itemId) {
-        if (s.isEmpty() || s.hasNbt()) return false;
+        if (s.isEmpty() || !s.getComponentsPatch().isEmpty()) return false;
         if (s.isDamaged()) return false;
-        return Registries.ITEM.getId(s.getItem()).toString().equals(itemId);
+        return BuiltInRegistries.ITEM.getKey(s.getItem()).toString().equals(itemId);
     }
 
     private static Item resolve(String itemId) {
-        Identifier id = Identifier.tryParse(itemId);
+        ResourceLocation id = ResourceLocation.tryParse(itemId);
         if (id == null) return null;
-        Item item = Registries.ITEM.get(id);
+        Item item = BuiltInRegistries.ITEM.get(id);
         return item == Items.AIR ? null : item;
     }
 }

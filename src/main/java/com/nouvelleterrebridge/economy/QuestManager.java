@@ -4,12 +4,12 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
-import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
+import net.neoforged.fml.loading.FMLPaths;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.Identifier;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.resources.ResourceLocation;
 
 import java.io.*;
 import java.lang.reflect.Type;
@@ -22,7 +22,7 @@ import java.util.*;
 public class QuestManager {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final Path FILE = FabricLoader.getInstance().getGameDir().resolve("quetes.json");
+    private static final Path FILE = FMLPaths.GAMEDIR.get().resolve("quetes.json");
 
     private static final int SOLO_POOL_SIZE  = 5;
     private static final int GROUP_POOL_SIZE = 3;
@@ -157,7 +157,7 @@ public class QuestManager {
         save();
 
         server.execute(() -> {
-            ServerPlayerEntity sp = server.getPlayerManager().getPlayer(player);
+            ServerPlayer sp = server.getPlayerList().getPlayerByName(player);
             if (sp != null) NouvelleTerreBridge.sendQuestUpdate(sp);
         });
     }
@@ -205,7 +205,7 @@ public class QuestManager {
 
         NouvelleTerreBridge.LOGGER.info("[QuestManager] Quêtes journalières régénérées ({}).", today);
         if (server != null) server.execute(() ->
-            server.getPlayerManager().broadcast(net.minecraft.text.Text.literal(
+            server.getPlayerList().broadcastSystemMessage(net.minecraft.network.chat.Component.literal(
                 "§6[Quêtes] §eNouvelles quêtes journalières et quête communautaire disponibles ! §f/quetes"), false));
     }
 
@@ -219,16 +219,16 @@ public class QuestManager {
             PlayerData d = e.getValue();
             if (d.pendingRewards.isEmpty()) continue;
             String name = e.getKey();
-            ServerPlayerEntity sp = server != null ? server.getPlayerManager().getPlayer(name) : null;
+            ServerPlayer sp = server != null ? server.getPlayerList().getPlayerByName(name) : null;
             for (PendingReward pr : new ArrayList<>(d.pendingRewards)) {
                 boolean delivered = false;
                 if (sp != null && pr.rewardItem != null && !pr.rewardItem.isEmpty()) {
                     try {
-                        var item = Registries.ITEM.get(new Identifier(pr.rewardItem));
+                        var item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(pr.rewardItem));
                         ItemStack stack = new ItemStack(item, pr.rewardItemQty);
-                        if (sp.getInventory().insertStack(stack) && stack.isEmpty()) {
+                        if (sp.getInventory().add(stack) && stack.isEmpty()) {
                             delivered = true;
-                            sp.sendMessage(net.minecraft.text.Text.literal(
+                            sp.displayClientMessage(net.minecraft.network.chat.Component.literal(
                                 "§6[Quêtes] §fRécompense livrée automatiquement : §a"
                                 + pr.rewardItemQty + "× " + pr.rewardItem + " §7(" + pr.questLabel + ")"), false);
                         } else if (!stack.isEmpty() && stack.getCount() < pr.rewardItemQty) {
@@ -238,7 +238,7 @@ public class QuestManager {
                             LocalEconomy.getInstance().addShards(name, shards,
                                 "Quête (reste converti) : " + pr.questLabel);
                             delivered = true;
-                            sp.sendMessage(net.minecraft.text.Text.literal(
+                            sp.displayClientMessage(net.minecraft.network.chat.Component.literal(
                                 "§6[Quêtes] §fRécompense livrée, inventaire plein : le reste converti en §a+"
                                 + shards + " ◆ §7(" + pr.questLabel + ")"), false);
                         }
@@ -249,7 +249,7 @@ public class QuestManager {
                     int shards = shardsValueOf(pr.rewardItem, pr.rewardItemQty);
                     LocalEconomy.getInstance().addShards(name, shards,
                         "Quête (convertie) : " + pr.questLabel);
-                    if (sp != null) sp.sendMessage(net.minecraft.text.Text.literal(
+                    if (sp != null) sp.displayClientMessage(net.minecraft.network.chat.Component.literal(
                         "§6[Quêtes] §fInventaire plein — récompense convertie : §a+" + shards
                         + " ◆ §7(" + pr.questLabel + ")"), false);
                 }
@@ -344,10 +344,10 @@ public class QuestManager {
                 for (String p : participants) {
                     activateQuest(p, q, participants);
                     server.execute(() -> {
-                        ServerPlayerEntity sp = server.getPlayerManager().getPlayer(p);
+                        ServerPlayer sp = server.getPlayerList().getPlayerByName(p);
                         if (sp != null) {
                             NouvelleTerreBridge.sendQuestUpdate(sp);
-                            sp.sendMessage(net.minecraft.text.Text.literal(
+                            sp.displayClientMessage(net.minecraft.network.chat.Component.literal(
                                 "§a[Quêtes] La quête groupe \"" + q.label + "\" est maintenant active !"), false);
                         }
                     });
@@ -396,7 +396,7 @@ public class QuestManager {
      * Valide et réclame une quête (KILL/HARVEST) ou remet les items (DELIVERY).
      * @return null=OK, sinon message d'erreur.
      */
-    public static synchronized String claim(String player, int questId, ServerPlayerEntity serverPlayer, MinecraftServer server) {
+    public static synchronized String claim(String player, int questId, ServerPlayer serverPlayer, MinecraftServer server) {
         PlayerData  d  = data(player);
         ActiveQuest aq = d.active.stream().filter(a -> a.questId == questId).findFirst().orElse(null);
         if (aq == null || aq.snapshot == null) return "Quête non trouvée.";
@@ -442,15 +442,15 @@ public class QuestManager {
     }
 
     /** Récupère une récompense item depuis l'onglet "À Réclamer". */
-    public static synchronized String collectReward(String player, int index, ServerPlayerEntity serverPlayer) {
+    public static synchronized String collectReward(String player, int index, ServerPlayer serverPlayer) {
         PlayerData d = data(player);
         if (index < 0 || index >= d.pendingRewards.size()) return "Récompense introuvable.";
         PendingReward pr = d.pendingRewards.get(index);
 
-        ItemStack reward = new ItemStack(Registries.ITEM.get(new Identifier(pr.rewardItem)), pr.rewardItemQty);
-        serverPlayer.getInventory().insertStack(reward);
+        ItemStack reward = new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse(pr.rewardItem)), pr.rewardItemQty);
+        serverPlayer.getInventory().add(reward);
         if (!reward.isEmpty()) {
-            serverPlayer.dropItem(reward, false);
+            serverPlayer.drop(reward, false);
         }
         d.pendingRewards.remove(index);
         save();
@@ -530,8 +530,8 @@ public class QuestManager {
                 + "§f — récompense dans §a/quetes §f→ À Réclamer §7(+" + q.rewardXp + " XP)";
         }
         if (server != null) server.execute(() -> {
-            ServerPlayerEntity sp = server.getPlayerManager().getPlayer(player);
-            if (sp != null) sp.sendMessage(net.minecraft.text.Text.literal(msg), false);
+            ServerPlayer sp = server.getPlayerList().getPlayerByName(player);
+            if (sp != null) sp.displayClientMessage(net.minecraft.network.chat.Component.literal(msg), false);
         });
     }
 
@@ -552,10 +552,10 @@ public class QuestManager {
             }
             int count = community.contributors.size();
             if (server != null) server.execute(() -> {
-                server.getPlayerManager().broadcast(net.minecraft.text.Text.literal(
+                server.getPlayerList().broadcastSystemMessage(net.minecraft.network.chat.Component.literal(
                     "§6[Quêtes] §eQuête communautaire accomplie : §f" + q.label + "§e ! §a+"
                     + reward + " ◆§e pour chacun des " + count + " participant(s)."), false);
-                for (ServerPlayerEntity sp : server.getPlayerManager().getPlayerList())
+                for (ServerPlayer sp : server.getPlayerList().getPlayers())
                     if (community.contributors.containsKey(sp.getName().getString().toLowerCase()))
                         NouvelleTerreBridge.sendBalanceToPlayer(sp);
             });
@@ -575,7 +575,7 @@ public class QuestManager {
     private static void giveReward(String player, Quest q, MinecraftServer server) {
         LocalEconomy.getInstance().addShards(player, q.rewardShards, "Quête : " + q.label);
         server.execute(() -> {
-            ServerPlayerEntity sp = server.getPlayerManager().getPlayer(player);
+            ServerPlayer sp = server.getPlayerList().getPlayerByName(player);
             if (sp != null) NouvelleTerreBridge.sendBalanceToPlayer(sp);
         });
     }
@@ -590,15 +590,15 @@ public class QuestManager {
     }
 
     /** Consomme `qty` items de type `itemId` depuis l'inventaire du joueur. */
-    private static String consumeItems(ServerPlayerEntity player, String itemId, int qty) {
+    private static String consumeItems(ServerPlayer player, String itemId, int qty) {
         int remaining = qty;
         var inv = player.getInventory();
-        for (int i = 0; i < inv.main.size() && remaining > 0; i++) {
-            ItemStack s = inv.main.get(i);
+        for (int i = 0; i < inv.items.size() && remaining > 0; i++) {
+            ItemStack s = inv.items.get(i);
             if (s.isEmpty()) continue;
-            if (!Registries.ITEM.getId(s.getItem()).toString().equals(itemId)) continue;
+            if (!BuiltInRegistries.ITEM.getKey(s.getItem()).toString().equals(itemId)) continue;
             int take = Math.min(remaining, s.getCount());
-            s.decrement(take);
+            s.shrink(take);
             remaining -= take;
         }
         if (remaining > 0) return "Objets insuffisants dans l'inventaire (" + (qty - remaining) + "/" + qty + ").";

@@ -1,21 +1,18 @@
 package com.nouvelleterrebridge.client.hud;
 
 import com.nouvelleterrebridge.client.ClientConfig;
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
 
-@Environment(EnvType.CLIENT)
 public class TimeWidget extends HudWidget {
 
     public TimeWidget() {
         super("time", "Heure", 0.01f, 0.01f, false);
     }
 
-    private String text(MinecraftClient mc) {
-        if (mc.world == null) return "??:??";
-        long ticks = mc.world.getTimeOfDay() % 24000;
+    private String text(Minecraft mc) {
+        if (mc.level == null) return "??:??";
+        long ticks = mc.level.getDayTime() % 24000;
         int hour = (int)((ticks + 6000) / 1000 % 24);
         int min  = (int)((ticks % 1000) * 60 / 1000);
         String time = String.format("%02d:%02d", hour, min);
@@ -27,27 +24,27 @@ public class TimeWidget extends HudWidget {
     }
 
     @Override
-    public void render(DrawContext ctx, MinecraftClient mc) {
+    public void render(GuiGraphics ctx, Minecraft mc) {
         String t = text(mc);
-        int sw = mc.getWindow().getScaledWidth(), sh = mc.getWindow().getScaledHeight();
+        int sw = mc.getWindow().getGuiScaledWidth(), sh = mc.getWindow().getGuiScaledHeight();
         int x = getPixelX(sw, mc), y = getPixelY(sh, mc);
         int w = getWidth(mc), h = getHeight(mc);
         ctx.fill(x, y, x + w, y + h, C_PANEL);
         ctx.fill(x, y, x + 2, y + h, C_GOLD);
-        ctx.drawText(mc.textRenderer, t, x + 8, y + 3, C_WHITE, false);
+        ctx.drawString(mc.font, t, x + 8, y + 3, C_WHITE, false);
     }
 
     @Override
-    public int getWidth(MinecraftClient mc)  { return mc.textRenderer.getWidth(text(mc)) + 18; }
+    public int getWidth(Minecraft mc)  { return mc.font.width(text(mc)) + 18; }
     @Override
-    public int getHeight(MinecraftClient mc) { return 14; }
+    public int getHeight(Minecraft mc) { return 14; }
 
     @Override public boolean hasSettings()    { return true; }
     @Override public int     settingsHeight() { return 26; }
 
     @Override
-    public void renderSettings(DrawContext ctx, MinecraftClient mc, int panelX, int sy, int panelW, int mx, int my) {
-        renderCheckbox(ctx, mc.textRenderer, panelX + 10, sy + 7, "Icône ☀ / ☽", ClientConfig.get().timeShowIcon, mx, my);
+    public void renderSettings(GuiGraphics ctx, Minecraft mc, int panelX, int sy, int panelW, int mx, int my) {
+        renderCheckbox(ctx, mc.font, panelX + 10, sy + 7, "Icône ☀ / ☽", ClientConfig.get().timeShowIcon, mx, my);
     }
 
     @Override

@@ -1,17 +1,14 @@
 package com.nouvelleterrebridge.client;
 
 import com.nouvelleterrebridge.client.hud.HudWidget;
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
 import java.util.List;
 
-@Environment(EnvType.CLIENT)
 public class HudEditorScreen extends Screen {
 
     public static final List<HudWidget> WIDGETS = new ArrayList<>();
@@ -54,7 +51,7 @@ public class HudEditorScreen extends Screen {
     private int layoutBtnX, layoutBtnY, layoutBtnW;
     private int finishBtnX, finishBtnY, finishBtnW;
 
-    public HudEditorScreen() { super(Text.literal("Éditeur HUD")); }
+    public HudEditorScreen() { super(Component.literal("Éditeur HUD")); }
 
     public static void loadAll() {
         ClientConfig cfg = ClientConfig.get();
@@ -70,8 +67,14 @@ public class HudEditorScreen extends Screen {
     // ── Render ────────────────────────────────────────────────────────────────
 
     @Override
-    public void render(DrawContext ctx, int mx, int my, float delta) {
-        MinecraftClient mc = MinecraftClient.getInstance();
+    public void renderBackground(GuiGraphics ctx, int mx, int my, float delta) {
+        // No-op — cet écran dessine son propre fond ; super.render() (appelé en dernier
+        // pour les widgets vanilla) réappliquerait sinon flou + texture menu par-dessus.
+    }
+
+    @Override
+    public void render(GuiGraphics ctx, int mx, int my, float delta) {
+        Minecraft mc = Minecraft.getInstance();
         if (mode == Mode.LAYOUT) renderLayout(ctx, mc, mx, my);
         else                      renderPanel(ctx, mc, mx, my);
         super.render(ctx, mx, my, delta);
@@ -79,7 +82,7 @@ public class HudEditorScreen extends Screen {
 
     // ── Mode placement ────────────────────────────────────────────────────────
 
-    private void renderLayout(DrawContext ctx, MinecraftClient mc, int mx, int my) {
+    private void renderLayout(GuiGraphics ctx, Minecraft mc, int mx, int my) {
         ctx.fill(0, 0, width, height, 0x50000000);
 
         for (HudWidget w : WIDGETS) {
@@ -94,7 +97,7 @@ public class HudEditorScreen extends Screen {
                 ctx.fill(wx, wy, wx + ww, wy + wh, 0x30E8A838);
                 ctx.fill(wx, wy, wx + ww, wy + 1, 0x80E8A838);
                 ctx.fill(wx, wy, wx + 1, wy + wh, 0x80E8A838);
-                ctx.drawText(mc.textRenderer, w.label, wx + 5, wy + (wh - mc.textRenderer.fontHeight) / 2, 0xAAE8A838, false);
+                ctx.drawString(mc.font, w.label, wx + 5, wy + (wh - mc.font.lineHeight) / 2, 0xAAE8A838, false);
             } else {
                 w.render(ctx, mc);
             }
@@ -107,16 +110,16 @@ public class HudEditorScreen extends Screen {
                 ctx.fill(wx - 1, wy - 1, wx,           wy + wh + 1, bc);
                 ctx.fill(wx + ww, wy - 1, wx + ww + 1, wy + wh + 1, bc);
                 if (!w.isDragOnly()) {
-                    int lw = mc.textRenderer.getWidth(w.label);
+                    int lw = mc.font.width(w.label);
                     ctx.fill(wx + ww/2 - lw/2 - 4, wy - 14, wx + ww/2 + lw/2 + 4, wy - 2, 0xCC14161A);
-                    ctx.drawText(mc.textRenderer, w.label, wx + ww/2 - lw/2, wy - 12, C_GOLD, false);
+                    ctx.drawString(mc.font, w.label, wx + ww/2 - lw/2, wy - 12, C_GOLD, false);
                 }
             }
         }
 
         // Bouton Terminer — centré en haut
         String lbl = "Terminer";
-        finishBtnW = mc.textRenderer.getWidth(lbl) + 36;
+        finishBtnW = mc.font.width(lbl) + 36;
         finishBtnX = (width - finishBtnW) / 2;
         finishBtnY = 12;
         boolean fHov = mx >= finishBtnX && mx < finishBtnX + finishBtnW
@@ -124,13 +127,13 @@ public class HudEditorScreen extends Screen {
         ctx.fill(finishBtnX - 1, finishBtnY - 1, finishBtnX + finishBtnW + 1, finishBtnY + 25, C_BORDER);
         ctx.fill(finishBtnX, finishBtnY, finishBtnX + finishBtnW, finishBtnY + 24,
             fHov ? C_GOLD : C_PANEL);
-        ctx.drawCenteredTextWithShadow(mc.textRenderer, lbl,
+        ctx.drawCenteredString(mc.font, lbl,
             finishBtnX + finishBtnW / 2, finishBtnY + 8, fHov ? C_BG : C_WHITE);
     }
 
     // ── Mode panneau ──────────────────────────────────────────────────────────
 
-    private void renderPanel(DrawContext ctx, MinecraftClient mc, int mx, int my) {
+    private void renderPanel(GuiGraphics ctx, Minecraft mc, int mx, int my) {
         ctx.fill(0, 0, width, height, 0x30000000);
 
         panelW = Math.min(PW_MAX, width - 16);
@@ -158,20 +161,20 @@ public class HudEditorScreen extends Screen {
         // ── Header ────────────────────────────────────────────────────────────
         ctx.fill(panelX, panelY, panelX + PW, panelY + headerH, C_BG);
         ctx.fill(panelX, panelY + headerH - 1, panelX + PW, panelY + headerH, C_GOLD);
-        int hy = panelY + (headerH - mc.textRenderer.fontHeight) / 2;
+        int hy = panelY + (headerH - mc.font.lineHeight) / 2;
         int hx = panelX + 12;
-        ctx.drawText(mc.textRenderer, "◆", hx, hy, C_GOLD, false);
-        hx += mc.textRenderer.getWidth("◆") + 5;
-        ctx.drawText(mc.textRenderer, "Nouvelle Terre", hx, hy, C_WHITE, false);
-        hx += mc.textRenderer.getWidth("Nouvelle Terre") + 8;
+        ctx.drawString(mc.font, "◆", hx, hy, C_GOLD, false);
+        hx += mc.font.width("◆") + 5;
+        ctx.drawString(mc.font, "Nouvelle Terre", hx, hy, C_WHITE, false);
+        hx += mc.font.width("Nouvelle Terre") + 8;
         ctx.fill(hx, panelY + 8, hx + 1, panelY + headerH - 8, C_BORDER);
         hx += 9;
-        ctx.drawText(mc.textRenderer, "Éditeur HUD", hx, hy, C_MID, false);
+        ctx.drawString(mc.font, "Éditeur HUD", hx, hy, C_MID, false);
         boolean xHov = mx >= panelX + PW - 26 && mx < panelX + PW - 6
             && my >= panelY + 8 && my < panelY + headerH - 8;
         ctx.fill(panelX + PW - 26, panelY + 8, panelX + PW - 6, panelY + headerH - 8,
             xHov ? C_RED : C_HOVER);
-        ctx.drawCenteredTextWithShadow(mc.textRenderer, "×", panelX + PW - 16, hy, C_WHITE);
+        ctx.drawCenteredString(mc.font, "×", panelX + PW - 16, hy, C_WHITE);
 
         // ── Grille de cards (scrollable) ──────────────────────────────────────
         gridY = panelY + headerH + GAP;
@@ -190,11 +193,11 @@ public class HudEditorScreen extends Screen {
 
         // Indicateurs de scroll
         if (scrollRow > 0) {
-            ctx.drawCenteredTextWithShadow(mc.textRenderer, "▲",
+            ctx.drawCenteredString(mc.font, "▲",
                 panelX + PW - GAP - 4, gridY + 2, C_DIM);
         }
         if (scrollRow < maxScroll) {
-            ctx.drawCenteredTextWithShadow(mc.textRenderer, "▼",
+            ctx.drawCenteredString(mc.font, "▼",
                 panelX + PW - GAP - 4, gridY + gridH - 10, C_DIM);
         }
 
@@ -205,7 +208,7 @@ public class HudEditorScreen extends Screen {
             ctx.fill(panelX + GAP, sy, panelX + PW - GAP, sy + settingsH, C_SURFACE);
             ctx.fill(panelX + GAP, sy, panelX + PW - GAP, sy + 1, C_GOLD);
             ctx.fill(panelX + GAP, sy + 1, panelX + GAP + 2, sy + settingsH, C_GOLD);
-            ctx.drawText(mc.textRenderer, "Paramètres : " + optW.label,
+            ctx.drawString(mc.font, "Paramètres : " + optW.label,
                 panelX + GAP + 8, sy + 6, C_DIM, false);
             optW.renderSettings(ctx, mc, panelX + GAP, sy + 20, PW - GAP * 2, mx, my);
         }
@@ -221,18 +224,18 @@ public class HudEditorScreen extends Screen {
         ctx.fill(layoutBtnX, layoutBtnY, layoutBtnX + layoutBtnW, layoutBtnY + 26,
             lbHov ? C_HOVER : C_SURFACE);
         if (lbHov) ctx.fill(layoutBtnX, layoutBtnY, layoutBtnX + layoutBtnW, layoutBtnY + 1, C_GOLD);
-        int ltw = mc.textRenderer.getWidth("Placer les widgets");
-        ctx.drawText(mc.textRenderer, "Placer les widgets",
+        int ltw = mc.font.width("Placer les widgets");
+        ctx.drawString(mc.font, "Placer les widgets",
             panelX + PW / 2 - ltw / 2, layoutBtnY + 9, lbHov ? C_GOLD : C_MID, false);
     }
 
-    private void renderCard(DrawContext ctx, MinecraftClient mc, HudWidget w,
+    private void renderCard(GuiGraphics ctx, Minecraft mc, HudWidget w,
                             int cx, int cy, int cw, int mx, int my) {
         boolean hasOpt = w.hasSettings();
         int togBtnY = cy + CARD_H - 5 - 16;
         int optBtnY = hasOpt ? togBtnY - 4 - 16 : -1;
         int sepY    = (hasOpt ? optBtnY : togBtnY) - 5;
-        int nameY   = sepY - 4 - mc.textRenderer.fontHeight;
+        int nameY   = sepY - 4 - mc.font.lineHeight;
         int prvTop  = cy + 6;
         int prvBot  = nameY - 4;
 
@@ -252,16 +255,16 @@ public class HudEditorScreen extends Screen {
                 int px2 = cx + 8, py2 = prvTop + (prvBot - prvTop - ph) / 2;
                 ctx.fill(px2, py2, px2 + tw, py2 + ph, 0xCC1B1D22);
                 ctx.fill(px2, py2, px2 + 2, py2 + ph, C_GREEN);
-                ctx.drawText(mc.textRenderer, "Virement reçu", px2 + 6, py2 + 4, C_GREEN, false);
-                ctx.drawText(mc.textRenderer, "+150 ◆ de Steve", px2 + 6, py2 + 13, C_MID, false);
+                ctx.drawString(mc.font, "Virement reçu", px2 + 6, py2 + 4, C_GREEN, false);
+                ctx.drawString(mc.font, "+150 ◆ de Steve", px2 + 6, py2 + 13, C_MID, false);
             } else {
                 int ww = w.getWidth(mc), wh = w.getHeight(mc);
                 int pvX = cx + (cw - Math.min(ww, cw - 16)) / 2;
                 int pvY = prvTop + Math.max(0, (prvBot - prvTop - wh) / 2);
                 ctx.enableScissor(cx + 2, prvTop, cx + cw - 2, prvBot);
                 float sX = w.anchorX, sY = w.anchorY;
-                w.anchorX = (float)pvX / mc.getWindow().getScaledWidth();
-                w.anchorY = (float)pvY / mc.getWindow().getScaledHeight();
+                w.anchorX = (float)pvX / mc.getWindow().getGuiScaledWidth();
+                w.anchorY = (float)pvY / mc.getWindow().getGuiScaledHeight();
                 w.render(ctx, mc);
                 w.anchorX = sX; w.anchorY = sY;
                 ctx.disableScissor();
@@ -269,8 +272,8 @@ public class HudEditorScreen extends Screen {
         }
 
         // Nom
-        ctx.drawText(mc.textRenderer, w.label,
-            cx + cw / 2 - mc.textRenderer.getWidth(w.label) / 2, nameY,
+        ctx.drawString(mc.font, w.label,
+            cx + cw / 2 - mc.font.width(w.label) / 2, nameY,
             w.enabled ? C_WHITE : C_MID, false);
 
         // Séparateur
@@ -281,9 +284,9 @@ public class HudEditorScreen extends Screen {
             boolean open = w.id.equals(optionsFor);
             boolean oHov = mx >= cx + 1 && mx < cx + cw - 1 && my >= optBtnY && my < optBtnY + 16;
             ctx.fill(cx + 1, optBtnY, cx + cw - 1, optBtnY + 16, (oHov || open) ? C_HOVER : 0);
-            int oTy = optBtnY + (16 - mc.textRenderer.fontHeight) / 2;
-            ctx.drawText(mc.textRenderer, "Options", cx + 8, oTy, open ? C_GOLD : C_MID, false);
-            ctx.drawText(mc.textRenderer, "⚙", cx + cw - 16, oTy, open ? C_GOLD : C_DIM, false);
+            int oTy = optBtnY + (16 - mc.font.lineHeight) / 2;
+            ctx.drawString(mc.font, "Options", cx + 8, oTy, open ? C_GOLD : C_MID, false);
+            ctx.drawString(mc.font, "⚙", cx + cw - 16, oTy, open ? C_GOLD : C_DIM, false);
         }
 
         // Toggle : affiche l'action (ce qui se passe si on clique)
@@ -300,9 +303,9 @@ public class HudEditorScreen extends Screen {
             togFg  = C_BG;
         }
         ctx.fill(cx + 1, togBtnY, cx + cw - 1, togBtnY + 16, togBg);
-        int togLblX = cx + cw / 2 - mc.textRenderer.getWidth(togLbl) / 2;
-        int togLblY = togBtnY + (16 - mc.textRenderer.fontHeight) / 2;
-        ctx.drawText(mc.textRenderer, togLbl, togLblX, togLblY, togFg, false);
+        int togLblX = cx + cw / 2 - mc.font.width(togLbl) / 2;
+        int togLblY = togBtnY + (16 - mc.font.lineHeight) / 2;
+        ctx.drawString(mc.font, togLbl, togLblX, togLblY, togFg, false);
 
         cards.add(new Card(w, cx, cy, cw, optBtnY, togBtnY));
     }
@@ -312,7 +315,7 @@ public class HudEditorScreen extends Screen {
     @Override
     public boolean mouseClicked(double mx0, double my0, int btn) {
         int mx = (int)mx0, my = (int)my0;
-        MinecraftClient mc = MinecraftClient.getInstance();
+        Minecraft mc = Minecraft.getInstance();
 
         if (mode == Mode.LAYOUT) {
             if (mx >= finishBtnX && mx < finishBtnX + finishBtnW
@@ -333,7 +336,7 @@ public class HudEditorScreen extends Screen {
         // Bouton [×]
         if (mx >= panelX + panelW - 26 && mx < panelX + panelW - 6
                 && my >= panelY + 8 && my < panelY + 36 - 8) {
-            close(); return true;
+            onClose(); return true;
         }
 
         // Clic dans les paramètres
@@ -371,7 +374,7 @@ public class HudEditorScreen extends Screen {
     @Override
     public boolean mouseDragged(double mx0, double my0, int btn, double dx, double dy) {
         if (dragging != null) {
-            MinecraftClient mc = MinecraftClient.getInstance();
+            Minecraft mc = Minecraft.getInstance();
             int ww = dragging.getWidth(mc), wh = dragging.getHeight(mc);
             int nx = Math.max(0, Math.min((int)mx0 - dragOX, width  - ww));
             int ny = Math.max(0, Math.min((int)my0 - dragOY, height - wh));
@@ -393,14 +396,14 @@ public class HudEditorScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mx, double my, double amount) {
+    public boolean mouseScrolled(double mx, double my, double horizontalAmount, double amount) {
         if (mode == Mode.PANEL) {
             int totalRows = (WIDGETS.size() + COLS - 1) / COLS;
             int maxScroll = Math.max(0, totalRows - VISIBLE_ROWS);
             scrollRow = Math.max(0, Math.min(scrollRow - (int)Math.signum(amount), maxScroll));
             return true;
         }
-        return super.mouseScrolled(mx, my, amount);
+        return super.mouseScrolled(mx, my, horizontalAmount, amount);
     }
 
     @Override
@@ -414,7 +417,7 @@ public class HudEditorScreen extends Screen {
     @Override
     public void removed() { saveAll(); }
 
-    @Override public boolean shouldPause()      { return false; }
+    @Override public boolean isPauseScreen()      { return false; }
     @Override public boolean shouldCloseOnEsc() { return true; }
 
     private HudWidget findWidget(String id) {

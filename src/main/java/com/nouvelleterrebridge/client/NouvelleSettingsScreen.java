@@ -1,13 +1,10 @@
 package com.nouvelleterrebridge.client;
 
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.text.Text;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.network.chat.Component;
 
-@Environment(EnvType.CLIENT)
 public class NouvelleSettingsScreen extends Screen {
 
     private static final int C_BG   = 0xFF14161A;
@@ -17,7 +14,7 @@ public class NouvelleSettingsScreen extends Screen {
     private final Screen parent;
 
     public NouvelleSettingsScreen(Screen parent) {
-        super(Text.literal("Nouvelle Terre — Paramètres"));
+        super(Component.literal("Nouvelle Terre — Paramètres"));
         this.parent = parent;
     }
 
@@ -25,36 +22,42 @@ public class NouvelleSettingsScreen extends Screen {
     protected void init() {
         int cx = width / 2, cy = height / 2;
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Éditeur HUD →"),
-                btn -> client.setScreen(new HudEditorScreen()))
-            .dimensions(cx - 100, cy - 22, 200, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Éditeur HUD →"),
+                btn -> this.minecraft.setScreen(new HudEditorScreen()))
+            .bounds(cx - 100, cy - 22, 200, 20).build());
 
-        addDrawableChild(ButtonWidget.builder(rpcToggleText(), btn -> {
+        addRenderableWidget(Button.builder(rpcToggleText(), btn -> {
             ClientConfig cfg = ClientConfig.get();
             cfg.discordRPCEnabled = !cfg.discordRPCEnabled;
             cfg.save();
             btn.setMessage(rpcToggleText());
             if (!cfg.discordRPCEnabled) DiscordRPCManager.INSTANCE.onLeave();
-        }).dimensions(cx - 100, cy + 4, 200, 20).build());
+        }).bounds(cx - 100, cy + 4, 200, 20).build());
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Retour"), btn -> close())
-            .dimensions(cx - 75, cy + 34, 150, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Retour"), btn -> onClose())
+            .bounds(cx - 75, cy + 34, 150, 20).build());
     }
 
     @Override
-    public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
+    public void renderBackground(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
+        // No-op — cet écran dessine son propre fond ; super.render() (appelé en dernier
+        // pour les widgets vanilla) réappliquerait sinon flou + texture menu par-dessus.
+    }
+
+    @Override
+    public void render(GuiGraphics ctx, int mouseX, int mouseY, float delta) {
         ctx.fill(0, 0, width, height, C_BG);
         ctx.fill(0, height / 2 - 36, width, height / 2 - 34, 0x20E8A838);
-        ctx.drawCenteredTextWithShadow(textRenderer, "Nouvelle Terre", width / 2, height / 2 - 56, C_GOLD);
-        ctx.drawCenteredTextWithShadow(textRenderer, "Paramètres client", width / 2, height / 2 - 44, C_MID);
+        ctx.drawCenteredString(font, "Nouvelle Terre", width / 2, height / 2 - 56, C_GOLD);
+        ctx.drawCenteredString(font, "Paramètres client", width / 2, height / 2 - 44, C_MID);
         super.render(ctx, mouseX, mouseY, delta);
     }
 
     @Override
-    public void close() { if (client != null) client.setScreen(parent); }
+    public void onClose() { if (this.minecraft != null) this.minecraft.setScreen(parent); }
 
-    private static Text rpcToggleText() {
+    private static Component rpcToggleText() {
         boolean en = ClientConfig.get().discordRPCEnabled;
-        return Text.literal("Discord Rich Presence : " + (en ? "§aActivé" : "§cDésactivé"));
+        return Component.literal("Discord Rich Presence : " + (en ? "§aActivé" : "§cDésactivé"));
     }
 }

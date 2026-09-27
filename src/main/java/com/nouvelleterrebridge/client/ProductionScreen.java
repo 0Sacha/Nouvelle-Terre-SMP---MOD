@@ -1,21 +1,20 @@
 package com.nouvelleterrebridge.client;
 
+import com.nouvelleterrebridge.network.NtNet;
+
 import com.nouvelleterrebridge.market.FrenchItemNames;
 import com.nouvelleterrebridge.network.ProductionNetworking;
 import io.netty.buffer.Unpooled;
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.registry.Registries;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -26,7 +25,6 @@ import java.util.List;
  * Quand un item atteint son seuil, il entre au catalogue du Shop Serveur (/shop).
  * Les boutons admin (reset / recheck / reload) ne sont visibles que pour les op.
  */
-@Environment(EnvType.CLIENT)
 public class ProductionScreen extends Screen {
 
     public record ProdEntry(String itemId, long count, long seuil, int prix, int quantite,
@@ -65,7 +63,7 @@ public class ProductionScreen extends Screen {
     private int scroll = 0;
     private boolean draggingScroll = false;
 
-    private TextFieldWidget searchField;
+    private EditBox searchField;
     /** Item dont les contrôles admin sont dépliés (null = aucun). */
     private String expanded = null;
     private final NumberInput priceInput = new NumberInput(1, 1, 999_999);
@@ -90,7 +88,7 @@ public class ProductionScreen extends Screen {
     private final List<int[]> adminBtnBounds = new ArrayList<>();
 
     public ProductionScreen(boolean isOp, List<ProdEntry> entries) {
-        super(Text.literal("Production naturelle"));
+        super(Component.literal("Production naturelle"));
         update(isOp, entries);
     }
 
@@ -124,19 +122,19 @@ public class ProductionScreen extends Screen {
         px = (width  - pw) / 2;
         py = (height - ph) / 2;
 
-        searchField = new TextFieldWidget(textRenderer, px + PAD, py + TOP_H + 6, pw - PAD * 2 - 8, 18,
-            Text.literal(""));
-        searchField.setDrawsBackground(false);
-        searchField.setPlaceholder(Text.literal("Rechercher un item..."));
+        searchField = new EditBox(font, px + PAD, py + TOP_H + 6, pw - PAD * 2 - 8, 18,
+            Component.literal(""));
+        searchField.setBordered(false);
+        searchField.setHint(Component.literal("Rechercher un item..."));
         priceInput.setPlaceholder("Prix ◆/u...");
         rachatInput.setPlaceholder("0 = automatique");
-        searchField.setChangedListener(s -> scroll = 0);
-        addSelectableChild(searchField);
+        searchField.setResponder(s -> scroll = 0);
+        addRenderableWidget(searchField);
     }
 
     /** Entrées filtrées par la recherche (nom FR ou identifiant). */
     private List<ProdEntry> filtered() {
-        String q = searchField != null ? searchField.getText().trim().toLowerCase() : "";
+        String q = searchField != null ? searchField.getValue().trim().toLowerCase() : "";
         if (q.isEmpty()) return entries;
         return entries.stream()
             .filter(e -> FrenchItemNames.toDisplay(e.itemId()).toLowerCase().contains(q)
@@ -144,12 +142,18 @@ public class ProductionScreen extends Screen {
             .toList();
     }
 
-    @Override public boolean shouldPause() { return false; }
+    @Override public boolean isPauseScreen() { return false; }
 
     // ── Render ─────────────────────────────────────────────────────────────────
 
     @Override
-    public void render(DrawContext ctx, int mx, int my, float delta) {
+    public void renderBackground(GuiGraphics ctx, int mx, int my, float delta) {
+        // No-op — cet écran dessine son propre fond ; super.render() (appelé en dernier
+        // pour les widgets vanilla) réappliquerait sinon flou + texture menu par-dessus.
+    }
+
+    @Override
+    public void render(GuiGraphics ctx, int mx, int my, float delta) {
         ctx.fill(px, py, px + pw, py + ph, C_BG);
         ctx.fill(px, py, px + pw, py + 1, C_BORDER);
         ctx.fill(px, py + ph - 1, px + pw, py + ph, C_BORDER);
@@ -159,11 +163,11 @@ public class ProductionScreen extends Screen {
         // Header
         ctx.fill(px, py, px + pw, py + TOP_H, C_PANEL);
         ctx.fill(px, py + TOP_H, px + pw, py + TOP_H + 1, C_BORDER);
-        HubBackButton.render(ctx, textRenderer, px + PAD, py + (TOP_H - HubBackButton.H) / 2, mx, my);
+        HubBackButton.render(ctx, font, px + PAD, py + (TOP_H - HubBackButton.H) / 2, mx, my);
         int titleX = px + PAD + HubBackButton.W + 8;
-        ctx.drawText(textRenderer, "⛏  Production naturelle", titleX, py + 9, C_GOLD, false);
+        ctx.drawString(font, "⛏  Production naturelle", titleX, py + 9, C_GOLD, false);
         long enVente = entries.stream().filter(ProdEntry::enVente).count();
-        ctx.drawText(textRenderer, "§a" + enVente + " en vente§7 / " + entries.size(),
+        ctx.drawString(font, "§a" + enVente + " en vente§7 / " + entries.size(),
             titleX, py + 23, C_DIM, false);
 
         adminBtnBounds.clear();
@@ -197,7 +201,7 @@ public class ProductionScreen extends Screen {
         ctx.disableScissor();
 
         if (list.isEmpty())
-            ctx.drawCenteredTextWithShadow(textRenderer, "Aucun item ne correspond.",
+            ctx.drawCenteredString(font, "Aucun item ne correspond.",
                 px + pw / 2, listY + listH / 2, C_DIM);
 
         // Scrollbar
@@ -217,7 +221,7 @@ public class ProductionScreen extends Screen {
         super.render(ctx, mx, my, delta);
     }
 
-    private void renderAdminButtons(DrawContext ctx, int mx, int my) {
+    private void renderAdminButtons(GuiGraphics ctx, int mx, int my) {
         String[] labels  = {"Rafraîchir", "Recharger", "Purger marché", "Reset"};
         int[]    actions = {ProductionNetworking.ACTION_RECHECK, ProductionNetworking.ACTION_RELOAD,
                             ProductionNetworking.ACTION_PURGE_MARCHE, ProductionNetworking.ACTION_RESET};
@@ -231,7 +235,7 @@ public class ProductionScreen extends Screen {
             boolean attention = actions[i] == ProductionNetworking.ACTION_PURGE_MARCHE;
             boolean arme = (danger && resetArmed) || (attention && purgeArmed);
             String  label  = arme ? "Confirmer ?" : labels[i];
-            int bw = textRenderer.getWidth(label) + 14;
+            int bw = font.width(label) + 14;
             bx -= bw;
             int by = py + 11;
             boolean hov = mx >= bx && mx < bx + bw && my >= by && my < by + 18;
@@ -244,13 +248,13 @@ public class ProductionScreen extends Screen {
             ctx.fill(bx, by, bx + bw, by + 1, accent);
             int couleurTexte = (danger || (attention && purgeArmed)) ? C_WHITE
                              : attention ? C_GOLD : C_MID;
-            ctx.drawText(textRenderer, label, bx + 7, by + 5, couleurTexte, false);
+            ctx.drawString(font, label, bx + 7, by + 5, couleurTexte, false);
             adminBtnBounds.add(new int[]{bx, by, bw, 18, actions[i]});
             bx -= 6;
         }
     }
 
-    private void renderRow(DrawContext ctx, ProdEntry e, int index, int x, int y, int w, int mx, int my) {
+    private void renderRow(GuiGraphics ctx, ProdEntry e, int index, int x, int y, int w, int mx, int my) {
         int rowH = ROW_H - 3;
         boolean hover = mx >= x && mx < x + w && my >= y && my < y + rowH;
         ctx.fill(x, y, x + w, y + rowH, hover ? C_HOVER : C_PANEL);
@@ -263,11 +267,11 @@ public class ProductionScreen extends Screen {
         renderItemIcon(ctx, e.itemId(), x + 11, y + (rowH - 16) / 2);
 
         String name = FrenchItemNames.toDisplay(e.itemId());
-        ctx.drawText(textRenderer, truncate(name, w / 2 - 60), x + 40, y + 6, C_WHITE, false);
+        ctx.drawString(font, truncate(name, w / 2 - 60), x + 40, y + 6, C_WHITE, false);
 
         float pct = progressRatio(e);
         String countStr = fmt(e.count()) + " / " + fmt(e.seuil()) + " produits";
-        ctx.drawText(textRenderer, countStr, x + 40, y + 20, pct >= 1f ? C_GREEN : C_DIM, false);
+        ctx.drawString(font, countStr, x + 40, y + 20, pct >= 1f ? C_GREEN : C_DIM, false);
 
         // Barre de progression au centre
         int barX = x + w / 2 + 10, barW = w / 2 - 130;
@@ -276,7 +280,7 @@ public class ProductionScreen extends Screen {
             if (pct > 0) ctx.fill(barX, y + rowH / 2 - 3, barX + (int)(barW * pct), y + rowH / 2 + 2,
                 e.enVente() ? C_GREEN : C_GOLD);
             String pctStr = ((int)(pct * 100)) + " %";
-            ctx.drawText(textRenderer, pctStr, barX + barW + 6, y + rowH / 2 - 4,
+            ctx.drawString(font, pctStr, barX + barW + 6, y + rowH / 2 - 4,
                 pct >= 1f ? C_GREEN : C_DIM, false);
         }
 
@@ -286,10 +290,10 @@ public class ProductionScreen extends Screen {
         if (e.desactive())      { statut = "⏸ Retiré";  statutCouleur = C_RED; }
         else if (e.enVente())   { statut = "✔ En vente"; statutCouleur = C_GREEN; }
         else                    { statut = "En cours";   statutCouleur = C_DIM; }
-        int sw = textRenderer.getWidth(statut);
-        ctx.drawText(textRenderer, statut, x + w - sw - 10, y + 6, statutCouleur, false);
+        int sw = font.width(statut);
+        ctx.drawString(font, statut, x + w - sw - 10, y + 6, statutCouleur, false);
         String prix = e.prix() + " ◆/u  ·  lot " + e.quantite();
-        ctx.drawText(textRenderer, prix, x + w - textRenderer.getWidth(prix) - 10, y + 20, C_MID, false);
+        ctx.drawString(font, prix, x + w - font.width(prix) - 10, y + 20, C_MID, false);
 
         // Clic sur la ligne = gérer (op uniquement) — l'index de la liste filtrée
         // est mémorisé ici plutôt que recalculé au clic, qui se désynchroniserait
@@ -303,15 +307,15 @@ public class ProductionScreen extends Screen {
 
     // ── Modal de gestion (op) ──────────────────────────────────────────────────
 
-    private void renderManageModal(DrawContext ctx, int mx, int my) {
+    private void renderManageModal(GuiGraphics ctx, int mx, int my) {
         ProdEntry e = entries.stream().filter(p -> p.itemId().equals(expanded)).findFirst().orElse(null);
         if (e == null) { expanded = null; return; }
 
         // Le modal capture tous les clics : les bornes des lignes en dessous
         // ne doivent plus répondre.
         rowBtnBounds.clear();
-        ctx.getMatrices().push();
-        ctx.getMatrices().translate(0, 0, 300);
+        ctx.pose().pushPose();
+        ctx.pose().translate(0, 0, 300);
         ctx.fill(px, py, px + pw, py + ph, 0x99000000);
 
         int mw = 300, mh = 300;
@@ -321,11 +325,11 @@ public class ProductionScreen extends Screen {
         ctx.fill(ox, oy, ox + mw, oy + 2, C_GOLD);
 
         renderItemIcon(ctx, e.itemId(), ox + 14, oy + 14);
-        ctx.drawText(textRenderer, truncate(FrenchItemNames.toDisplay(e.itemId()), mw - 50), ox + 38, oy + 12, C_WHITE, false);
-        ctx.drawText(textRenderer, fmt(e.count()) + " / " + fmt(e.seuil()) + " produits", ox + 38, oy + 24, C_DIM, false);
+        ctx.drawString(font, truncate(FrenchItemNames.toDisplay(e.itemId()), mw - 50), ox + 38, oy + 12, C_WHITE, false);
+        ctx.drawString(font, fmt(e.count()) + " / " + fmt(e.seuil()) + " produits", ox + 38, oy + 24, C_DIM, false);
 
-        ctx.drawText(textRenderer, "PRIX DE VENTE (◆/u)", ox + 14, oy + 46, C_DIM, false);
-        priceInput.render(ctx, textRenderer, ox + 14, oy + 60, mw - 28, mx, my);
+        ctx.drawString(font, "PRIX DE VENTE (◆/u)", ox + 14, oy + 46, C_DIM, false);
+        priceInput.render(ctx, font, ox + 14, oy + 60, mw - 28, mx, my);
 
         int by = oy + 60 + NumberInput.H + 6;
         drawModalBtn(ctx, ox + 14, by, mw - 28, "Appliquer le prix de vente", C_GOLD, mx, my,
@@ -334,11 +338,11 @@ public class ProductionScreen extends Screen {
 
         // Rachat : ce que le serveur paie au joueur qui lui revend l'item
         String etat = e.rachatImpose() ? "§7imposé" : "§8auto (55 % du prix de vente)";
-        ctx.drawText(textRenderer, "PRIX DE RACHAT (◆/u) — " + etat, ox + 14, by, C_DIM, false);
+        ctx.drawString(font, "PRIX DE RACHAT (◆/u) — " + etat, ox + 14, by, C_DIM, false);
         by += 14;
-        rachatInput.render(ctx, textRenderer, ox + 14, by, mw - 28, mx, my);
+        rachatInput.render(ctx, font, ox + 14, by, mw - 28, mx, my);
         by += NumberInput.H + 2;
-        ctx.drawText(textRenderer, "§8Actuel : " + e.prixRachat() + " ◆  ·  plafonné au prix de vente",
+        ctx.drawString(font, "§8Actuel : " + e.prixRachat() + " ◆  ·  plafonné au prix de vente",
             ox + 14, by, C_DIM, false);
         by += 12;
         drawModalBtn(ctx, ox + 14, by, mw - 28, "Appliquer le rachat", C_GREEN, mx, my,
@@ -353,38 +357,38 @@ public class ProductionScreen extends Screen {
             armed ? "Confirmer la suppression ?" : "Supprimer du catalogue",
             C_RED, mx, my, ProductionNetworking.ACTION_DELETE);
 
-        ctx.drawCenteredTextWithShadow(textRenderer, "Échap pour fermer", ox + mw / 2, oy + mh - 14, C_DIM);
-        ctx.getMatrices().pop();
+        ctx.drawCenteredString(font, "Échap pour fermer", ox + mw / 2, oy + mh - 14, C_DIM);
+        ctx.pose().popPose();
     }
 
-    private void drawModalBtn(DrawContext ctx, int x, int y, int w, String label, int color,
+    private void drawModalBtn(GuiGraphics ctx, int x, int y, int w, String label, int color,
                               int mx, int my, int action) {
         boolean hov = mx >= x && mx < x + w && my >= y && my < y + 22;
         ctx.fill(x, y, x + w, y + 22, hov ? color : C_SURFACE);
         ctx.fill(x, y, x + w, y + 1, color);
-        ctx.drawCenteredTextWithShadow(textRenderer, label, x + w / 2, y + 7, hov ? C_BG : color);
+        ctx.drawCenteredString(font, label, x + w / 2, y + 7, hov ? C_BG : color);
         rowBtnBounds.add(new int[]{x, y, w, 22, action});
     }
 
-    private void renderItemIcon(DrawContext ctx, String itemId, int x, int y) {
+    private void renderItemIcon(GuiGraphics ctx, String itemId, int x, int y) {
         try {
-            Item item = Registries.ITEM.get(Identifier.tryParse(itemId));
-            ctx.drawItem(new ItemStack(item == Items.AIR ? Items.BARRIER : item), x, y);
+            Item item = BuiltInRegistries.ITEM.get(ResourceLocation.tryParse(itemId));
+            ctx.renderItem(new ItemStack(item == Items.AIR ? Items.BARRIER : item), x, y);
         } catch (Exception ignored) {
-            ctx.drawItem(new ItemStack(Items.BARRIER), x, y);
+            ctx.renderItem(new ItemStack(Items.BARRIER), x, y);
         }
     }
 
-    private void renderToast(DrawContext ctx) {
+    private void renderToast(GuiGraphics ctx) {
         if (toastMsg == null) return;
         if (System.currentTimeMillis() > toastEnd) { toastMsg = null; return; }
-        int tw = textRenderer.getWidth(toastMsg) + 28;
+        int tw = font.width(toastMsg) + 28;
         int th = 26;
         int tx = px + pw - tw - 10;
         int ty = py + ph - th - 10;
         ctx.fill(tx, ty, tx + tw, ty + th, C_SURFACE);
         ctx.fill(tx, ty, tx + 3, ty + th, toastOk ? C_GREEN : C_RED);
-        ctx.drawText(textRenderer, toastMsg, tx + 11, ty + (th - textRenderer.fontHeight) / 2, C_WHITE, false);
+        ctx.drawString(font, toastMsg, tx + 11, ty + (th - font.lineHeight) / 2, C_WHITE, false);
     }
 
     // ── Interactions ───────────────────────────────────────────────────────────
@@ -425,7 +429,7 @@ public class ProductionScreen extends Screen {
             return true;
         }
 
-        if (x < px || x > px + pw || y < py || y > py + ph) { close(); return true; }
+        if (x < px || x > px + pw || y < py || y > py + ph) { onClose(); return true; }
 
         if (HubBackButton.clicked(px + PAD, py + (TOP_H - HubBackButton.H) / 2, x, y)) return true;
 
@@ -479,11 +483,11 @@ public class ProductionScreen extends Screen {
     }
 
     private void sendItemAction(int action, String itemId, int valeur) {
-        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
         buf.writeInt(action);
-        buf.writeString(itemId);
+        buf.writeUtf(itemId);
         buf.writeInt(valeur);
-        ClientPlayNetworking.send(ProductionNetworking.PROD_ACTION, buf);
+        NtNet.versServeur(ProductionNetworking.PROD_ACTION, buf);
     }
 
     @Override
@@ -502,7 +506,7 @@ public class ProductionScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mx, double my, double amount) {
+    public boolean mouseScrolled(double mx, double my, double horizontalAmount, double amount) {
         if (expanded != null) return true;
         int maxScroll = Math.max(0, filtered().size() - visibleRows());
         scroll = Math.max(0, Math.min(scroll - (int) Math.signum(amount), maxScroll));
@@ -547,8 +551,8 @@ public class ProductionScreen extends Screen {
     }
 
     private String truncate(String s, int maxPx) {
-        if (textRenderer.getWidth(s) <= maxPx) return s;
-        while (s.length() > 1 && textRenderer.getWidth(s + "…") > maxPx)
+        if (font.width(s) <= maxPx) return s;
+        while (s.length() > 1 && font.width(s + "…") > maxPx)
             s = s.substring(0, s.length() - 1);
         return s + "…";
     }

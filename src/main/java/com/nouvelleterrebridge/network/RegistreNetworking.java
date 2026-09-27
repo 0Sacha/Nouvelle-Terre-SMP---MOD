@@ -1,9 +1,9 @@
 package com.nouvelleterrebridge.network;
 
-import net.minecraft.util.Identifier;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 
 public class RegistreNetworking {
-    public static final Identifier REGISTRE_OPEN           = new Identifier("nouvelle-terre-bridge", "registre_open");
-    public static final Identifier REGISTRE_DETAIL_REQUEST = new Identifier("nouvelle-terre-bridge", "registre_detail_req");
-    public static final Identifier REGISTRE_DETAIL         = new Identifier("nouvelle-terre-bridge", "registre_detail");
+    public static final CustomPacketPayload.Type<NtPayload> REGISTRE_OPEN = NtNet.canal("registre_open");
+    public static final CustomPacketPayload.Type<NtPayload> REGISTRE_DETAIL_REQUEST = NtNet.canal("registre_detail_req");
+    public static final CustomPacketPayload.Type<NtPayload> REGISTRE_DETAIL = NtNet.canal("registre_detail");
 }

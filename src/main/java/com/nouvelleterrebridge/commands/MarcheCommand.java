@@ -2,24 +2,24 @@ package com.nouvelleterrebridge.commands;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.nouvelleterrebridge.service.ServiceNetworkHandler;
-import net.minecraft.server.command.CommandManager;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
+import net.minecraft.commands.Commands;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.Component;
 
 /** /leboncube — les petites annonces de services entre joueurs. */
 public final class MarcheCommand {
 
     private MarcheCommand() {}
 
-    public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
-        dispatcher.register(CommandManager.literal("leboncube")
+    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
+        dispatcher.register(Commands.literal("leboncube")
             .executes(ctx -> ouvrir(ctx.getSource())));
     }
 
-    private static int ouvrir(ServerCommandSource source) {
-        if (!(source.getEntity() instanceof ServerPlayerEntity joueur)) {
-            source.sendError(Text.literal("Commande réservée aux joueurs."));
+    private static int ouvrir(CommandSourceStack source) {
+        if (!(source.getEntity() instanceof ServerPlayer joueur)) {
+            source.sendFailure(Component.literal("Commande réservée aux joueurs."));
             return 0;
         }
         ServiceNetworkHandler.ouvrir(joueur);

@@ -1,13 +1,10 @@
 package com.nouvelleterrebridge.client.hud;
 
 import com.nouvelleterrebridge.client.ClientConfig;
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphics;
 
-@Environment(EnvType.CLIENT)
 public abstract class HudWidget {
 
     protected static final int C_PANEL  = 0xCC1B1D22;
@@ -32,14 +29,14 @@ public abstract class HudWidget {
         this.enabled = defaultEnabled;
     }
 
-    public abstract void render(DrawContext ctx, MinecraftClient mc);
-    public abstract int  getWidth(MinecraftClient mc);
-    public abstract int  getHeight(MinecraftClient mc);
+    public abstract void render(GuiGraphics ctx, Minecraft mc);
+    public abstract int  getWidth(Minecraft mc);
+    public abstract int  getHeight(Minecraft mc);
 
-    public int getPixelX(int sw, MinecraftClient mc) {
+    public int getPixelX(int sw, Minecraft mc) {
         return Math.max(0, Math.min((int)(anchorX * sw), sw - getWidth(mc)));
     }
-    public int getPixelY(int sh, MinecraftClient mc) {
+    public int getPixelY(int sh, Minecraft mc) {
         return Math.max(0, Math.min((int)(anchorY * sh), sh - getHeight(mc)));
     }
 
@@ -47,17 +44,17 @@ public abstract class HudWidget {
 
     public boolean hasSettings() { return false; }
     public int     settingsHeight() { return 0; }
-    public void    renderSettings(DrawContext ctx, MinecraftClient mc, int panelX, int settingsY, int panelW, int mx, int my) {}
+    public void    renderSettings(GuiGraphics ctx, Minecraft mc, int panelX, int settingsY, int panelW, int mx, int my) {}
     public boolean handleSettingsClick(int mx, int my, int panelX, int settingsY, int panelW) { return false; }
 
     public abstract void loadFromConfig(ClientConfig cfg);
     public abstract void saveToConfig(ClientConfig cfg);
 
-    protected void renderCheckbox(DrawContext ctx, TextRenderer tr, int x, int y, String lbl, boolean value, int mx, int my) {
+    protected void renderCheckbox(GuiGraphics ctx, Font tr, int x, int y, String lbl, boolean value, int mx, int my) {
         boolean hov = mx >= x && mx < x + 12 && my >= y && my < y + 12;
         ctx.fill(x, y, x + 12, y + 12, C_BORDER);
         ctx.fill(x + 1, y + 1, x + 11, y + 11, value ? C_GREEN : (hov ? 0xFF282B34 : 0xFF14161A));
-        ctx.drawText(tr, lbl, x + 16, y + 2, value ? C_WHITE : C_MID, false);
+        ctx.drawString(tr, lbl, x + 16, y + 2, value ? C_WHITE : C_MID, false);
     }
 
     protected static String fmtBalance(int n) {

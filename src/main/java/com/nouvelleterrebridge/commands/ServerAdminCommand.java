@@ -2,10 +2,10 @@ package com.nouvelleterrebridge.commands;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.nouvelleterrebridge.service.ServiceNetworkHandler;
-import net.minecraft.server.command.CommandManager;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
+import net.minecraft.commands.Commands;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.Component;
 
 /**
  * /server-admin — monitoring de l'économie, réservé aux administrateurs.
@@ -18,12 +18,12 @@ public final class ServerAdminCommand {
 
     private ServerAdminCommand() {}
 
-    public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
-        dispatcher.register(CommandManager.literal("server-admin")
-            .requires(src -> src.hasPermissionLevel(ServiceNetworkHandler.NIVEAU_ADMIN))
+    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
+        dispatcher.register(Commands.literal("server-admin")
+            .requires(src -> src.hasPermission(ServiceNetworkHandler.NIVEAU_ADMIN))
             .executes(ctx -> {
-                if (!(ctx.getSource().getEntity() instanceof ServerPlayerEntity joueur)) {
-                    ctx.getSource().sendError(Text.literal("Commande réservée aux joueurs."));
+                if (!(ctx.getSource().getEntity() instanceof ServerPlayer joueur)) {
+                    ctx.getSource().sendFailure(Component.literal("Commande réservée aux joueurs."));
                     return 0;
                 }
                 ServiceNetworkHandler.ouvrirAdmin(joueur, ctx.getSource().getServer());

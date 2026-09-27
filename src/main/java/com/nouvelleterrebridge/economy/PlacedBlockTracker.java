@@ -1,7 +1,7 @@
 package com.nouvelleterrebridge.economy;
 
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.Level;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -40,12 +40,12 @@ public final class PlacedBlockTracker {
     private PlacedBlockTracker() {}
 
     /** Clé dimension + position : deux dimensions partagent les mêmes coordonnées. */
-    private static String cle(World world, BlockPos pos) {
-        return world.getRegistryKey().getValue() + "@" + pos.asLong();
+    private static String cle(Level world, BlockPos pos) {
+        return world.dimension().location() + "@" + pos.asLong();
     }
 
     /** Marque un bloc comme posé par un joueur. */
-    public static synchronized void marquer(World world, BlockPos pos) {
+    public static synchronized void marquer(Level world, BlockPos pos) {
         marques.put(cle(world, pos), Boolean.TRUE);
     }
 
@@ -53,7 +53,7 @@ public final class PlacedBlockTracker {
      * Consomme la marque d'une position.
      * @return true si le bloc avait été posé par un joueur (donc à ne pas compter).
      */
-    public static synchronized boolean estPoseParJoueur(World world, BlockPos pos) {
+    public static synchronized boolean estPoseParJoueur(Level world, BlockPos pos) {
         return marques.remove(cle(world, pos)) != null;
     }
 }

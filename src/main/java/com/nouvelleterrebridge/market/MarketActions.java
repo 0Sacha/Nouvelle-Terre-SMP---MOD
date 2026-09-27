@@ -7,13 +7,13 @@ import com.nouvelleterrebridge.economy.ProductionShopManager;
 import com.nouvelleterrebridge.economy.ServerShopPriceManager;
 import com.nouvelleterrebridge.economy.TransactionLog;
 import com.nouvelleterrebridge.http.EventDispatcher;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.StringNbtReader;
-import net.minecraft.registry.Registries;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -35,7 +35,7 @@ public final class MarketActions {
      * enchantés et vierges.
      * @return message de résultat à afficher au joueur
      */
-    public static String buy(ServerPlayerEntity player, String itemId, int qty, String itemNBT) {
+    public static String buy(ServerPlayer player, String itemId, int qty, String itemNBT) {
         String pseudo  = player.getName().getString();
         String nomItem = FrenchItemNames.toDisplay(itemId);
         LocalEconomy eco = LocalEconomy.getInstance();
@@ -66,7 +66,7 @@ public final class MarketActions {
             return String.format("§cSolde insuffisant — §f%d💎§c requis, tu as §f%d💎§c.",
                 coutTotal, eco.getBalance(pseudo));
 
-        Item itemObj = Registries.ITEM.get(Identifier.tryParse(itemId));
+        Item itemObj = BuiltInRegistries.ITEM.get(ResourceLocation.tryParse(itemId));
         int restant = qty;
 
         for (MarketListing ann : annonces) {
@@ -79,17 +79,13 @@ public final class MarketActions {
 
             int aDistrib = pris;
             while (aDistrib > 0) {
-                int sz = Math.min(aDistrib, itemObj.getMaxCount());
+                int sz = Math.min(aDistrib, new ItemStack(itemObj).getMaxStackSize());
                 ItemStack stack = new ItemStack(itemObj, sz);
-                // Restaurer les données NBT (enchantements, etc.) si présentes
-                if (ann.itemNBT != null && !ann.itemNBT.isEmpty()) {
-                    try {
-                        stack.setNbt(StringNbtReader.parse(ann.itemNBT));
-                    } catch (Exception e) {
-                        NouvelleTerreBridge.LOGGER.warn("[MarketActions] Erreur restauration NBT : {}", e.getMessage());
-                    }
+                // Restaurer les composants (enchantements, etc.) si présents
+                if (!ItemComponentCodec.appliquer(stack, ann.itemNBT, player.getServer().registryAccess())) {
+                    NouvelleTerreBridge.LOGGER.warn("[MarketActions] Échec restauration composants (annonce #{})", ann.id);
                 }
-                if (!player.getInventory().insertStack(stack)) player.dropItem(stack, false);
+                if (!player.getInventory().add(stack)) player.drop(stack, false);
                 aDistrib -= sz;
             }
 
@@ -103,8 +99,8 @@ public final class MarketActions {
                 MarketManager.getInstance().updateQuantity(ann.id, nouvelleQte);
 
                 // Notif vendeur en ligne
-                ServerPlayerEntity vend = player.getServer().getPlayerManager().getPlayer(ann.seller);
-                if (vend != null) vend.sendMessage(Text.literal(String.format(
+                ServerPlayer vend = player.getServer().getPlayerList().getPlayerByName(ann.seller);
+                if (vend != null) vend.sendSystemMessage(Component.literal(String.format(
                     "§a💰 §f%s§a a acheté §f%dx %s§a pour §f%d💎§a !%s Solde : §f%d💎§a.",
                     pseudo, pris, nomItem, cout,
                     nouvelleQte > 0 ? " §7(§f" + nouvelleQte + " restants§7)" : " §7(stock épuisé)",
@@ -136,26 +132,27 @@ public final class MarketActions {
      * et inversement.
      * @return message d'erreur, ou null si l'annonce a été créée
      */
-    public static String sellByItemId(ServerPlayerEntity player, String itemId, int qty, int pricePerUnit, String itemNBT) {
+    public static String sellByItemId(ServerPlayer player, String itemId, int qty, int pricePerUnit, String itemNBT) {
         String pseudo  = player.getName().getString();
         String nomItem = FrenchItemNames.toDisplay(itemId);
         String wanted  = itemNBT == null ? "" : itemNBT;
 
         // Compter la quantité disponible dont le NBT correspond exactement
+        HolderLookup.Provider registries = player.getServer().registryAccess();
         int available = 0;
-        for (ItemStack stack : player.getInventory().main) {
-            if (matchesListing(stack, itemId, wanted)) available += stack.getCount();
+        for (ItemStack stack : player.getInventory().items) {
+            if (matchesListing(stack, itemId, wanted, registries)) available += stack.getCount();
         }
         if (available < qty)
             return String.format("§cTu n'as que §f%d§c exemplaire(s) de §f%s§c.", available, nomItem);
 
         // Retirer les items de l'inventaire (mêmes critères de correspondance)
         int toRemove = qty;
-        for (int i = 0; i < player.getInventory().main.size() && toRemove > 0; i++) {
-            ItemStack stack = player.getInventory().main.get(i);
-            if (matchesListing(stack, itemId, wanted)) {
+        for (int i = 0; i < player.getInventory().items.size() && toRemove > 0; i++) {
+            ItemStack stack = player.getInventory().items.get(i);
+            if (matchesListing(stack, itemId, wanted, registries)) {
                 int take = Math.min(toRemove, stack.getCount());
-                stack.decrement(take);
+                stack.shrink(take);
                 toRemove -= take;
             }
         }
@@ -163,7 +160,7 @@ public final class MarketActions {
         MarketListing annonce = MarketManager.getInstance()
             .addListing(pseudo, itemId, qty, pricePerUnit, wanted.isEmpty() ? null : wanted);
 
-        player.getServer().getPlayerManager().broadcast(Text.literal(String.format(
+        player.getServer().getPlayerList().broadcastSystemMessage(Component.literal(String.format(
             "§6[Marché] §e%s §7vend §f%dx %s §7· §f%d💎/u — §f/hdv",
             pseudo, qty, nomItem, pricePerUnit)), false);
 
@@ -176,10 +173,11 @@ public final class MarketActions {
     }
 
     /** Vrai si la pile est du bon item ET porte exactement le NBT attendu ("" = aucun NBT). */
-    private static boolean matchesListing(ItemStack stack, String itemId, String wantedNBT) {
+    private static boolean matchesListing(ItemStack stack, String itemId, String wantedNBT,
+                                          HolderLookup.Provider registries) {
         if (stack.isEmpty()) return false;
-        if (!Registries.ITEM.getId(stack.getItem()).toString().equals(itemId)) return false;
-        String actual = stack.hasNbt() ? stack.getNbt().asString() : "";
+        if (!BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().equals(itemId)) return false;
+        String actual = ItemComponentCodec.capturer(stack, registries);
         return actual.equals(wantedNBT);
     }
 
@@ -189,7 +187,7 @@ public final class MarketActions {
      * Retire l'annonce {@code listingId} et rend les items au joueur.
      * @return message de résultat
      */
-    public static String withdraw(ServerPlayerEntity player, int listingId) {
+    public static String withdraw(ServerPlayer player, int listingId) {
         Optional<MarketListing> opt = MarketManager.getInstance().getListing(listingId);
         if (opt.isEmpty())
             return "§cAnnonce §f#" + listingId + " §cintrouvable.";
@@ -200,20 +198,16 @@ public final class MarketActions {
             return "§cCette annonce appartient à §f" + ann.seller + "§c.";
 
         String nomItem = FrenchItemNames.toDisplay(ann.item);
-        Item item = Registries.ITEM.get(Identifier.tryParse(ann.item));
+        Item item = BuiltInRegistries.ITEM.get(ResourceLocation.tryParse(ann.item));
         int restant = ann.quantity;
         while (restant > 0) {
-            int sz = Math.min(restant, item.getMaxCount());
+            int sz = Math.min(restant, new ItemStack(item).getMaxStackSize());
             ItemStack stack = new ItemStack(item, sz);
-            // Restaurer les données NBT (enchantements, etc.) si présentes
-            if (ann.itemNBT != null && !ann.itemNBT.isEmpty()) {
-                try {
-                    stack.setNbt(StringNbtReader.parse(ann.itemNBT));
-                } catch (Exception e) {
-                    NouvelleTerreBridge.LOGGER.warn("[MarketActions] Erreur restauration NBT retrait : {}", e.getMessage());
-                }
+            // Restaurer les composants (enchantements, etc.) si présents
+            if (!ItemComponentCodec.appliquer(stack, ann.itemNBT, player.getServer().registryAccess())) {
+                NouvelleTerreBridge.LOGGER.warn("[MarketActions] Échec restauration composants retrait (annonce #{})", ann.id);
             }
-            if (!player.getInventory().insertStack(stack)) player.dropItem(stack, false);
+            if (!player.getInventory().add(stack)) player.drop(stack, false);
             restant -= sz;
         }
 

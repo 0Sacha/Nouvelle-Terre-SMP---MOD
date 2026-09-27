@@ -1,21 +1,20 @@
 package com.nouvelleterrebridge.client;
 
+import com.nouvelleterrebridge.network.NtNet;
+
 import com.nouvelleterrebridge.market.FrenchItemNames;
 import com.nouvelleterrebridge.network.ShopNetworking;
 import io.netty.buffer.Unpooled;
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.registry.Registries;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -28,7 +27,6 @@ import java.util.Map;
  * Onglet Acheter : catalogue du serveur (stock illimité, prix dynamique).
  * Onglet Vendre  : revente au serveur au prix de rachat.
  */
-@Environment(EnvType.CLIENT)
 public class ServerShopScreen extends Screen {
 
     /** Une ligne du catalogue serveur. */
@@ -80,7 +78,7 @@ public class ServerShopScreen extends Screen {
     // Position du bouton du bandeau, calculée au rendu et relue par mouseClicked
     private int parcheminBtnX = 0, parcheminBtnY = 0, parcheminBtnW = 0;
 
-    private TextFieldWidget searchField;
+    private EditBox searchField;
 
     private ShopEntry hovered = null;
     private ShopEntry selected = null;
@@ -94,7 +92,7 @@ public class ServerShopScreen extends Screen {
     private Map<String, Integer> sellable = new LinkedHashMap<>();
 
     public ServerShopScreen(int balance, List<ShopEntry> entries) {
-        super(Text.literal("Shop Serveur"));
+        super(Component.literal("Shop Serveur"));
         this.balance = balance;
         this.entries = new ArrayList<>(entries);
     }
@@ -102,18 +100,18 @@ public class ServerShopScreen extends Screen {
     @Override
     protected void init() {
         computeWin();
-        searchField = new TextFieldWidget(textRenderer, winX + PAD, winY + TOP_H + PAD, 200, 18,
-            Text.literal("Rechercher"));
-        searchField.setDrawsBackground(false);
-        searchField.setPlaceholder(Text.literal("Rechercher..."));
+        searchField = new EditBox(font, winX + PAD, winY + TOP_H + PAD, 200, 18,
+            Component.literal("Rechercher"));
+        searchField.setBordered(false);
+        searchField.setHint(Component.literal("Rechercher..."));
         qtyInput.setPlaceholder("Quantité...");
-        searchField.setChangedListener(s -> scroll = 0);
-        addSelectableChild(searchField);
+        searchField.setResponder(s -> scroll = 0);
+        addRenderableWidget(searchField);
         refreshSellable();
     }
 
     @Override
-    public boolean shouldPause() {
+    public boolean isPauseScreen() {
         return false;
     }
 
@@ -127,10 +125,10 @@ public class ServerShopScreen extends Screen {
     /** Recense les piles vierges de l'inventaire : le serveur ne rachète rien d'autre. */
     private void refreshSellable() {
         sellable = new LinkedHashMap<>();
-        if (client == null || client.player == null) return;
-        for (ItemStack s : client.player.getInventory().main) {
-            if (s.isEmpty() || s.hasNbt() || s.isDamaged()) continue;
-            String id = Registries.ITEM.getId(s.getItem()).toString();
+        if (this.minecraft == null || this.minecraft.player == null) return;
+        for (ItemStack s : this.minecraft.player.getInventory().items) {
+            if (s.isEmpty() || !s.getComponentsPatch().isEmpty() || s.isDamaged()) continue;
+            String id = BuiltInRegistries.ITEM.getKey(s.getItem()).toString();
             sellable.merge(id, s.getCount(), Integer::sum);
         }
     }
@@ -150,7 +148,13 @@ public class ServerShopScreen extends Screen {
     // ── Render ────────────────────────────────────────────────────────────────
 
     @Override
-    public void render(DrawContext ctx, int mx, int my, float delta) {
+    public void renderBackground(GuiGraphics ctx, int mx, int my, float delta) {
+        // No-op — cet écran dessine son propre fond ; super.render() (appelé en dernier
+        // pour les widgets vanilla) réappliquerait sinon flou + texture menu par-dessus.
+    }
+
+    @Override
+    public void render(GuiGraphics ctx, int mx, int my, float delta) {
         ctx.fill(0, 0, width, height, 0x78000000);
         computeWin();
         ctx.fill(winX + 3, winY + 3, winX + winW + 3, winY + winH + 3, 0x40000000);
@@ -168,51 +172,51 @@ public class ServerShopScreen extends Screen {
         super.render(ctx, mx, my, delta);
     }
 
-    private void renderTopBar(DrawContext ctx, int mx, int my) {
+    private void renderTopBar(GuiGraphics ctx, int mx, int my) {
         ctx.fill(winX, winY, winX + winW, winY + TOP_H, 0xE01B1D22);
         ctx.fill(winX, winY + TOP_H - 1, winX + winW, winY + TOP_H, C_BORDER);
 
-        int ty = winY + (TOP_H - textRenderer.fontHeight) / 2;
+        int ty = winY + (TOP_H - font.lineHeight) / 2;
         int tx = winX + PAD;
 
-        HubBackButton.render(ctx, textRenderer, tx, winY + (TOP_H - HubBackButton.H) / 2, mx, my);
+        HubBackButton.render(ctx, font, tx, winY + (TOP_H - HubBackButton.H) / 2, mx, my);
         tx += HubBackButton.W + 8;
 
-        ctx.drawText(textRenderer, "SHOP", tx, ty, C_GOLD, false);
-        tx += textRenderer.getWidth("SHOP") + 8;
+        ctx.drawString(font, "SHOP", tx, ty, C_GOLD, false);
+        tx += font.width("SHOP") + 8;
         ctx.fill(tx, winY + (TOP_H - 16) / 2, tx + 1, winY + (TOP_H + 16) / 2, C_BORDER);
         tx += 9;
-        ctx.drawText(textRenderer, "Serveur", tx, ty, C_MID, false);
-        tx += textRenderer.getWidth("Serveur") + 20;
+        ctx.drawString(font, "Serveur", tx, ty, C_MID, false);
+        tx += font.width("Serveur") + 20;
 
         tabsStartX = tx;
 
         for (Tab t : Tab.values()) {
             String label = t == Tab.ACHETER ? "Acheter" : "Vendre";
-            int tw = textRenderer.getWidth(label) + 18;
+            int tw = font.width(label) + 18;
             boolean active = tab == t;
             boolean hov = mx >= tx && mx <= tx + tw && my >= winY && my <= winY + TOP_H - 1;
             int tabY = winY + (TOP_H - 22) / 2;
             if (active) {
                 ctx.fill(tx, tabY, tx + tw, tabY + 22, C_GOLD);
-                ctx.drawText(textRenderer, label, tx + tw / 2 - textRenderer.getWidth(label) / 2, tabY + 7, C_BG, false);
+                ctx.drawString(font, label, tx + tw / 2 - font.width(label) / 2, tabY + 7, C_BG, false);
             } else {
-                ctx.drawCenteredTextWithShadow(textRenderer, label, tx + tw / 2, tabY + 7, hov ? C_WHITE : C_DIM);
+                ctx.drawCenteredString(font, label, tx + tw / 2, tabY + 7, hov ? C_WHITE : C_DIM);
             }
             tx += tw + 4;
         }
 
         String bal = balance + " ◆";
-        int bw = textRenderer.getWidth(bal) + 18;
+        int bw = font.width(bal) + 18;
         int bx = winX + winW - bw - PAD;
         int by = winY + (TOP_H - 20) / 2;
         ctx.fill(bx, by, bx + bw, by + 20, C_STRIP);
         ctx.fill(bx, by, bx + 2, by + 20, C_GOLD);
-        ctx.drawText(textRenderer, bal, bx + 10, by + 6, C_GOLD, false);
+        ctx.drawString(font, bal, bx + 10, by + 6, C_GOLD, false);
     }
 
     private String query() {
-        return searchField != null ? searchField.getText().trim().toLowerCase() : "";
+        return searchField != null ? searchField.getValue().trim().toLowerCase() : "";
     }
 
     private List<ShopEntry> buyList() {
@@ -244,18 +248,18 @@ public class ServerShopScreen extends Screen {
         return out;
     }
 
-    private void renderBuyGrid(DrawContext ctx, int mx, int my) {
+    private void renderBuyGrid(GuiGraphics ctx, int mx, int my) {
         renderSearch(ctx, mx, my);
         renderParcheminBanner(ctx, mx, my);
         List<ShopEntry> list = buyList();
         renderGrid(ctx, mx, my, list, true);
         if (list.isEmpty())
-            ctx.drawCenteredTextWithShadow(textRenderer, "Aucun article au catalogue.",
+            ctx.drawCenteredString(font, "Aucun article au catalogue.",
                 winX + winW / 2, winY + winH / 2 + BANNER_H / 2, C_DIM);
     }
 
     /** Bandeau épinglé : le Parchemin, offert. Toujours visible, jamais vendable. */
-    private void renderParcheminBanner(DrawContext ctx, int mx, int my) {
+    private void renderParcheminBanner(GuiGraphics ctx, int mx, int my) {
         int bx = winX + PAD;
         int by = winY + TOP_H + PAD + 26;
         int bw = winW - PAD * 2;
@@ -267,13 +271,13 @@ public class ServerShopScreen extends Screen {
 
         drawItemScaled(ctx, parcheminStack(), bx + 30, by + BANNER_H / 2, 2.0f);
 
-        ctx.drawText(textRenderer, "§fParchemin §7— votre terminal portatif",
+        ctx.drawString(font, "§fParchemin §7— votre terminal portatif",
             bx + 52, by + 10, C_WHITE, false);
-        ctx.drawText(textRenderer, "§8Accès au marché, à la banque, aux quêtes… sans commande",
+        ctx.drawString(font, "§8Accès au marché, à la banque, aux quêtes… sans commande",
             bx + 52, by + 24, C_DIM, false);
 
         String label = "Obtenir — gratuit";
-        int btnW = textRenderer.getWidth(label) + 20;
+        int btnW = font.width(label) + 20;
         parcheminBtnX = bx + bw - btnW - 10;
         parcheminBtnY = by + (BANNER_H - 20) / 2;
         boolean hov = mx >= parcheminBtnX && mx < parcheminBtnX + btnW
@@ -283,7 +287,7 @@ public class ServerShopScreen extends Screen {
         ctx.fill(parcheminBtnX, parcheminBtnY, parcheminBtnX + btnW, parcheminBtnY + 20,
                  hov ? C_GREEN : C_STRIP);
         ctx.fill(parcheminBtnX, parcheminBtnY, parcheminBtnX + btnW, parcheminBtnY + 1, C_GREEN);
-        ctx.drawCenteredTextWithShadow(textRenderer, label,
+        ctx.drawCenteredString(font, label,
             parcheminBtnX + btnW / 2, parcheminBtnY + 6, hov ? C_BG : C_GREEN);
     }
 
@@ -291,17 +295,17 @@ public class ServerShopScreen extends Screen {
         return stackOf("nouvelle-terre-bridge:parchemin");
     }
 
-    private void renderSellGrid(DrawContext ctx, int mx, int my) {
+    private void renderSellGrid(GuiGraphics ctx, int mx, int my) {
         renderSearch(ctx, mx, my);
         List<ShopEntry> list = sellList();
         renderGrid(ctx, mx, my, list, false);
         if (list.isEmpty())
-            ctx.drawCenteredTextWithShadow(textRenderer,
+            ctx.drawCenteredString(font,
                 "Rien à vendre — le serveur ne rachète que les objets vierges.",
                 winX + winW / 2, winY + winH / 2, C_DIM);
     }
 
-    private void renderSearch(DrawContext ctx, int mx, int my) {
+    private void renderSearch(GuiGraphics ctx, int mx, int my) {
         if (searchField == null) return;
         searchField.setX(winX + PAD);
         searchField.setY(winY + TOP_H + PAD);
@@ -310,7 +314,7 @@ public class ServerShopScreen extends Screen {
         searchField.render(ctx, mx, my, 0);
     }
 
-    private void renderGrid(DrawContext ctx, int mx, int my, List<ShopEntry> list, boolean buying) {
+    private void renderGrid(GuiGraphics ctx, int mx, int my, List<ShopEntry> list, boolean buying) {
         int gx = winX + PAD;
         // L'onglet Acheter réserve la place du bandeau Parchemin épinglé en haut
         int gy = winY + TOP_H + PAD + 26 + (buying ? BANNER_H + GAP : 0);
@@ -336,7 +340,7 @@ public class ServerShopScreen extends Screen {
     }
 
     /** Scrollbar : piste + pouce or opaque, position mémorisée pour le drag. */
-    private void renderScrollbar(DrawContext ctx, int trackX, int trackY, int trackH, int visUnits) {
+    private void renderScrollbar(GuiGraphics ctx, int trackX, int trackY, int trackH, int visUnits) {
         scrollTrackX = trackX; scrollTrackY = trackY; scrollTrackH = trackH;
         if (maxScroll <= 0) { scrollThumbH = 0; return; }
         int thumbH = Math.max(18, trackH * visUnits / (visUnits + maxScroll));
@@ -354,7 +358,7 @@ public class ServerShopScreen extends Screen {
     }
 
     /** Ligne du catalogue : icône à gauche, prix et bouton d'action à droite. */
-    private void renderRow(DrawContext ctx, int x, int y, int w, ShopEntry e, boolean hov, boolean buying) {
+    private void renderRow(GuiGraphics ctx, int x, int y, int w, ShopEntry e, boolean hov, boolean buying) {
         int accent = buying ? C_GOLD : C_GREEN;
         ctx.fill(x, y, x + w, y + ROW_H, hov ? C_HOVER : C_PANEL);
         if (hov) {
@@ -371,34 +375,34 @@ public class ServerShopScreen extends Screen {
         drawItemScaled(ctx, stackOf(e.itemId()), x + 21, y + ROW_H / 2, 2.0f);
 
         int tx = x + 50;
-        ctx.drawText(textRenderer, truncate(FrenchItemNames.toDisplay(e.itemId()), w - 200), tx, y + 9, C_WHITE, false);
+        ctx.drawString(font, truncate(FrenchItemNames.toDisplay(e.itemId()), w - 200), tx, y + 9, C_WHITE, false);
         String sub = buying
             ? (e.netFlow() >= 64 ? "§cPrix en hausse — très demandé"
                                  : (e.netFlow() <= -64 ? "§aPrix en baisse — abondant" : "§8Prix stable"))
             : "§8En stock : " + sellable.getOrDefault(e.itemId(), 0);
-        ctx.drawText(textRenderer, sub, tx, y + 22, C_DIM, false);
+        ctx.drawString(font, sub, tx, y + 22, C_DIM, false);
 
         int btnW = 82, btnH = 22;
         int btnX = x + w - btnW - 10;
         int btnY = y + (ROW_H - btnH) / 2;
         int prix = buying ? e.buyPrice() : e.sellPrice();
         String price = prix + " ◆";
-        ctx.drawText(textRenderer, price, btnX - textRenderer.getWidth(price) - 14,
-            y + (ROW_H - textRenderer.fontHeight) / 2, accent, false);
+        ctx.drawString(font, price, btnX - font.width(price) - 14,
+            y + (ROW_H - font.lineHeight) / 2, accent, false);
         ctx.fill(btnX, btnY, btnX + btnW, btnY + btnH, hov ? accent : C_STRIP);
         if (!hov) { ctx.fill(btnX, btnY, btnX + btnW, btnY + 1, C_BORDER); ctx.fill(btnX, btnY + btnH - 1, btnX + btnW, btnY + btnH, C_BORDER); }
-        ctx.drawCenteredTextWithShadow(textRenderer, buying ? "Acheter" : "Vendre",
+        ctx.drawCenteredString(font, buying ? "Acheter" : "Vendre",
             btnX + btnW / 2, btnY + 7, hov ? C_BG : C_MID);
     }
 
-    private void renderTooltip(DrawContext ctx, ShopEntry e, int mx, int my) {
-        List<Text> lines = new ArrayList<>();
-        lines.add(Text.literal("§f" + FrenchItemNames.toDisplay(e.itemId())));
-        lines.add(Text.literal("§7Achat : §6" + e.buyPrice() + " ◆"));
-        lines.add(Text.literal("§7Rachat : §a" + e.sellPrice() + " ◆"));
-        if (e.netFlow() >= 64)       lines.add(Text.literal("§8Très demandé — prix en hausse"));
-        else if (e.netFlow() <= -64) lines.add(Text.literal("§8Abondant — prix en baisse"));
-        ctx.drawTooltip(textRenderer, lines, mx, my);
+    private void renderTooltip(GuiGraphics ctx, ShopEntry e, int mx, int my) {
+        List<Component> lines = new ArrayList<>();
+        lines.add(Component.literal("§f" + FrenchItemNames.toDisplay(e.itemId())));
+        lines.add(Component.literal("§7Achat : §6" + e.buyPrice() + " ◆"));
+        lines.add(Component.literal("§7Rachat : §a" + e.sellPrice() + " ◆"));
+        if (e.netFlow() >= 64)       lines.add(Component.literal("§8Très demandé — prix en hausse"));
+        else if (e.netFlow() <= -64) lines.add(Component.literal("§8Abondant — prix en baisse"));
+        ctx.renderTooltip(font, lines, java.util.Optional.empty(), mx, my);
     }
 
     // ── Modal quantité ────────────────────────────────────────────────────────
@@ -412,9 +416,9 @@ public class ServerShopScreen extends Screen {
         return Math.max(1, sellable.getOrDefault(selected.itemId(), 1));
     }
 
-    private void renderModal(DrawContext ctx, int mx, int my) {
-        ctx.getMatrices().push();
-        ctx.getMatrices().translate(0, 0, 300);
+    private void renderModal(GuiGraphics ctx, int mx, int my) {
+        ctx.pose().pushPose();
+        ctx.pose().translate(0, 0, 300);
 
         int mw = MODAL_W, mh = MODAL_H;
         int ox = winX + (winW - mw) / 2;
@@ -426,45 +430,45 @@ public class ServerShopScreen extends Screen {
         ctx.fill(ox, oy, ox + mw, oy + 2, accent);
 
         String title = buying ? "Acheter" : "Vendre";
-        ctx.drawText(textRenderer, title, ox + 14, oy + 12, C_WHITE, false);
+        ctx.drawString(font, title, ox + 14, oy + 12, C_WHITE, false);
 
         drawItemScaled(ctx, stackOf(selected.itemId()), ox + 30, oy + 52, 2.0f);
-        ctx.drawText(textRenderer, truncate(FrenchItemNames.toDisplay(selected.itemId()), mw - 70),
+        ctx.drawString(font, truncate(FrenchItemNames.toDisplay(selected.itemId()), mw - 70),
             ox + 52, oy + 40, C_WHITE, false);
         int unit = buying ? selected.buyPrice() : selected.sellPrice();
-        ctx.drawText(textRenderer, unit + " ◆ / unité", ox + 52, oy + 54, C_MID, false);
+        ctx.drawString(font, unit + " ◆ / unité", ox + 52, oy + 54, C_MID, false);
 
         qtyInput.setBounds(1, modalMax());
-        qtyInput.render(ctx, textRenderer, ox + 14, oy + 76, mw - 28, mx, my);
+        qtyInput.render(ctx, font, ox + 14, oy + 76, mw - 28, mx, my);
         int qty = qtyInput.getValue();
 
-        ctx.drawText(textRenderer, "Total : §6" + (unit * qty) + " ◆", ox + 14, oy + 128, C_MID, false);
+        ctx.drawString(font, "Total : §6" + (unit * qty) + " ◆", ox + 14, oy + 128, C_MID, false);
         int after = buying ? balance - unit * qty : balance + unit * qty;
-        ctx.drawText(textRenderer, "§8Solde après : " + after + " ◆", ox + 14, oy + 142, C_DIM, false);
+        ctx.drawString(font, "§8Solde après : " + after + " ◆", ox + 14, oy + 142, C_DIM, false);
 
         int cbY = oy + mh - 34;
         drawWideButton(ctx, ox + 14, cbY, 120, "Annuler", C_RED, mx, my);
         drawWideButton(ctx, ox + mw - 134, cbY, 120, buying ? "Acheter" : "Vendre", accent, mx, my);
 
-        ctx.getMatrices().pop();
+        ctx.pose().popPose();
     }
 
-    private void drawWideButton(DrawContext ctx, int x, int y, int w, String label, int color, int mx, int my) {
+    private void drawWideButton(GuiGraphics ctx, int x, int y, int w, String label, int color, int mx, int my) {
         boolean hov = mx >= x && mx < x + w && my >= y && my < y + 22;
         ctx.fill(x, y, x + w, y + 22, hov ? color : C_STRIP);
         ctx.fill(x, y, x + w, y + 1, color);
-        ctx.drawCenteredTextWithShadow(textRenderer, label, x + w / 2, y + 7, hov ? C_BG : C_WHITE);
+        ctx.drawCenteredString(font, label, x + w / 2, y + 7, hov ? C_BG : C_WHITE);
     }
 
-    private void renderToast(DrawContext ctx) {
+    private void renderToast(GuiGraphics ctx) {
         if (toastMsg == null) return;
         if (System.currentTimeMillis() > toastEnd) { toastMsg = null; return; }
-        int tw = textRenderer.getWidth(toastMsg) + 28;
+        int tw = font.width(toastMsg) + 28;
         int tx = winX + winW - tw - 12;
         int ty = winY + winH - 38;
         ctx.fill(tx, ty, tx + tw, ty + 26, C_SURFACE);
         ctx.fill(tx, ty, tx + 3, ty + 26, toastOk ? C_GREEN : C_RED);
-        ctx.drawText(textRenderer, toastMsg, tx + 11, ty + 9, C_WHITE, false);
+        ctx.drawString(font, toastMsg, tx + 11, ty + 9, C_WHITE, false);
     }
 
     // ── Interactions ──────────────────────────────────────────────────────────
@@ -475,7 +479,7 @@ public class ServerShopScreen extends Screen {
 
         if (selected != null) { handleModalClick(x, y); return true; }
 
-        if (x < winX || x > winX + winW || y < winY || y > winY + winH) { close(); return true; }
+        if (x < winX || x > winX + winW || y < winY || y > winY + winH) { onClose(); return true; }
 
         if (y <= winY + TOP_H - 1) { handleTabClick(x, y); return true; }
 
@@ -522,7 +526,7 @@ public class ServerShopScreen extends Screen {
         int tx = tabsStartX;
         for (Tab t : Tab.values()) {
             String label = t == Tab.ACHETER ? "Acheter" : "Vendre";
-            int tw = textRenderer.getWidth(label) + 18;
+            int tw = font.width(label) + 18;
             if (mx >= tx && mx <= tx + tw) {
                 tab    = t;
                 scroll = 0;
@@ -554,7 +558,7 @@ public class ServerShopScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mx, double my, double amount) {
+    public boolean mouseScrolled(double mx, double my, double horizontalAmount, double amount) {
         if (selected != null) return true;
         scroll = Math.max(0, Math.min(scroll - (int) Math.signum(amount), maxScroll));
         return true;
@@ -574,36 +578,36 @@ public class ServerShopScreen extends Screen {
     }
 
     private void send(int action, String itemId, int quantity) {
-        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
         buf.writeInt(action);
-        buf.writeString(itemId);
+        buf.writeUtf(itemId);
         buf.writeInt(quantity);
-        ClientPlayNetworking.send(ShopNetworking.SHOP_ACTION, buf);
+        NtNet.versServeur(ShopNetworking.SHOP_ACTION, buf);
     }
 
     // ── Utilitaires ───────────────────────────────────────────────────────────
 
     private ItemStack stackOf(String itemId) {
         try {
-            Item item = Registries.ITEM.get(Identifier.tryParse(itemId));
+            Item item = BuiltInRegistries.ITEM.get(ResourceLocation.tryParse(itemId));
             return item == Items.AIR ? new ItemStack(Items.BARRIER) : new ItemStack(item);
         } catch (Exception e) {
             return new ItemStack(Items.BARRIER);
         }
     }
 
-    private void drawItemScaled(DrawContext ctx, ItemStack stack, int cx, int cy, float scale) {
-        ctx.getMatrices().push();
-        ctx.getMatrices().translate(cx - 8 * scale, cy - 8 * scale, 0);
-        ctx.getMatrices().scale(scale, scale, 1.0f);
-        ctx.drawItem(stack, 0, 0);
-        ctx.getMatrices().pop();
+    private void drawItemScaled(GuiGraphics ctx, ItemStack stack, int cx, int cy, float scale) {
+        ctx.pose().pushPose();
+        ctx.pose().translate(cx - 8 * scale, cy - 8 * scale, 0);
+        ctx.pose().scale(scale, scale, 1.0f);
+        ctx.renderItem(stack, 0, 0);
+        ctx.pose().popPose();
     }
 
     private String truncate(String s, int maxW) {
-        if (textRenderer.getWidth(s) <= maxW) return s;
+        if (font.width(s) <= maxW) return s;
         StringBuilder sb = new StringBuilder(s);
-        while (sb.length() > 1 && textRenderer.getWidth(sb + "…") > maxW) sb.deleteCharAt(sb.length() - 1);
+        while (sb.length() > 1 && font.width(sb + "…") > maxW) sb.deleteCharAt(sb.length() - 1);
         return sb + "…";
     }
 }

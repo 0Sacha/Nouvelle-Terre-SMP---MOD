@@ -1,0 +1,36 @@
+# ⚠ modId ≠ namespace des ressources.
+#
+# NeoForge impose un modId sans tiret ([a-z0-9_]), d'où `nouvelle_terre_bridge`.
+# Mais le namespace des items, des canaux réseau et des assets reste
+# `nouvelle-terre-bridge` (voir NouvelleTerreBridge.MOD_ID) : le changer ferait
+# disparaître de l'inventaire des joueurs tous les Shards et Parchemins déjà en
+# circulation, exactement comme le renommage évité en 1.4.0 pour `shard`.
+# Les deux identifiants sont indépendants — ne pas « harmoniser ».
+
+modLoader="javafml"
+loaderVersion="[4,)"
+license="MIT"
+
+[[mods]]
+modId="nouvelle_terre_bridge"
+version="${version}"
+displayName="NouvelleTerreBridge"
+description='''Pont temps réel entre le serveur Minecraft Nouvelle Terre et son bot Discord.'''
+authors="Nouvelle Terre Staff"
+
+[[mixins]]
+config="nouvelle-terre-bridge.mixins.json"
+
+[[dependencies.nouvelle_terre_bridge]]
+modId="neoforge"
+type="required"
+versionRange="[21.1.0,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.nouvelle_terre_bridge]]
+modId="minecraft"
+type="required"
+versionRange="[1.21.1,1.22)"
+ordering="NONE"
+side="BOTH"

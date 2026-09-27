@@ -4,7 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
-import net.fabricmc.loader.api.FabricLoader;
+import net.neoforged.fml.loading.FMLPaths;
 
 import java.io.*;
 import java.lang.reflect.Type;
@@ -24,7 +24,7 @@ public class DailyBonusTracker {
     public static final int BONUS = 25;
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final Path FILE = FabricLoader.getInstance().getGameDir().resolve("nouvelle-terre-bonus.json");
+    private static final Path FILE = FMLPaths.GAMEDIR.get().resolve("nouvelle-terre-bonus.json");
     private static Map<String, String> lastClaim = new HashMap<>();
 
     public static synchronized void load() {

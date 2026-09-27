@@ -1,12 +1,12 @@
 package com.nouvelleterrebridge.network;
 
-import net.minecraft.util.Identifier;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 
 public final class ProductionNetworking {
 
-    public static final Identifier PROD_OPEN   = new Identifier("nouvelle-terre-bridge", "prod_open");
-    public static final Identifier PROD_ACTION = new Identifier("nouvelle-terre-bridge", "prod_action");
-    public static final Identifier PROD_RESULT = new Identifier("nouvelle-terre-bridge", "prod_result");
+    public static final CustomPacketPayload.Type<NtPayload> PROD_OPEN = NtNet.canal("prod_open");
+    public static final CustomPacketPayload.Type<NtPayload> PROD_ACTION = NtNet.canal("prod_action");
+    public static final CustomPacketPayload.Type<NtPayload> PROD_RESULT = NtNet.canal("prod_result");
 
     public static final int ACTION_RESET     = 0;  // op : remet compteurs et seuils à zéro
     public static final int ACTION_RECHECK   = 1;  // op : renvoie un état frais (les seuils sont lus en direct)

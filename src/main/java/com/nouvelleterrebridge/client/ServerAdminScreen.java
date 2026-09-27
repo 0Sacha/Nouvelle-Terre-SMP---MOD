@@ -1,14 +1,13 @@
 package com.nouvelleterrebridge.client;
 
+import com.nouvelleterrebridge.network.NtNet;
+
 import com.nouvelleterrebridge.network.ServiceNetworking;
 import io.netty.buffer.Unpooled;
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.text.Text;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -21,7 +20,6 @@ import java.util.List;
  * masse monétaire et l'inflation qu'elle provoque sur les prix du shop, et les
  * litiges en attente d'arbitrage.
  */
-@Environment(EnvType.CLIENT)
 public class ServerAdminScreen extends Screen {
 
     public record LitigeData(int id, String titre, String client, String prestataire,
@@ -61,7 +59,7 @@ public class ServerAdminScreen extends Screen {
                              int joueursConnus, int medianJoueurs, int enLigne,
                              int annoncesHdv, int annoncesMarche, double inflation,
                              List<LitigeData> litiges) {
-        super(Text.literal("Administration serveur"));
+        super(Component.literal("Administration serveur"));
         maj(soldeServeur, soldeSequestre, masseMonetaire, joueursConnus, medianJoueurs,
             enLigne, annoncesHdv, annoncesMarche, inflation, litiges);
     }
@@ -90,10 +88,16 @@ public class ServerAdminScreen extends Screen {
         py = (height - ph) / 2;
     }
 
-    @Override public boolean shouldPause() { return false; }
+    @Override public boolean isPauseScreen() { return false; }
 
     @Override
-    public void render(DrawContext ctx, int mx, int my, float delta) {
+    public void renderBackground(GuiGraphics ctx, int mx, int my, float delta) {
+        // No-op — cet écran dessine son propre fond ; super.render() (appelé en dernier
+        // pour les widgets vanilla) réappliquerait sinon flou + texture menu par-dessus.
+    }
+
+    @Override
+    public void render(GuiGraphics ctx, int mx, int my, float delta) {
         ctx.fill(0, 0, width, height, 0x78000000);
         ctx.fill(px, py, px + pw, py + ph, C_BG);
         ctx.fill(px, py, px + pw, py + 1, C_BORDER);
@@ -103,8 +107,8 @@ public class ServerAdminScreen extends Screen {
 
         ctx.fill(px, py, px + pw, py + TOP_H, C_PANEL);
         ctx.fill(px, py + TOP_H, px + pw, py + TOP_H + 1, C_BORDER);
-        ctx.drawText(textRenderer, "⚙  Administration serveur", px + PAD, py + 9, C_RED, false);
-        ctx.drawText(textRenderer, "§8Retenu = prestations LeBonCube commandées, pas encore validées",
+        ctx.drawString(font, "⚙  Administration serveur", px + PAD, py + 9, C_RED, false);
+        ctx.drawString(font, "§8Retenu = prestations LeBonCube commandées, pas encore validées",
             px + PAD, py + 23, C_DIM, false);
 
         int cy = py + TOP_H + PAD;
@@ -142,10 +146,10 @@ public class ServerAdminScreen extends Screen {
         int listH = ph - (cy - py) - PAD;
         ctx.fill(px + PAD, cy, px + pw - PAD, cy + listH, C_PANEL);
         ctx.fill(px + PAD, cy, px + PAD + 3, cy + listH, litiges.isEmpty() ? C_BORDER : C_RED);
-        ctx.drawText(textRenderer, "LITIGES — ARBITRAGE", px + PAD + 12, cy + 8, C_DIM, false);
+        ctx.drawString(font, "LITIGES — ARBITRAGE", px + PAD + 12, cy + 8, C_DIM, false);
 
         if (litiges.isEmpty()) {
-            ctx.drawCenteredTextWithShadow(textRenderer, "Aucun litige en cours.",
+            ctx.drawCenteredString(font, "Aucun litige en cours.",
                 px + pw / 2, cy + listH / 2 - 4, C_DIM);
             super.render(ctx, mx, my, delta);
             return;
@@ -161,11 +165,11 @@ public class ServerAdminScreen extends Screen {
             LitigeData l = litiges.get(i);
             int ry = listY + (i - scroll) * rowH;
             ctx.fill(px + PAD + 6, ry, px + pw - PAD - 6, ry + rowH - 3, C_SURFACE);
-            ctx.drawText(textRenderer, l.titre(), px + PAD + 14, ry + 6, C_WHITE, false);
-            ctx.drawText(textRenderer, "§7" + l.client() + " §8→ §7" + l.prestataire()
+            ctx.drawString(font, l.titre(), px + PAD + 14, ry + 6, C_WHITE, false);
+            ctx.drawString(font, "§7" + l.client() + " §8→ §7" + l.prestataire()
                 + "  §8·  §6" + l.prix() + " ◆ §8· séquestre §6" + l.sequestre() + " ◆",
                 px + PAD + 14, ry + 19, C_MID, false);
-            ctx.drawText(textRenderer, "§cAnnulation demandée par " + l.demandeur(),
+            ctx.drawString(font, "§cAnnulation demandée par " + l.demandeur(),
                 px + PAD + 14, ry + 31, C_RED, false);
 
             int droite = px + pw - PAD - 14;
@@ -179,23 +183,23 @@ public class ServerAdminScreen extends Screen {
         super.render(ctx, mx, my, delta);
     }
 
-    private void carte(DrawContext ctx, int x, int y, int w, int h,
+    private void carte(GuiGraphics ctx, int x, int y, int w, int h,
                        int accent, String titre, String valeur) {
         ctx.fill(x, y, x + w, y + h, C_PANEL);
         ctx.fill(x, y, x + 3, y + h, accent);
         ctx.fill(x, y + h - 1, x + w, y + h, C_BORDER);
-        ctx.drawText(textRenderer, titre, x + 10, y + 10, C_DIM, false);
-        ctx.drawText(textRenderer, valeur, x + 10, y + 30, accent, false);
+        ctx.drawString(font, titre, x + 10, y + 10, C_DIM, false);
+        ctx.drawString(font, valeur, x + 10, y + 30, accent, false);
     }
 
-    private int bouton(DrawContext ctx, String label, int droite, int y, int mx, int my,
+    private int bouton(GuiGraphics ctx, String label, int droite, int y, int mx, int my,
                        int couleur, int action, int id) {
-        int w = textRenderer.getWidth(label) + 14;
+        int w = font.width(label) + 14;
         int x = droite - w;
         boolean hov = mx >= x && mx < x + w && my >= y && my < y + 18;
         ctx.fill(x, y, x + w, y + 18, hov ? couleur : C_SURFACE);
         ctx.fill(x, y, x + w, y + 1, couleur);
-        ctx.drawCenteredTextWithShadow(textRenderer, label, x + w / 2, y + 5, hov ? C_WHITE : C_MID);
+        ctx.drawCenteredString(font, label, x + w / 2, y + 5, hov ? C_WHITE : C_MID);
         bounds.add(new int[]{x, y, w, 18, action, id});
         return x;
     }
@@ -208,13 +212,13 @@ public class ServerAdminScreen extends Screen {
     @Override
     public boolean mouseClicked(double mx0, double my0, int btn) {
         int x = (int) mx0, y = (int) my0;
-        if (x < px || x > px + pw || y < py || y > py + ph) { close(); return true; }
+        if (x < px || x > px + pw || y < py || y > py + ph) { onClose(); return true; }
         for (int[] b : bounds) {
             if (x >= b[0] && x < b[0] + b[2] && y >= b[1] && y < b[1] + b[3]) {
-                PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+                FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
                 buf.writeInt(b[4]);
                 buf.writeInt(b[5]);
-                ClientPlayNetworking.send(ServiceNetworking.ADMIN_ACTION, buf);
+                NtNet.versServeur(ServiceNetworking.ADMIN_ACTION, buf);
                 return true;
             }
         }
@@ -222,7 +226,7 @@ public class ServerAdminScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mx, double my, double amount) {
+    public boolean mouseScrolled(double mx, double my, double horizontalAmount, double amount) {
         scroll = Math.max(0, scroll - (int) Math.signum(amount));
         return true;
     }

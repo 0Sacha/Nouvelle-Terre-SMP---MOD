@@ -2,12 +2,10 @@ package com.nouvelleterrebridge.client;
 
 import com.nouvelleterrebridge.NouvelleTerreBridge;
 import com.nouvelleterrebridge.service.ServiceImages;
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.client.texture.NativeImageBackedTexture;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import com.mojang.blaze3d.platform.NativeImage;
+import net.minecraft.client.renderer.texture.DynamicTexture;
+import net.minecraft.resources.ResourceLocation;
 
 import java.io.InputStream;
 import java.net.HttpURLConnection;
@@ -28,7 +26,6 @@ import java.util.concurrent.Executors;
  * publication, mais le client ne doit pas dépendre de cette seule vérification
  * pour décider quoi télécharger.
  */
-@Environment(EnvType.CLIENT)
 public final class RemoteImage {
 
     /** Plafond de téléchargement — une photo de téléphone dépasse souvent 2 Mo. */
@@ -38,7 +35,7 @@ public final class RemoteImage {
 
     private enum Etat { EN_COURS, PRETE, ECHEC }
 
-    private record Entree(Etat etat, Identifier texture, int largeur, int hauteur) {}
+    private record Entree(Etat etat, ResourceLocation texture, int largeur, int hauteur) {}
 
     private static final Map<String, Entree> CACHE = new ConcurrentHashMap<>();
     private static final ExecutorService POOL = Executors.newFixedThreadPool(2, r -> {
@@ -50,7 +47,7 @@ public final class RemoteImage {
     private RemoteImage() {}
 
     /** Identifiant de texture prêt à dessiner, ou null (chargement ou échec). */
-    public static Identifier texture(String url) {
+    public static ResourceLocation texture(String url) {
         Entree e = demander(url);
         return e != null && e.etat() == Etat.PRETE ? e.texture() : null;
     }
@@ -123,12 +120,11 @@ public final class RemoteImage {
             // mémoire vidéo raisonnable — 2160×2880 en RGBA pèse ~25 Mo par annonce.
             NativeImage image = reduire(NativeImage.read(new java.io.ByteArrayInputStream(donnees)));
 
-            MinecraftClient.getInstance().execute(() -> {
+            Minecraft.getInstance().execute(() -> {
                 try {
-                    Identifier id = new Identifier("nouvelle-terre-bridge",
-                        "leboncube/" + Integer.toHexString(url.hashCode()));
-                    MinecraftClient.getInstance().getTextureManager()
-                        .registerTexture(id, new NativeImageBackedTexture(image));
+                    ResourceLocation id = ResourceLocation.fromNamespaceAndPath("nouvelle-terre-bridge", "leboncube/" + Integer.toHexString(url.hashCode()));
+                    Minecraft.getInstance().getTextureManager()
+                        .register(id, new DynamicTexture(image));
                     CACHE.put(url, new Entree(Etat.PRETE, id, image.getWidth(), image.getHeight()));
                 } catch (Exception e) {
                     image.close();

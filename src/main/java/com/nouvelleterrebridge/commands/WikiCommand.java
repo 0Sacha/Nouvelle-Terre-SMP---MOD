@@ -1,25 +1,25 @@
 package com.nouvelleterrebridge.commands;
 
+import com.nouvelleterrebridge.network.NtNet;
+
 import com.mojang.brigadier.CommandDispatcher;
 import com.nouvelleterrebridge.network.WikiNetworking;
-import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.server.command.CommandManager;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
+import net.minecraft.commands.Commands;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.Component;
 
 public class WikiCommand {
 
-    public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
+    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(
-            CommandManager.literal("wiki")
+            Commands.literal("wiki")
                 .executes(ctx -> {
-                    ServerCommandSource src = ctx.getSource();
-                    if (!(src.getEntity() instanceof ServerPlayerEntity player)) {
-                        src.sendError(Text.literal("Commande réservée aux joueurs.")); return 0;
+                    CommandSourceStack src = ctx.getSource();
+                    if (!(src.getEntity() instanceof ServerPlayer player)) {
+                        src.sendFailure(Component.literal("Commande réservée aux joueurs.")); return 0;
                     }
-                    ServerPlayNetworking.send(player, WikiNetworking.WIKI_OPEN, PacketByteBufs.empty());
+                    NtNet.versClient(player, WikiNetworking.WIKI_OPEN, com.nouvelleterrebridge.network.NtNet.buffer());
                     return 1;
                 })
         );

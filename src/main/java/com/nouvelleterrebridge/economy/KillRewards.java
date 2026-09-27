@@ -1,11 +1,12 @@
 package com.nouvelleterrebridge.economy;
 
-import net.fabricmc.fabric.api.entity.event.v1.ServerEntityCombatEvents;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.boss.dragon.EnderDragonEntity;
-import net.minecraft.entity.boss.WitherEntity;
-import net.minecraft.entity.mob.*;
-import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
+import net.minecraft.world.entity.boss.wither.WitherBoss;
+import net.minecraft.world.entity.monster.*;
+import net.minecraft.server.level.ServerPlayer;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -14,44 +15,44 @@ public class KillRewards {
 
     private static final Map<Class<?>, Integer> RECOMPENSES = new HashMap<>();
     static {
-        RECOMPENSES.put(ZombieEntity.class, 1);
-        RECOMPENSES.put(SkeletonEntity.class, 1);
-        RECOMPENSES.put(SpiderEntity.class, 1);
-        RECOMPENSES.put(CaveSpiderEntity.class, 1);
-        RECOMPENSES.put(SlimeEntity.class, 1);
-        RECOMPENSES.put(DrownedEntity.class, 1);
-        RECOMPENSES.put(HuskEntity.class, 1);
-        RECOMPENSES.put(StrayEntity.class, 1);
-        RECOMPENSES.put(CreeperEntity.class, 2);
-        RECOMPENSES.put(WitchEntity.class, 2);
-        RECOMPENSES.put(PhantomEntity.class, 2);
-        RECOMPENSES.put(PillagerEntity.class, 2);
-        RECOMPENSES.put(VindicatorEntity.class, 3);
-        RECOMPENSES.put(EvokerEntity.class, 5);
-        RECOMPENSES.put(BlazeEntity.class, 3);
-        RECOMPENSES.put(GhastEntity.class, 3);
-        RECOMPENSES.put(EndermanEntity.class, 3);
-        RECOMPENSES.put(WitherSkeletonEntity.class, 4);
-        RECOMPENSES.put(WitherEntity.class, 100);
-        RECOMPENSES.put(EnderDragonEntity.class, 200);
+        RECOMPENSES.put(Zombie.class, 1);
+        RECOMPENSES.put(Skeleton.class, 1);
+        RECOMPENSES.put(Spider.class, 1);
+        RECOMPENSES.put(CaveSpider.class, 1);
+        RECOMPENSES.put(Slime.class, 1);
+        RECOMPENSES.put(Drowned.class, 1);
+        RECOMPENSES.put(Husk.class, 1);
+        RECOMPENSES.put(Stray.class, 1);
+        RECOMPENSES.put(Creeper.class, 2);
+        RECOMPENSES.put(Witch.class, 2);
+        RECOMPENSES.put(Phantom.class, 2);
+        RECOMPENSES.put(Pillager.class, 2);
+        RECOMPENSES.put(Vindicator.class, 3);
+        RECOMPENSES.put(Evoker.class, 5);
+        RECOMPENSES.put(Blaze.class, 3);
+        RECOMPENSES.put(Ghast.class, 3);
+        RECOMPENSES.put(EnderMan.class, 3);
+        RECOMPENSES.put(WitherSkeleton.class, 4);
+        RECOMPENSES.put(WitherBoss.class, 100);
+        RECOMPENSES.put(EnderDragon.class, 200);
     }
 
     public static void register() {
-        ServerEntityCombatEvents.AFTER_KILLED_OTHER_ENTITY.register((world, entity, killedEntity) -> {
-            if (!(entity instanceof ServerPlayerEntity joueur)) return;
-            if (!(killedEntity instanceof LivingEntity)) return;
+        NeoForge.EVENT_BUS.addListener((LivingDeathEvent event) -> {
+            if (!(event.getSource().getEntity() instanceof ServerPlayer joueur)) return;
+            LivingEntity killedEntity = event.getEntity();
 
             int shards = getRecompense(killedEntity.getClass());
             if (shards <= 0) return;
 
             String pseudo = joueur.getName().getString();
             LocalEconomy.getInstance().addShards(pseudo, shards,
-                "Kill : " + killedEntity.getType().getName().getString());
+                "Kill : " + killedEntity.getType().getDescription().getString());
             com.nouvelleterrebridge.NouvelleTerreBridge.sendBalanceToPlayer(joueur);
 
-            joueur.sendMessage(net.minecraft.text.Text.literal(
+            joueur.sendSystemMessage(net.minecraft.network.chat.Component.literal(
                 String.format("§6+%d💎§e pour avoir tué §f%s§e !",
-                    shards, killedEntity.getType().getName().getString())
+                    shards, killedEntity.getType().getDescription().getString())
             ));
         });
     }

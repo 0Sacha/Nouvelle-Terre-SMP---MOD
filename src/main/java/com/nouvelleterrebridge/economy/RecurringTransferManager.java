@@ -1,13 +1,14 @@
 package com.nouvelleterrebridge.economy;
 
+import net.neoforged.fml.loading.FMLPaths;
 import com.google.gson.*;
 import com.google.gson.reflect.TypeToken;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.fabricmc.loader.api.FabricLoader;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.Component;
 
 import java.io.*;
 import java.lang.reflect.Type;
@@ -26,7 +27,7 @@ public class RecurringTransferManager {
     private int nextId = 1;
 
     private RecurringTransferManager() {
-        fichier = FabricLoader.getInstance().getGameDir().resolve("nouvelle-terre-virements.json");
+        fichier = FMLPaths.GAMEDIR.get().resolve("nouvelle-terre-virements.json");
         charger();
     }
 
@@ -37,7 +38,7 @@ public class RecurringTransferManager {
 
     public static void register() {
         getInstance(); // force init
-        ServerTickEvents.END_SERVER_TICK.register(server -> getInstance().tick(server));
+        NeoForge.EVENT_BUS.addListener((ServerTickEvent.Post event) -> getInstance().tick(event.getServer()));
     }
 
     // ── API ───────────────────────────────────────────────────────────────────
@@ -70,17 +71,17 @@ public class RecurringTransferManager {
                 rt.ticksSince = 0;
                 boolean ok = LocalEconomy.getInstance().transfer(rt.from, rt.to, rt.amount);
                 if (ok) {
-                    ServerPlayerEntity dest = server.getPlayerManager().getPlayer(rt.to);
+                    ServerPlayer dest = server.getPlayerList().getPlayerByName(rt.to);
                     if (dest != null) {
-                        dest.sendMessage(Text.literal(
+                        dest.sendSystemMessage(Component.literal(
                             "§a[Nouvelle Terre] §fVirement de §f" + rt.from + " §a: +§f" + rt.amount + " ◆"));
                         com.nouvelleterrebridge.NouvelleTerreBridge.sendBalanceToPlayer(dest);
                     }
-                    ServerPlayerEntity src = server.getPlayerManager().getPlayer(rt.from);
+                    ServerPlayer src = server.getPlayerList().getPlayerByName(rt.from);
                     if (src != null) com.nouvelleterrebridge.NouvelleTerreBridge.sendBalanceToPlayer(src);
                 } else {
-                    ServerPlayerEntity src = server.getPlayerManager().getPlayer(rt.from);
-                    if (src != null) src.sendMessage(Text.literal(
+                    ServerPlayer src = server.getPlayerList().getPlayerByName(rt.from);
+                    if (src != null) src.sendSystemMessage(Component.literal(
                         "§c[Nouvelle Terre] Virement récurrent vers §f" + rt.to + " §céché : solde insuffisant."));
                 }
             }

@@ -1,7 +1,7 @@
 package com.nouvelleterrebridge.network;
 
-import net.minecraft.util.Identifier;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 
 public class WikiNetworking {
-    public static final Identifier WIKI_OPEN = new Identifier("nouvelle-terre-bridge", "wiki_open");
+    public static final CustomPacketPayload.Type<NtPayload> WIKI_OPEN = NtNet.canal("wiki_open");
 }

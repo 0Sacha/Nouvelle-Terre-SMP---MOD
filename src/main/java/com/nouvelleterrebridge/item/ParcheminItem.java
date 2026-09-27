@@ -1,17 +1,17 @@
 package com.nouvelleterrebridge.item;
 
+import com.nouvelleterrebridge.network.NtNet;
+
 import com.nouvelleterrebridge.network.HubNetworking;
-import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.client.item.TooltipContext;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
-import net.minecraft.util.Hand;
-import net.minecraft.util.TypedActionResult;
-import net.minecraft.world.World;
+import net.minecraft.world.item.TooltipFlag;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResultHolder;
+import net.minecraft.world.level.Level;
 
 import java.util.List;
 
@@ -25,22 +25,22 @@ import java.util.List;
  */
 public class ParcheminItem extends Item {
 
-    public ParcheminItem(Settings settings) {
+    public ParcheminItem(Properties settings) {
         super(settings);
     }
 
     @Override
-    public TypedActionResult<ItemStack> use(World world, PlayerEntity user, Hand hand) {
-        if (!world.isClient && user instanceof ServerPlayerEntity sp) {
-            ServerPlayNetworking.send(sp, HubNetworking.HUB_OPEN, PacketByteBufs.empty());
+    public InteractionResultHolder<ItemStack> use(Level world, Player user, InteractionHand hand) {
+        if (!world.isClientSide && user instanceof ServerPlayer sp) {
+            NtNet.versClient(sp, HubNetworking.HUB_OPEN, NtNet.buffer());
         }
-        return TypedActionResult.success(user.getStackInHand(hand), world.isClient());
+        return InteractionResultHolder.sidedSuccess(user.getItemInHand(hand), world.isClientSide);
     }
 
     @Override
-    public void appendTooltip(ItemStack stack, World world, List<Text> tooltip, TooltipContext context) {
-        tooltip.add(Text.literal("§7Terminal portatif de Nouvelle Terre"));
-        tooltip.add(Text.literal("§6Clic droit §7pour ouvrir le menu"));
-        tooltip.add(Text.literal("§8Rendu automatiquement s'il vient à manquer"));
+    public void appendHoverText(ItemStack stack, Item.TooltipContext context, List<Component> tooltip, TooltipFlag type) {
+        tooltip.add(Component.literal("§7Terminal portatif de Nouvelle Terre"));
+        tooltip.add(Component.literal("§6Clic droit §7pour ouvrir le menu"));
+        tooltip.add(Component.literal("§8Rendu automatiquement s'il vient à manquer"));
     }
 }

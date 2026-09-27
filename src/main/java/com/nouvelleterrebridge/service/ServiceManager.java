@@ -6,7 +6,7 @@ import com.nouvelleterrebridge.NouvelleTerreBridge;
 import com.nouvelleterrebridge.economy.LocalEconomy;
 import com.nouvelleterrebridge.economy.ServerShopActions;
 import com.nouvelleterrebridge.economy.TransactionLog;
-import net.fabricmc.loader.api.FabricLoader;
+import net.neoforged.fml.loading.FMLPaths;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -97,7 +97,7 @@ public final class ServiceManager {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Path FICHIER =
-        FabricLoader.getInstance().getGameDir().resolve("leboncube.json");
+        FMLPaths.GAMEDIR.get().resolve("leboncube.json");
 
     private static ServiceManager instance;
 

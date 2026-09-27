@@ -1,27 +1,27 @@
 package com.nouvelleterrebridge.commands;
 
+import com.nouvelleterrebridge.network.NtNet;
+
 import com.mojang.brigadier.CommandDispatcher;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
 import com.nouvelleterrebridge.network.ShopNetworking;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.server.command.CommandManager;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
+import net.minecraft.commands.Commands;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.Component;
 
 /** /shop : ouvre le GUI du Shop Serveur (achat et revente). */
 public class ShopCommand {
 
-    public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
-        dispatcher.register(CommandManager.literal("shop")
+    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
+        dispatcher.register(Commands.literal("shop")
             .executes(ctx -> {
-                ServerCommandSource src = ctx.getSource();
-                if (!(src.getEntity() instanceof ServerPlayerEntity player)) {
-                    src.sendError(Text.literal("Commande réservée aux joueurs."));
+                CommandSourceStack src = ctx.getSource();
+                if (!(src.getEntity() instanceof ServerPlayer player)) {
+                    src.sendFailure(Component.literal("Commande réservée aux joueurs."));
                     return 0;
                 }
-                ServerPlayNetworking.send(player, ShopNetworking.SHOP_OPEN,
-                    NouvelleTerreBridge.buildShopOpenPacket(player));
+                NtNet.versClient(player, ShopNetworking.SHOP_OPEN, NouvelleTerreBridge.buildShopOpenPacket(player));
                 return 1;
             }));
     }

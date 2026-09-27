@@ -1,26 +1,26 @@
 package com.nouvelleterrebridge.commands;
 
+import com.nouvelleterrebridge.network.NtNet;
+
 import com.mojang.brigadier.CommandDispatcher;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
 import com.nouvelleterrebridge.network.HdvNetworking;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.server.command.CommandManager;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
+import net.minecraft.commands.Commands;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.Component;
 
 public class HdvCommand {
 
-    public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
+    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(
-            CommandManager.literal("hdv")
+            Commands.literal("hdv")
                 .executes(ctx -> {
-                    if (!(ctx.getSource().getEntity() instanceof ServerPlayerEntity player)) {
-                        ctx.getSource().sendError(Text.literal("Commande réservée aux joueurs."));
+                    if (!(ctx.getSource().getEntity() instanceof ServerPlayer player)) {
+                        ctx.getSource().sendFailure(Component.literal("Commande réservée aux joueurs."));
                         return 0;
                     }
-                    ServerPlayNetworking.send(player, HdvNetworking.HDV_OPEN,
-                        NouvelleTerreBridge.buildHdvOpenPacket(player, ctx.getSource().getServer()));
+                    NtNet.versClient(player, HdvNetworking.HDV_OPEN, NouvelleTerreBridge.buildHdvOpenPacket(player, ctx.getSource().getServer()));
                     return 1;
                 })
         );

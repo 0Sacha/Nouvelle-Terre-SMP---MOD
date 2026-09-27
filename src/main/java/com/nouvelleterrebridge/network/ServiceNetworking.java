@@ -1,16 +1,16 @@
 package com.nouvelleterrebridge.network;
 
-import net.minecraft.util.Identifier;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 
 /** Canaux du LeBonCube (/leboncube) et du monitoring serveur (/server-admin). */
 public final class ServiceNetworking {
 
-    public static final Identifier MARCHE_OPEN   = new Identifier("nouvelle-terre-bridge", "marche_open");
-    public static final Identifier MARCHE_ACTION = new Identifier("nouvelle-terre-bridge", "marche_action");
-    public static final Identifier MARCHE_RESULT = new Identifier("nouvelle-terre-bridge", "marche_result");
+    public static final CustomPacketPayload.Type<NtPayload> MARCHE_OPEN = NtNet.canal("marche_open");
+    public static final CustomPacketPayload.Type<NtPayload> MARCHE_ACTION = NtNet.canal("marche_action");
+    public static final CustomPacketPayload.Type<NtPayload> MARCHE_RESULT = NtNet.canal("marche_result");
 
-    public static final Identifier ADMIN_OPEN    = new Identifier("nouvelle-terre-bridge", "admin_open");
-    public static final Identifier ADMIN_ACTION  = new Identifier("nouvelle-terre-bridge", "admin_action");
+    public static final CustomPacketPayload.Type<NtPayload> ADMIN_OPEN = NtNet.canal("admin_open");
+    public static final CustomPacketPayload.Type<NtPayload> ADMIN_ACTION = NtNet.canal("admin_action");
 
     // ── Actions LeBonCube ──
     public static final int ACTION_PUBLIER      = 0;  // titre, desc, image, prix, contact, categorie

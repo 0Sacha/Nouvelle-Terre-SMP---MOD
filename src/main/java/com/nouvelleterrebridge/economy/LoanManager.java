@@ -1,13 +1,14 @@
 package com.nouvelleterrebridge.economy;
 
+import net.neoforged.fml.loading.FMLPaths;
 import com.google.gson.*;
 import com.google.gson.reflect.TypeToken;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.fabricmc.loader.api.FabricLoader;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.Component;
 
 import java.io.*;
 import java.lang.reflect.Type;
@@ -41,7 +42,7 @@ public class LoanManager {
     private int tickCount = 0;
 
     private LoanManager() {
-        fichier = FabricLoader.getInstance().getGameDir().resolve("nouvelle-terre-credits.json");
+        fichier = FMLPaths.GAMEDIR.get().resolve("nouvelle-terre-credits.json");
         charger();
     }
 
@@ -52,7 +53,7 @@ public class LoanManager {
 
     public static void register() {
         getInstance();
-        ServerTickEvents.END_SERVER_TICK.register(server -> getInstance().tick(server));
+        NeoForge.EVENT_BUS.addListener((ServerTickEvent.Post event) -> getInstance().tick(event.getServer()));
     }
 
     // ── Demandes de crédit ───────────────────────────────────────────────────
@@ -198,12 +199,12 @@ public class LoanManager {
     }
 
     private void notifyPenalty(MinecraftServer server, Loan loan, int penalty) {
-        ServerPlayerEntity b = server.getPlayerManager().getPlayer(loan.borrower);
-        if (b != null) b.sendMessage(Text.literal(
+        ServerPlayer b = server.getPlayerList().getPlayerByName(loan.borrower);
+        if (b != null) b.sendSystemMessage(Component.literal(
             "§c[Nouvelle Terre] Credit non rembourse ! Penalite de §f" + penalty
             + " ◆§c appliquee. Total: §f" + loan.totalPenalty + " ◆"));
-        ServerPlayerEntity l = server.getPlayerManager().getPlayer(loan.lender);
-        if (l != null) l.sendMessage(Text.literal(
+        ServerPlayer l = server.getPlayerList().getPlayerByName(loan.lender);
+        if (l != null) l.sendSystemMessage(Component.literal(
             "§e[Nouvelle Terre] §f" + loan.borrower
             + "§e : penalite de §f" + penalty + " ◆§e deduite (credit en retard)."));
     }

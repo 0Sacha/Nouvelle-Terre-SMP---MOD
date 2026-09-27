@@ -4,7 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
-import net.fabricmc.loader.api.FabricLoader;
+import net.neoforged.fml.loading.FMLPaths;
 
 import java.io.*;
 import java.lang.reflect.Type;
@@ -26,7 +26,7 @@ public class FirstJoinTracker {
     private final Set<String> received = new HashSet<>();
 
     private FirstJoinTracker() {
-        fichier = FabricLoader.getInstance().getGameDir().resolve("economy-starters.json");
+        fichier = FMLPaths.GAMEDIR.get().resolve("economy-starters.json");
         load();
     }
 

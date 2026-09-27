@@ -2,10 +2,10 @@ package com.nouvelleterrebridge.commands;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
-import net.minecraft.server.command.CommandManager;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
+import net.minecraft.commands.Commands;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.Component;
 
 /**
  * /production : ouvre le GUI Production naturelle (tous les joueurs).
@@ -13,12 +13,12 @@ import net.minecraft.text.Text;
  */
 public class ProductionCommand {
 
-    public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
-        dispatcher.register(CommandManager.literal("production")
+    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
+        dispatcher.register(Commands.literal("production")
             .executes(ctx -> {
-                ServerPlayerEntity player = ctx.getSource().getPlayer();
+                ServerPlayer player = ctx.getSource().getPlayer();
                 if (player == null) {
-                    ctx.getSource().sendFeedback(() -> Text.literal("§cCommande joueur uniquement."), false);
+                    ctx.getSource().sendSuccess(() -> Component.literal("§cCommande joueur uniquement."), false);
                     return 0;
                 }
                 NouvelleTerreBridge.sendProductionOpen(player);

@@ -3,7 +3,7 @@ package com.nouvelleterrebridge.http;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
-import net.fabricmc.loader.api.FabricLoader;
+import net.neoforged.fml.loading.FMLPaths;
 
 import java.io.*;
 import java.lang.reflect.Type;
@@ -97,6 +97,6 @@ public class EventQueue {
     }
 
     private Path obtenirChemin() {
-        return FabricLoader.getInstance().getConfigDir().resolve(NOM_FICHIER);
+        return FMLPaths.CONFIGDIR.get().resolve(NOM_FICHIER);
     }
 }

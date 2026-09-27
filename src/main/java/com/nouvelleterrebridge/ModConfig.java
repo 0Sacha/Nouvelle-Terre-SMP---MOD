@@ -2,7 +2,7 @@ package com.nouvelleterrebridge;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import net.fabricmc.loader.api.FabricLoader;
+import net.neoforged.fml.loading.FMLPaths;
 
 import java.io.*;
 import java.nio.file.Path;
@@ -26,7 +26,7 @@ public class ModConfig {
 
 
     public static ModConfig charger() {
-        Path cheminConfig = FabricLoader.getInstance().getConfigDir().resolve(NOM_FICHIER);
+        Path cheminConfig = FMLPaths.CONFIGDIR.get().resolve(NOM_FICHIER);
         File fichier = cheminConfig.toFile();
 
         if (!fichier.exists()) {
@@ -48,7 +48,7 @@ public class ModConfig {
     }
 
     public void sauvegarder() {
-        Path cheminConfig = FabricLoader.getInstance().getConfigDir().resolve(NOM_FICHIER);
+        Path cheminConfig = FMLPaths.CONFIGDIR.get().resolve(NOM_FICHIER);
         try (Writer writer = new FileWriter(cheminConfig.toFile())) {
             GSON.toJson(this, writer);
         } catch (IOException e) {

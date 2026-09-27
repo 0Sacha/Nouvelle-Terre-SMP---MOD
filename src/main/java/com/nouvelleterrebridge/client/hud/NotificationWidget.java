@@ -1,12 +1,9 @@
 package com.nouvelleterrebridge.client.hud;
 
 import com.nouvelleterrebridge.client.ClientConfig;
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
 
-@Environment(EnvType.CLIENT)
 public class NotificationWidget extends HudWidget {
 
     // Dimensions correspondant à une notification réelle
@@ -17,10 +14,10 @@ public class NotificationWidget extends HudWidget {
 
     @Override public boolean isDragOnly() { return true; }
 
-    @Override public void render(DrawContext ctx, MinecraftClient mc) {}
+    @Override public void render(GuiGraphics ctx, Minecraft mc) {}
 
-    @Override public int getWidth(MinecraftClient mc)  { return W; }
-    @Override public int getHeight(MinecraftClient mc) { return H; }
+    @Override public int getWidth(Minecraft mc)  { return W; }
+    @Override public int getHeight(Minecraft mc) { return H; }
 
     @Override public void loadFromConfig(ClientConfig cfg) { enabled = cfg.notifEnabled; anchorX = cfg.notifX; anchorY = cfg.notifY; }
     @Override public void saveToConfig(ClientConfig cfg)   { cfg.notifEnabled = enabled; cfg.notifX = anchorX; cfg.notifY = anchorY; }

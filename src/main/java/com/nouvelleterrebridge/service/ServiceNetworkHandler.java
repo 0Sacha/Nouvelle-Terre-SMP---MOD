@@ -1,16 +1,16 @@
 package com.nouvelleterrebridge.service;
 
+import com.nouvelleterrebridge.network.NtNet;
+
 import com.nouvelleterrebridge.NouvelleTerreBridge;
 import com.nouvelleterrebridge.economy.LocalEconomy;
 import com.nouvelleterrebridge.economy.ServerShopActions;
 import com.nouvelleterrebridge.market.MarketManager;
 import com.nouvelleterrebridge.network.ServiceNetworking;
-import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.network.PacketByteBuf;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.Component;
 
 import java.util.List;
 
@@ -29,15 +29,14 @@ public final class ServiceNetworkHandler {
     private ServiceNetworkHandler() {}
 
     public static void register() {
-        ServerPlayNetworking.registerGlobalReceiver(ServiceNetworking.MARCHE_ACTION,
-            (server, player, handler, buf, responseSender) -> {
+        NtNet.surServeur(ServiceNetworking.MARCHE_ACTION, (server, player, buf) -> {
                 // Lecture obligatoirement ici : le buffer est libéré au retour.
                 int action = buf.readInt();
-                String s1 = buf.readString();
-                String s2 = buf.readString();
-                String s3 = buf.readString();
-                String s4 = buf.readString();
-                String s5 = buf.readString();
+                String s1 = buf.readUtf();
+                String s2 = buf.readUtf();
+                String s3 = buf.readUtf();
+                String s4 = buf.readUtf();
+                String s5 = buf.readUtf();
                 int i1 = buf.readInt();
                 int i2 = buf.readInt();
 
@@ -48,7 +47,7 @@ public final class ServiceNetworkHandler {
                         case ServiceNetworking.ACTION_PUBLIER ->
                             m.publier(pseudo, s1, s2, s3, i1, s4, s5);
                         case ServiceNetworking.ACTION_RETIRER ->
-                            m.retirer(pseudo, i1, player.hasPermissionLevel(NIVEAU_ADMIN));
+                            m.retirer(pseudo, i1, player.hasPermissions(NIVEAU_ADMIN));
                         case ServiceNetworking.ACTION_COMMANDER -> {
                             String e = m.commander(pseudo, i1);
                             if (e == null) prevenirPrestataire(server, m, i1, pseudo);
@@ -83,13 +82,12 @@ public final class ServiceNetworkHandler {
                 });
             });
 
-        ServerPlayNetworking.registerGlobalReceiver(ServiceNetworking.ADMIN_ACTION,
-            (server, player, handler, buf, responseSender) -> {
+        NtNet.surServeur(ServiceNetworking.ADMIN_ACTION, (server, player, buf) -> {
                 int action = buf.readInt();
                 int id     = buf.readInt();
                 server.execute(() -> {
-                    if (!player.hasPermissionLevel(NIVEAU_ADMIN)) {
-                        player.sendMessage(Text.literal("§cRéservé aux administrateurs."));
+                    if (!player.hasPermissions(NIVEAU_ADMIN)) {
+                        player.sendSystemMessage(Component.literal("§cRéservé aux administrateurs."));
                         return;
                     }
                     ServiceManager m = ServiceManager.getInstance();
@@ -99,7 +97,7 @@ public final class ServiceNetworkHandler {
                         case ServiceNetworking.ADMIN_RETIRER_ANNONCE -> m.retirer(player.getName().getString(), id, true);
                         default -> "§cAction inconnue.";
                     };
-                    player.sendMessage(Text.literal(err != null ? err : "§a✅ Fait."));
+                    player.sendSystemMessage(Component.literal(err != null ? err : "§a✅ Fait."));
                     ouvrirAdmin(player, server);
                 });
             });
@@ -121,11 +119,11 @@ public final class ServiceNetworkHandler {
     private static void prevenirPrestataire(MinecraftServer server, ServiceManager m,
                                             int annonceId, String client) {
         m.annonce(annonceId).ifPresent(a -> {
-            ServerPlayerEntity p = server.getPlayerManager().getPlayer(a.auteur);
+            ServerPlayer p = server.getPlayerList().getPlayerByName(a.auteur);
             if (p == null) return;
             NouvelleTerreBridge.sendToast(p, NouvelleTerreBridge.TOAST_OR,
                 "✦  Nouvelle commande !", client + " a commandé", a.titre);
-            p.sendMessage(Text.literal("§6[LeBonCube] §f" + client
+            p.sendSystemMessage(Component.literal("§6[LeBonCube] §f" + client
                 + " §avous a commandé §f" + a.titre + " §a— voir §e/leboncube"));
             rafraichir(p);
         });
@@ -146,10 +144,10 @@ public final class ServiceNetworkHandler {
                                             String titreToast, String ligneToast,
                                             String messageChat) {
         String destinataire = c.client.equalsIgnoreCase(auteur) ? c.prestataire : c.client;
-        ServerPlayerEntity p = server.getPlayerManager().getPlayer(destinataire);
+        ServerPlayer p = server.getPlayerList().getPlayerByName(destinataire);
         if (p == null) return;   // hors ligne : il retrouvera tout dans /leboncube
         NouvelleTerreBridge.sendToast(p, couleur, titreToast, ligneToast, "Voir /leboncube");
-        p.sendMessage(Text.literal(messageChat));
+        p.sendSystemMessage(Component.literal(messageChat));
         rafraichir(p);
     }
 
@@ -212,7 +210,7 @@ public final class ServiceNetworkHandler {
     // ── Paquets d'état ────────────────────────────────────────────────────────
 
     /** Ouvre LeBonCube chez le joueur (/leboncube, hub du Parchemin). */
-    public static void ouvrir(ServerPlayerEntity player) {
+    public static void ouvrir(ServerPlayer player) {
         envoyerOuverture(player, true);
     }
 
@@ -223,7 +221,7 @@ public final class ServiceNetworkHandler {
      * recevoir un message ferait surgir LeBonCube par-dessus le jeu — exactement
      * le défaut qu'avaient les quêtes avant la 1.4.2.
      */
-    public static void rafraichir(ServerPlayerEntity player) {
+    public static void rafraichir(ServerPlayer player) {
         envoyerOuverture(player, false);
     }
 
@@ -235,25 +233,25 @@ public final class ServiceNetworkHandler {
      * paquet d'un octet à chaque rafraîchissement, ce qui déconnectait les deux
      * joueurs à la moindre notification.
      */
-    private static void envoyerOuverture(ServerPlayerEntity player, boolean ouvrir) {
-        PacketByteBuf buf = PacketByteBufs.create();
+    private static void envoyerOuverture(ServerPlayer player, boolean ouvrir) {
+        FriendlyByteBuf buf = com.nouvelleterrebridge.network.NtNet.buffer();
         buf.writeBoolean(ouvrir);
         ecrireEtat(buf, player);
-        ServerPlayNetworking.send(player, ServiceNetworking.MARCHE_OPEN, buf);
+        NtNet.versClient(player, ServiceNetworking.MARCHE_OPEN, buf);
     }
 
-    private static void envoyerResultat(ServerPlayerEntity player, boolean ok, String msg) {
+    private static void envoyerResultat(ServerPlayer player, boolean ok, String msg) {
         // MARCHE_RESULT a son propre en-tête (ok + message) et ne porte pas de
         // drapeau d'ouverture : l'écran est forcément déjà ouvert.
-        PacketByteBuf buf = PacketByteBufs.create();
+        FriendlyByteBuf buf = com.nouvelleterrebridge.network.NtNet.buffer();
         buf.writeBoolean(ok);
-        buf.writeString(msg);
+        buf.writeUtf(msg);
         ecrireEtat(buf, player);
-        ServerPlayNetworking.send(player, ServiceNetworking.MARCHE_RESULT, buf);
+        NtNet.versClient(player, ServiceNetworking.MARCHE_RESULT, buf);
     }
 
     /** Corps commun aux deux canaux : solde, catégories, annonces, commandes. */
-    private static void ecrireEtat(PacketByteBuf buf, ServerPlayerEntity player) {
+    private static void ecrireEtat(FriendlyByteBuf buf, ServerPlayer player) {
         String pseudo = player.getName().getString();
         ServiceManager m = ServiceManager.getInstance();
 
@@ -263,19 +261,19 @@ public final class ServiceNetworkHandler {
         // besoin de la liste pour proposer celles déjà utilisées.
         List<String> cats = m.categories();
         buf.writeInt(cats.size());
-        for (String c : cats) buf.writeString(c);
+        for (String c : cats) buf.writeUtf(c);
 
         List<ServiceAnnonce> annonces = m.annoncesActives();
         buf.writeInt(annonces.size());
         for (ServiceAnnonce a : annonces) {
             buf.writeInt(a.id);
-            buf.writeString(a.auteur);
-            buf.writeString(a.titre);
-            buf.writeString(a.description);
-            buf.writeString(a.imageUrl == null ? "" : a.imageUrl);
+            buf.writeUtf(a.auteur);
+            buf.writeUtf(a.titre);
+            buf.writeUtf(a.description);
+            buf.writeUtf(a.imageUrl == null ? "" : a.imageUrl);
             buf.writeInt(a.prix);
-            buf.writeString(a.contact);
-            buf.writeString(a.categorie);
+            buf.writeUtf(a.contact);
+            buf.writeUtf(a.categorie);
             buf.writeLong(a.creeLe);
             buf.writeFloat(m.noteMoyenne(a.auteur));
             buf.writeInt(m.notesDe(a.auteur).size());
@@ -286,28 +284,28 @@ public final class ServiceNetworkHandler {
         ecrireCommandes(buf, m.archivesDe(pseudo));
     }
 
-    private static void ecrireCommandes(PacketByteBuf buf, List<ServiceCommande> list) {
+    private static void ecrireCommandes(FriendlyByteBuf buf, List<ServiceCommande> list) {
         buf.writeInt(list.size());
         for (ServiceCommande c : list) {
             buf.writeInt(c.id);
-            buf.writeString(c.titre);
-            buf.writeString(c.client);
-            buf.writeString(c.prestataire);
+            buf.writeUtf(c.titre);
+            buf.writeUtf(c.client);
+            buf.writeUtf(c.prestataire);
             buf.writeInt(c.prix);
             buf.writeInt(c.acompte);
             buf.writeInt(c.sequestre);
-            buf.writeString(c.statut);
+            buf.writeUtf(c.statut);
             buf.writeBoolean(c.valideParPrestataire);
             buf.writeBoolean(c.valideParClient);
-            buf.writeString(c.annulationDemandeePar == null ? "" : c.annulationDemandeePar);
+            buf.writeUtf(c.annulationDemandeePar == null ? "" : c.annulationDemandeePar);
             buf.writeLong(c.creeLe);
             buf.writeLong(c.termineeLe);
             buf.writeInt(c.note);
-            buf.writeString(c.avis == null ? "" : c.avis);
+            buf.writeUtf(c.avis == null ? "" : c.avis);
             buf.writeInt(c.messages.size());
             for (ServiceCommande.Message msg : c.messages) {
-                buf.writeString(msg.auteur);
-                buf.writeString(msg.texte);
+                buf.writeUtf(msg.auteur);
+                buf.writeUtf(msg.texte);
                 buf.writeLong(msg.envoyeLe);
             }
         }
@@ -315,17 +313,17 @@ public final class ServiceNetworkHandler {
 
     // ── /server-admin ─────────────────────────────────────────────────────────
 
-    public static void ouvrirAdmin(ServerPlayerEntity player, MinecraftServer server) {
+    public static void ouvrirAdmin(ServerPlayer player, MinecraftServer server) {
         LocalEconomy eco = LocalEconomy.getInstance();
         ServiceManager m = ServiceManager.getInstance();
-        PacketByteBuf buf = PacketByteBufs.create();
+        FriendlyByteBuf buf = com.nouvelleterrebridge.network.NtNet.buffer();
 
         buf.writeInt(eco.getBalance(ServerShopActions.COMPTE_SERVEUR));
         buf.writeInt(eco.getBalance(ServiceManager.COMPTE_SEQUESTRE));
         buf.writeLong(eco.masseMonetaire());
         buf.writeInt(eco.nombreJoueursConnus());
         buf.writeInt(eco.soldeMedian());
-        buf.writeInt(server.getPlayerManager().getCurrentPlayerCount());
+        buf.writeInt(server.getPlayerList().getPlayerCount());
         buf.writeInt(MarketManager.getInstance().getAll().size());
         buf.writeInt(m.annoncesActives().size());
         buf.writeDouble(com.nouvelleterrebridge.economy.ServerShopPriceManager.multiplicateurInflation());
@@ -337,14 +335,14 @@ public final class ServiceNetworkHandler {
         buf.writeInt(litiges.size());
         for (ServiceCommande c : litiges) {
             buf.writeInt(c.id);
-            buf.writeString(c.titre);
-            buf.writeString(c.client);
-            buf.writeString(c.prestataire);
+            buf.writeUtf(c.titre);
+            buf.writeUtf(c.client);
+            buf.writeUtf(c.prestataire);
             buf.writeInt(c.prix);
             buf.writeInt(c.sequestre);
-            buf.writeString(c.annulationDemandeePar);
+            buf.writeUtf(c.annulationDemandeePar);
         }
 
-        ServerPlayNetworking.send(player, ServiceNetworking.ADMIN_OPEN, buf);
+        NtNet.versClient(player, ServiceNetworking.ADMIN_OPEN, buf);
     }
 }
