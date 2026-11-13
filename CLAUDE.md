@@ -97,7 +97,7 @@ reste manuel). Ne jamais pousser sur `main` un build non testé en local.
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `2.1.3` (location d'objets — voir « Architecture Location »)
+- Version actuelle : `2.1.4` (location d'objets — voir « Architecture Location »)
   - 2.1.3 : écritures disque regroupées, virements récurrents qui survivent au redémarrage
   - 2.1.2 : barre et pourcentage de réparation sur l'objet loué
   - 2.1.1 : un objet loué à Raccommodage doit être rendu réparé
