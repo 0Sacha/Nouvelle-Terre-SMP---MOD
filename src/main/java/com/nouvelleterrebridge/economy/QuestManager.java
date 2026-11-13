@@ -117,6 +117,10 @@ public class QuestManager {
         }
     }
 
+    private static synchronized void sauverMaintenant() {
+        save();
+    }
+
     private static void save() {
         try {
             Map<String, Object> root = new LinkedHashMap<>();
@@ -508,7 +512,9 @@ public class QuestManager {
             for (ActiveQuest aq : e.getValue()) autoClaim(e.getKey(), aq, server);
 
         changed |= advanceCommunity(player, type, target, amount, server);
-        if (changed) save();
+        // Progression avancée à chaque bloc cassé ou mob tué : écriture regroupée.
+        // Les récompenses, elles, sont déjà versées et écrites par LocalEconomy.
+        if (changed) com.nouvelleterrebridge.util.SauvegardeDifferee.demander("quetes", QuestManager::sauverMaintenant);
     }
 
     /** Termine automatiquement une quête KILL/HARVEST arrivée à 100 %. */

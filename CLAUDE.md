@@ -97,7 +97,8 @@ reste manuel). Ne jamais pousser sur `main` un build non testé en local.
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `2.1.2` (location d'objets — voir « Architecture Location »)
+- Version actuelle : `2.1.3` (location d'objets — voir « Architecture Location »)
+  - 2.1.3 : écritures disque regroupées, virements récurrents qui survivent au redémarrage
   - 2.1.2 : barre et pourcentage de réparation sur l'objet loué
   - 2.1.1 : un objet loué à Raccommodage doit être rendu réparé
   - 2.1.0 : location d'objets entre joueurs, avec verrou et caution
@@ -198,6 +199,21 @@ serveur.
   commandes tierces sans permission à réserver aux op (niveau 2), filtrées par
   `CommandEvent`. Contient `meteors`. Ajouter ici toute commande dangereuse d'un mod
   qu'on ne peut pas corriger à la source.
+
+### Performance (2.1.3)
+- **Écritures regroupées** (`util/SauvegardeDifferee`) : `production.json` et `quetes.json`
+  étaient réécrits en entier, sur le thread serveur, à **chaque bloc cassé et chaque mob
+  tué**. Ils sont maintenant écrits au plus toutes les 5 secondes, et à l'arrêt du serveur.
+  ⚠ Réservé aux compteurs et à la progression : **l'argent (`shards.json`) reste écrit
+  immédiatement**. Tout nouveau fichier modifié à haute fréquence doit passer par là.
+- **Médiane en cache** (`LocalEconomy.soldeMedian`) : ouvrir le Shop la demandait trois
+  fois par article, avec un tri de tous les soldes à chaque fois. Le cache est vidé dans
+  `save()`, par où passe toute modification de solde.
+- **Virements récurrents** : le décompte n'était écrit qu'à la création du virement, donc
+  il repartait de zéro à chaque redémarrage — un virement quotidien sur un serveur
+  redémarré tous les jours ne partait jamais. Il est enregistré chaque minute.
+- Code mort retiré : widgets HUD Santé / Nourriture / Armure / XP (jamais enregistrés dans
+  l'éditeur) et `NouvelleSettingsScreen` (n'était ouvert que par ModMenu, mod Fabric).
 
 ### Limite connue, non traitée
 Les comptes sont indexés par **pseudo en minuscules**, pas par UUID : un joueur qui change
@@ -944,10 +960,8 @@ client/                    ← @Environment(CLIENT) uniquement
   ClientConfig.java        → Config client-only (config/nouvelle-terre-client.json)
                              Champs : discordRPCEnabled, hudEnabled/balanceX/Y, coordsEnabled/X/Y/ShowDecimals,
                              timeEnabled/X/Y/ShowIcon,
-                             santeEnabled/X/Y, nourritureEnabled/X/Y, fpsEnabled/X/Y/ShowPing,
-                             biomeEnabled/X/Y, notifEnabled/X/Y, armureEnabled/X/Y,
-                             xpEnabled/X/Y, dimensionEnabled/X/Y, effetsEnabled/X/Y
-  NouvelleSettingsScreen.java → Bouton "Éditeur HUD →" + toggle Discord RPC
+                             fpsEnabled/X/Y/ShowPing, biomeEnabled/X/Y, notifEnabled/X/Y,
+                             dimensionEnabled/X/Y, effetsEnabled/X/Y
 
 client/hud/                ← Widgets HUD individuels
   HudWidget.java           → Classe abstraite : id, label, anchorX/Y, enabled, getPixelX/Y (clamped),
@@ -956,13 +970,9 @@ client/hud/                ← Widgets HUD individuels
   BalanceWidget.java       → Affiche cachedBalance + " ◆". Pas de paramètres.
   CoordsWidget.java        → "XYZ x / y / z". Paramètre : coordsShowDecimals.
   TimeWidget.java          → Heure Minecraft HH:MM. Paramètre : timeShowIcon (☀/☽).
-  SanteWidget.java         → Santé du joueur "X / max ♥". Couleur : rouge < 25%, or < 60%, rouge vif sinon.
-  NourritureWidget.java    → Niveau de faim "Faim X / 20". Couleur : rouge ≤4, or ≤10, vert sinon.
   FpsWidget.java           → FPS + ping optionnel. FPS mesuré via FpsWidget.onFrame() appelé dans HudRenderCallback.
                              Paramètre : fpsShowPing.
   BiomeWidget.java         → Biome courant (getKey().getPath(), premier caractère capitalisé).
-  ArmureWidget.java        → "Arm. X / 20". Couleur : rouge ≤4, or ≤14, vert sinon.
-  XpWidget.java            → "Niv. X" + barre de progression XP (4px, vert). mc.player.experienceLevel/experienceProgress.
   DimensionWidget.java     → Dimension courante : "Monde" (vert), "Nether" (rouge), "End" (violet).
   EffetsWidget.java        → Liste d'effets de potion actifs (max 5), chiffres romains + durée en secondes.
                              Hauteur variable : Math.max(14, count * 12 + 6). Vert=bénéfique, rouge=négatif.

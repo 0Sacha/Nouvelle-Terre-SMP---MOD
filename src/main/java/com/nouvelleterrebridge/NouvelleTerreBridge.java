@@ -274,6 +274,8 @@ public class NouvelleTerreBridge {
 
     @net.neoforged.bus.api.SubscribeEvent
     public void onServerStopping(ServerStoppingEvent event) {
+        // Dernières écritures regroupées, avant que le serveur ne s'arrête
+        com.nouvelleterrebridge.util.SauvegardeDifferee.vider();
         serveur = null;
     }
 
@@ -395,6 +397,8 @@ public class NouvelleTerreBridge {
     @net.neoforged.bus.api.SubscribeEvent
     public void onServerTick(ServerTickEvent.Post event) {
         QuestManager.tick(event.getServer());
+        if (event.getServer().getTickCount() % 100 == 0)
+            com.nouvelleterrebridge.util.SauvegardeDifferee.vider();
     }
 
     @net.neoforged.bus.api.SubscribeEvent

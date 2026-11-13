@@ -68,6 +68,13 @@ public class RecurringTransferManager {
     // ── Tick ─────────────────────────────────────────────────────────────────
 
     private synchronized void tick(MinecraftServer server) {
+        // Le décompte de chaque virement n'était écrit qu'à sa création : à chaque
+        // redémarrage il repartait de zéro, et un virement quotidien sur un serveur
+        // redémarré tous les jours ne partait jamais. Il est maintenant enregistré
+        // chaque minute (écriture regroupée, et vidée à l'arrêt du serveur).
+        if (!transfers.isEmpty() && server.getTickCount() % 1200 == 0)
+            com.nouvelleterrebridge.util.SauvegardeDifferee.demander("virements", this::sauvegarderMaintenant);
+
         for (RecurringTransfer rt : transfers) {
             rt.ticksSince++;
             if (rt.ticksSince >= rt.intervalTicks) {
@@ -106,6 +113,10 @@ public class RecurringTransferManager {
         } catch (Exception e) {
             NouvelleTerreBridge.LOGGER.error("[RecurringTransfer] Erreur chargement : {}", e.getMessage());
         }
+    }
+
+    private synchronized void sauvegarderMaintenant() {
+        sauvegarder();
     }
 
     private void sauvegarder() {

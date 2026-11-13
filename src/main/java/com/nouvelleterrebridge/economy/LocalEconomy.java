@@ -30,6 +30,8 @@ public class LocalEconomy {
 
     private final Path fichier;
     private final Map<String, Integer> soldes = new HashMap<>();
+    /** Médiane des soldes, recalculée à la demande ; null dès qu'un solde change. */
+    private Integer medianCache = null;
 
     private LocalEconomy() {
         fichier = FMLPaths.GAMEDIR.get().resolve("shards.json");
@@ -143,11 +145,14 @@ public class LocalEconomy {
      * joueurs pauvres et une poignée de très riches.
      */
     public synchronized int soldeMedian() {
+        // Mis en cache : ouvrir le Shop demande la médiane trois fois par article
+        // (inflation, taxe, rachat), et chaque calcul triait tous les soldes.
+        if (medianCache != null) return medianCache;
         List<Integer> l = soldesJoueurs();
-        if (l.isEmpty()) return 0;
+        if (l.isEmpty()) return medianCache = 0;
         java.util.Collections.sort(l);
         int n = l.size();
-        return n % 2 == 1 ? l.get(n / 2) : (l.get(n / 2 - 1) + l.get(n / 2)) / 2;
+        return medianCache = (n % 2 == 1 ? l.get(n / 2) : (l.get(n / 2 - 1) + l.get(n / 2)) / 2);
     }
 
     /** Retire des shards à un joueur (ne passe pas en négatif). */
@@ -197,6 +202,7 @@ public class LocalEconomy {
     /** Relit shards.json (après une restauration par /nt-sauvegarde). */
     public synchronized void recharger() {
         soldes.clear();
+        medianCache = null;
         load();
     }
 
@@ -221,6 +227,8 @@ public class LocalEconomy {
     }
 
     private void save() {
+        // Toute modification de solde passe par ici
+        medianCache = null;
         try {
             FichierSur.ecrire(fichier, GSON.toJson(soldes));
         } catch (Exception e) {

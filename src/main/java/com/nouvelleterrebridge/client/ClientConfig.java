@@ -36,16 +36,6 @@ public class ClientConfig {
     public float   timeY        = 0.01f;
     public boolean timeShowIcon = true;
 
-    // ── Widget Santé ──────────────────────────────────────────────────────────
-    public boolean santeEnabled = false;
-    public float   santeX       = 0.01f;
-    public float   santeY       = 0.08f;
-
-    // ── Widget Nourriture ─────────────────────────────────────────────────────
-    public boolean nourritureEnabled = false;
-    public float   nourritureX       = 0.01f;
-    public float   nourritureY       = 0.11f;
-
     // ── Widget FPS ────────────────────────────────────────────────────────────
     public boolean fpsEnabled  = false;
     public float   fpsX        = 0.01f;
@@ -56,16 +46,6 @@ public class ClientConfig {
     public boolean biomeEnabled = false;
     public float   biomeX       = 0.01f;
     public float   biomeY       = 0.17f;
-
-    // ── Widget Armure ─────────────────────────────────────────────────────────
-    public boolean armureEnabled = false;
-    public float   armureX       = 0.01f;
-    public float   armureY       = 0.20f;
-
-    // ── Widget XP ─────────────────────────────────────────────────────────────
-    public boolean xpEnabled = false;
-    public float   xpX       = 0.01f;
-    public float   xpY       = 0.23f;
 
     // ── Widget Dimension ──────────────────────────────────────────────────────
     public boolean dimensionEnabled = false;

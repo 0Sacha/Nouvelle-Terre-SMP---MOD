@@ -50,7 +50,8 @@ public class ProductionTracker {
         if (amount <= 0) return;
         long avant  = counts.getOrDefault(itemId, 0L);
         long newVal = counts.merge(itemId, amount, Long::sum);
-        save();
+        // Appelé à chaque bloc cassé : l'écriture est regroupée (voir SauvegardeDifferee)
+        com.nouvelleterrebridge.util.SauvegardeDifferee.demander("production", ProductionTracker::save);
         ProductionShopManager.onProduction(itemId, avant, newVal);
     }
 
@@ -67,7 +68,7 @@ public class ProductionTracker {
         long nouveau = Math.max(0L, actuel - amount);
         if (nouveau == 0L) counts.remove(itemId);
         else               counts.put(itemId, nouveau);
-        save();
+        com.nouvelleterrebridge.util.SauvegardeDifferee.demander("production", ProductionTracker::save);
     }
 
     public static synchronized long get(String itemId) {
