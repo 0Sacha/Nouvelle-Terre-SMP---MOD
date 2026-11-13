@@ -41,6 +41,9 @@ public class RecurringTransferManager {
         NeoForge.EVENT_BUS.addListener((ServerTickEvent.Post event) -> getInstance().tick(event.getServer()));
     }
 
+    /** Chaque virement est évalué à chaque tick et envoyé dans le paquet /bank. */
+    public static final int MAX_PAR_JOUEUR = 10;
+
     // ── API ───────────────────────────────────────────────────────────────────
 
     public synchronized int add(String from, String to, int amount, int intervalTicks) {
@@ -106,11 +109,11 @@ public class RecurringTransferManager {
     }
 
     private void sauvegarder() {
-        try (Writer w = new OutputStreamWriter(new FileOutputStream(fichier.toFile()), StandardCharsets.UTF_8)) {
+        try {
             JsonObject root = new JsonObject();
             root.addProperty("nextId", nextId);
             root.add("transfers", GSON.toJsonTree(transfers));
-            GSON.toJson(root, w);
+            com.nouvelleterrebridge.util.FichierSur.ecrire(fichier, GSON.toJson(root));
         } catch (Exception e) {
             NouvelleTerreBridge.LOGGER.error("[RecurringTransfer] Erreur sauvegarde : {}", e.getMessage());
         }

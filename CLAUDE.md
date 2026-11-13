@@ -1,76 +1,45 @@
-# Nouvelle Terre — Mod NeoForge natif 1.21.1 (branche `neoforge-natif-1.21.1`)
+# Nouvelle Terre — Mod NeoForge natif 1.21.1
 
 Mod de bridge entre un serveur Minecraft SMP RP et un bot Discord (Railway).
 Lit ce fichier automatiquement pour avoir le contexte complet avant de coder.
 
-⚠ **Cette branche est un portage natif NeoForge** (Mojang mappings, event bus
-NeoForge, réseau via `RegisterPayloadHandlersEvent`) — pas de Sinytra Connector.
-Repartie de `fabric-1.21.1` (pas de l'ancien brouillon abandonné sur
-`neoforge-1.21.1`, obsolète). Build + tests manuels complets validés (voir
-`docs/NEOFORGE_PORT_SPEC.md` pour le détail de chaque point de passage Fabric
-→ NeoForge : réseau, entrypoint, events, mixins, items).
-⚠ **La branche `fabric-1.21.1` reste le développement de référence** — on peut
-y revenir à tout moment ; le choix définitif entre Connector et ce natif pour
-le serveur de production n'a pas encore été tranché.
+**État courant** : NeoForge natif (Mojang mappings, event bus NeoForge, réseau via
+`RegisterPayloadHandlersEvent`), Minecraft 1.21.1, NeoForge `21.1.250`, Java 21.
+**Le serveur de production tourne dessus depuis le 01/11** — la migration depuis
+Fabric 1.20.1 est terminée et close.
 
-## Portage 1.20.1 → 1.21.1 (2.0.0)
+⚠ **Noms de classes dans ce document** : les sections d'architecture ont été écrites à
+l'époque Fabric et citent encore des noms Yarn (`ServerPlayNetworking`, `PacketByteBuf`,
+`ServerPlayerEntity`, `TextFieldWidget`, `ScreenHandler`…). Le code, lui, est en Mojang
+mappings (`FriendlyByteBuf`, `ServerPlayer`, `EditBox`…). La logique décrite reste exacte,
+seuls les noms ont changé. Table de correspondance complète : `docs/NEOFORGE_PORT_SPEC.md`.
 
-Contexte historique (valable pour la branche `fabric-1.21.1`) : le mod a
-d'abord été porté en Fabric 1.21.1, avec l'intention de le faire tourner sur
-un serveur NeoForge via **Sinytra Connector** + **Forgified Fabric API**. Un
-premier essai de portage natif avait alors été commencé puis abandonné au
-profit de cette voie. C'est ce premier essai (stale, 1.20.1) qui a été mis de
-côté — **pas** le portage natif actuel de cette branche, qui repart du code
-Fabric 1.21.1 terminé et est fonctionnellement à jour avec lui.
+Branches : `fabric-1.21.1` reste sur GitHub comme archive du dernier état Fabric — à ne pas
+supprimer. `neoforge-natif-1.21.1` est la branche de travail du portage.
 
-Deux changements imposés par **Minecraft lui-même** (1.20.5+), indépendants du
-loader — c'est le seul vrai travail de ce portage, tout le reste est mécanique :
-- **Réseau typé** : `ServerPlayNetworking`/`ClientPlayNetworking` n'acceptent
-  plus un `PacketByteBuf` brut, il faut un `CustomPayload` enregistré via
-  `PayloadTypeRegistry`. Plutôt que réécrire les 34 canaux du mod en records
-  typés (aucun ne sérialise autre chose que des primitives), `network/NtPayload.java`
-  transporte le tampon brut et `network/NtNet.java` réexpose exactement l'ancienne
-  forme d'appel (`NtNet.surServeur/surClient/versServeur/versClient`). Les ~530
-  appels `readInt`/`writeString`/… du mod n'ont pas bougé.
-- **NBT d'item → composants de données** : `stack.getNbt()/setNbt()/hasNbt()`
-  n'existent plus. `MarketListing.itemNBT` reste une chaîne SNBT (schéma de
-  `marche.json` inchangé), mais encode désormais un `ComponentChanges` — le
-  strict équivalent conceptuel de l'ancien NBT (la différence entre une pile et
-  l'état par défaut de son item). Voir `market/ItemComponentCodec.java`, seul
-  point du mod qui touche à ça. ⚠ Encoder/décoder exige un
-  `RegistryWrapper.WrapperLookup` (`client.world.getRegistryManager()` côté
-  client, `player.getServer().getRegistryManager()` côté serveur) — absent en
-  1.20.1. `appliquer()` ne lève jamais : une annonce créée avant la migration
-  contient un ancien NBT brut, pas un `ComponentChanges`, et n'est plus
-  relisible — la pile livrée reste vierge plutôt que de planter.
+## Ce qu'il faut retenir du portage 1.20.1 → 1.21.1
 
-Autres correctifs, tous mécaniques (renommages/signatures vanilla, sans lien
-avec Fabric/NeoForge) :
-- `new Identifier(ns, path)` → `Identifier.of(ns, path)` (constructeur privé
-  depuis la 1.21).
-- `Item.appendTooltip` perd son paramètre `World` et gagne `TooltipType` en
-  dernier ; `TooltipContext` devient l'interface imbriquée `Item.TooltipContext`.
-- `Screen.mouseScrolled` gagne un paramètre `horizontalAmount` (défilement
-  horizontal, 1.21) — ignoré partout dans ce mod, aucun écran ne s'en sert.
-- `RecipeManager.values()` renvoie des `RecipeEntry<?>` (id + recette) et non
-  plus des `Recipe<?>` ; `Recipe.getOutput()` renommé `getResult()`.
-- `e.getEffectType()` (sur un `StatusEffectInstance`) renvoie désormais un
-  `RegistryEntry<StatusEffect>` — `.value()` pour retrouver l'ancien comportement.
-- `Scoreboard.addPlayerToTeam` renommé `addScoreHolderToTeam`.
-
-`gradle.properties` sur **cette branche** : Java 21 via toolchain Gradle (aucun
-JDK 21 sur le poste de dev, `foojay-resolver` le récupère), plugin
-`net.neoforged.moddev` 2.0.147, `neoforge_version=21.1.250`. Pas de Yarn, pas
-de Loom, pas de `fabric.mod.json` — `META-INF/neoforge.mods.toml` à la place,
-avec `modId="nouvelle_terre_bridge"` (underscore imposé par NeoForge) tout en
-gardant le namespace de ressources `nouvelle-terre-bridge` (items, réseau)
-inchangé pour ne pas perdre les Shards/Parchemins déjà en circulation.
-`mod_version` porte un qualificatif `+neoforge.N` pendant les tests en
-parallèle du JAR Fabric — voir « Convention de version ».
-
-⚠ **Cadmus n'a pas de build 1.21.1** (dernier NeoForge en 1.20.4) — l'intégration
-par réflexion reste en place mais ne trouvera rien tant qu'un remplaçant n'est
-pas choisi.
+- **Réseau** : `network/NtPayload.java` transporte un tampon brut et `network/NtNet.java`
+  expose `NtNet.surServeur/surClient/versServeur/versClient`. Les canaux ne sont pas des
+  records typés : ils ne sérialisent que des primitives. Les handlers s'exécutent sur le
+  thread principal (défaut NeoForge 21.1).
+- **NBT d'item → composants de données** : `MarketListing.itemNBT` reste une chaîne SNBT,
+  mais elle encode un `DataComponentPatch`. `market/ItemComponentCodec.java` est le seul
+  point du mod qui touche à ça ; `appliquer()` ne lève jamais (pile vierge en cas d'échec).
+  Encoder/décoder exige un `HolderLookup.Provider` (`registryAccess()`).
+- **`modId="nouvelle_terre_bridge"`** (underscore imposé par NeoForge) mais le namespace de
+  ressources reste `nouvelle-terre-bridge` (items, réseau) : le changer ferait disparaître
+  les Shards et Parchemins en circulation.
+- **Mixins restants** : 3 seulement (`PlayerManagerMixin`, `ServerPlayerEntityMixin`,
+  `AbstractClientPlayerEntityMixin`). Tout le reste (pose/casse de blocs, craft, morts,
+  HUD, lâcher du Parchemin) passe par des events NeoForge dans `NouvelleTerreBridge` et
+  `NouvelleTerreBridgeClient`.
+- **Enregistrement explicite, pas `@EventBusSubscriber`** : la découverte par annotation
+  ne s'est pas montrée fiable avec un seul sourceSet client+serveur. La classe cliente
+  n'est chargée que si `FMLEnvironment.dist.isClient()`.
+- **Cadmus n'a pas de build 1.21.1** — l'intégration par réflexion est suspendue.
+- **Mod médical** : `cottonmod` remplacé par `medicalmod` (namespace `medicalmod:`),
+  référencé dans `FrenchItemNames`, `ShopThresholds.PRIX_REFERENCE` et `HdvScreen`.
 
 ## Repos
 - Mod : `https://github.com/0Sacha/Nouvelle-Terre-SMP---MOD.git`
@@ -81,6 +50,31 @@ pas choisi.
 - RCON port : `40539` (pas le 25575 par défaut)
 - Bot Discord : Railway (Node.js), user `Nouvelle Terre#9576`
 - Guild ID : `1508123190797406432`
+
+## Instance de test locale (portage NeoForge)
+
+ModrinthApp, profil **« NeoForge 1.20.1 »** (nom de dossier trompeur — tourne
+réellement en 1.21.1 NeoForge, `%APPDATA%\ModrinthApp\profiles\NeoForge 1.20.1\`).
+C'est là que le portage natif a été validé, séparément de la vraie SMP.
+- Le profil **`nouvelle-terre-mod (1)`** est l'ancien client 1.20.1 Fabric d'avant la
+  migration — archive, plus utilisé.
+- Le mod (`shards.json`, `seuils-shop.json`, `production.json`,
+  `server-shop-prices.json`) et les autres JSON serveur vivent à la racine du
+  profil (`FMLPaths.GAMEDIR`), pas dans `saves/<monde>/`.
+  ⚠ **Ne sont lus qu'au lancement du jeu** (constructeur du mod / mod bus),
+  pas à l'ouverture du monde — éditer ces fichiers exige de **fermer
+  complètement Minecraft**, pas juste quitter le monde, pour qu'ils soient
+  repris en compte.
+- **Monde de test sans triche** (`allowCommands: false` dans `level.dat`,
+  pas d'`ops.json`) : les commandes op (`/nt-maintenance`, `/server-admin`,
+  `/nt-sauvegarde`) sont enregistrées mais invisibles côté client — Brigadier
+  masque les nœuds dont `.requires()` échoue, ça ressemble à une commande
+  manquante plutôt qu'à un problème de permission. Un `ops.json` (niveau 4)
+  a été ajouté pour débloquer les tests admin.
+- `InventoryProfilesNext` est **désactivé** (`.jar.disabled`) dans ce profil —
+  bug interne au mod (`NullPointerException` sur son propre
+  `Features.ENABLE_PROFILES$delegate`, planté pendant `WorldOpenFlows`, avant
+  même qu'un écran du mod s'ouvre) sans rapport avec Nouvelle Terre Bridge.
 
 ## Build
 ```powershell
@@ -93,13 +87,19 @@ pas choisi.
 GitHub Action crée une Release automatique à chaque push sur `main`.
 Le mod tourne sur le **client ET le serveur** — les joueurs doivent installer
 le JAR NeoForge côté client pour le GUI HDV/Bank/Registre.
-⚠ Sur cette branche, le JAR est un mod **NeoForge natif** — plus besoin de
-Sinytra Connector ni de Forgified Fabric API côté serveur ou client.
+Le mod lui-même n'a besoin ni de Sinytra Connector ni de Forgified Fabric API. Le
+**pack** les garde pour trois mods Fabric-only (`lavender`, `LockAndBlock`, `mcef-fabric`).
+
+⚠ **Un push sur `main` déploie en production** : `.github/workflows/build.yml` compile,
+crée la Release, puis remplace le JAR dans `/mods` du serveur par SFTP (le redémarrage
+reste manuel). Ne jamais pousser sur `main` un build non testé en local.
 
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `2.0.0` (portage Minecraft 1.21.1 — voir « Portage 1.20.1 → 1.21.1 » ci-dessus)
+- Version actuelle : `2.0.1` (durcissement — voir « Durcissement 2.0.1 » ci-dessous)
+  - 2.0.1 : failles d'argent fermées, écriture atomique, sauvegardes quotidiennes
+  - 2.0.0 : portage Minecraft 1.21.1 puis NeoForge natif (en prod sous `2.0.0+neoforge.7`)
   - 1.6.3 : correctif de la boucle d'inflation des recettes réversibles
   - 1.6.2 : la dérivation des prix était perdue à la migration
   - 1.6.1 : mode maintenance + sauvegardes restaurables
@@ -119,6 +119,88 @@ Sinytra Connector ni de Forgified Fabric API côté serveur ou client.
   - 1.2.1 : quêtes complétées disparaissent et ne peuvent être refaites
   - 1.2.0 : item Shard ◆ monnaie physique + objectifs de quêtes explicites
 - À chaque rebuild : mettre à jour `mod_version` dans `gradle.properties`, puis `git commit` + `git push`
+
+## Pack de mods en production
+
+Le serveur tourne en NeoForge 1.21.1 depuis le 01/11 (~188 mods). Le modpack est publié
+sur Modrinth comme projet à part ; il n'y a plus de repo packwiz (l'ancien
+`Nouvelle-Terre-SMP---Pack` est abandonné).
+
+Pièges à connaître avant de toucher au pack :
+- **watermedia a deux lignées en NeoForge 1.21.1** : `waterframes` et `watervision`
+  exigent la `2.1.x` (`>=2.1.34 <2.2`). La `3.0.0.x`, pourtant plus récente, fait planter
+  le lancement. Toujours vérifier la plage de version attendue par chaque dépendant.
+- **Un jar Fabric-only mal identifié dans `mods/`** peut faire échouer tout le lot traité
+  par Sinytra Connector, y compris des mods sans rapport.
+- **medicalmod** : pas de release 3.x sur GitHub (la `v2.4.1` est une build Fabric). Le jar
+  vient d'un clone + `./gradlew build` de `main`.
+- **Simple Nicknames** remplace `FakenameFabric` sans reprendre ses données.
+- **Sculk Horde** : pas de build NeoForge 1.21.1. La branche `1.21.1` du dépôt officiel
+  (`TeamPeril/Sculk-Horde`) est en développement — attendre leur release, ne pas forker.
+- **Apocalyptic Meteors** : rien ne tombe tant que `/meteors` n'est pas lancée. Le mod
+  n'impose aucune permission ; c'est Nouvelle Terre Bridge qui la réserve aux op
+  (voir « Durcissement 2.0.1 »).
+
+## Durcissement 2.0.1
+
+Audit complet du code serveur : tout ce que le client envoie est désormais revalidé.
+**Règle à garder pour tout nouveau paquet : le client borne la saisie, mais il ne fait
+jamais autorité** — montants, quantités, prix, cibles et longueurs se vérifient côté
+serveur.
+
+### Failles d'argent fermées
+- **Virement `/bank`** (`ACTION_TRANSFER`) : le montant n'était pas vérifié. Négatif, il
+  inversait le virement — un client modifié vidait n'importe quel compte, `$Serveur` et
+  `$Sequestre` compris. `/pay` faisait déjà les contrôles, le GUI non.
+  `LocalEconomy.transfer()` refuse maintenant tout montant `<= 0` **au plus bas niveau**,
+  et `addShards`/`removeShards`/`forceDeduct`/`depositShards` refusent les négatifs :
+  aucun appelant ne peut l'oublier.
+- **Crédits** : la hausse quotidienne de la pénalité venait du paquet sans validation et
+  n'était jamais montrée à l'emprunteur. Elle est imposée par le serveur
+  (`Loan.HAUSSE_PENALITE` = 5 ◆), la valeur du paquet est ignorée, et
+  `Loan.nextPenalty()` ne peut plus être négative. Durée plafonnée à 365 j.
+- **Shop Serveur** : quantité plafonnée à `ServerShopActions.QTE_MAX` (un inventaire,
+  36 × 64) et total calculé en `long`. Sans plafond, `prix × quantité` débordait en
+  négatif et la boucle de livraison gelait le serveur en un paquet.
+- **HDV** : quantité et prix d'une annonce validés (`MarketActions.QTE_MAX`, `PRIX_MAX`),
+  coût d'achat calculé en `long`, item inconnu refusé.
+- **Retrait en Shards physiques** plafonné à 200 000 ◆ par opération.
+
+### Fichiers de données
+- **Écriture atomique** (`util/FichierSur.ecrire`) : tous les `save()` passent par un
+  fichier temporaire renommé d'un seul geste. Avant, le fichier vivant était tronqué puis
+  réécrit — un crash au mauvais moment laissait un `shards.json` vide, et le chargement
+  suivant repartait de zéro puis l'écrasait.
+  ⚠ Le contenu doit être **entièrement sérialisé en chaîne avant l'appel** : ne pas
+  revenir à un `Writer` ouvert sur le fichier.
+- **Copie quotidienne** (`SauvegardeFichier.sauvegardeQuotidienne`) : les 10 fichiers
+  d'état sont copiés une fois par jour dans `backups-economie/` (motif `auto`), 14 jours
+  gardés. Vérifiée au démarrage puis toutes les heures.
+- **Fichier illisible au démarrage** (`verifierAuDemarrage`, appelé **avant tout
+  chargement**) : mis de côté (motif `corrompu`) puis remplacé par sa dernière copie
+  quotidienne, avec une erreur dans les logs.
+- `/nt-sauvegarde restaurer` recharge maintenant `shards.json` en mémoire
+  (`LocalEconomy.recharger()`), sans redémarrage.
+
+### Anti-abus
+- `/conflit` : un par minute et par joueur, raison ≤ 300 caractères, cible connectée.
+- Fiche du registre : une demande par 500 ms (chaque demande appelle le bot).
+- 10 virements récurrents maximum par joueur.
+- `/economie admin reset-economy` passe au niveau op 4.
+- File d'attente vers le bot bornée à 2 000 événements ; un refus définitif (4xx)
+  n'est plus renvoyé en boucle.
+- Avertissement dans les logs si `sharedSecret` est resté à sa valeur d'exemple, ou si
+  `botUrl` est en `http://` hors localhost.
+- **Commandes d'autres mods** : `NouvelleTerreBridge.COMMANDES_RESERVEES_OP` liste les
+  commandes tierces sans permission à réserver aux op (niveau 2), filtrées par
+  `CommandEvent`. Contient `meteors`. Ajouter ici toute commande dangereuse d'un mod
+  qu'on ne peut pas corriger à la source.
+
+### Limite connue, non traitée
+Les comptes sont indexés par **pseudo en minuscules**, pas par UUID : un joueur qui change
+de pseudo Mojang repart d'un compte vide (l'ancien solde reste sous l'ancien pseudo, à
+transférer à la main par `/economie admin`). Migrer vers l'UUID touche tous les fichiers
+de données et le bot — à ne faire que sur décision explicite.
 
 ---
 
@@ -229,7 +311,10 @@ Toute opération irréversible copie d'abord son fichier dans `backups-economie/
 migration des prix, purge du marché, et la restauration elle-même. `/nt-sauvegarde` liste
 les copies (cliquables) et `restaurer <fichier>` les remet en place puis **recharge en
 mémoire** — copier le fichier ne suffit pas, les gestionnaires travaillent sur leur copie
-chargée au démarrage.
+chargée au démarrage. Le rechargement à chaud existe pour `seuils-shop.json`,
+`server-shop-prices.json` et `shards.json` ; les autres fichiers demandent un redémarrage.
+Depuis la 2.0.1 s'y ajoute une copie quotidienne de tous les fichiers d'état (voir
+« Durcissement 2.0.1 »).
 ⚠ Restaurer `seuils-shop.json` passe par `ShopThresholds.rechargerRestaure()` et **non**
 par `load()` : ce dernier enchaîne sur `migrerPrix()`, qui réappliquerait aussitôt la table
 courante et annulerait la restauration dans la seconde. Les entrées restaurées sont
@@ -363,10 +448,8 @@ sinon les entrées déjà estampillées restent figées sur leurs mauvais prix.
   8 entrées → Marché, Shop, Banque, Quêtes, Production, Registre, Conflit, Guide.
 - Donné à la connexion et après un respawn (`donnerParcheminSiAbsent`), et récupérable
   gratuitement via le bandeau épinglé du Shop (`ACTION_CLAIM_PARCHEMIN`). **Non vendable.**
-- `ParcheminDropMixin` bloque la touche « lâcher » (cible `ServerPlayerEntity.dropSelectedItem`
-  et **non** `dropItem` : à ce stade la pile est déjà retirée, l'annuler la supprimerait).
-  ⚠ Ne bloque **pas** le glisser hors de l'inventaire — le tooltip ne promet donc que
-  la restitution automatique, pas l'impossibilité de le jeter.
+- Le jet du Parchemin est bloqué par un `ItemTossEvent` dans `NouvelleTerreBridge`
+  (ancien `ParcheminDropMixin`) : touche « lâcher » **et** glisser hors de l'inventaire.
 - Occupe un slot normal — un vrai slot supplémentaire exigerait de mixiner `PlayerInventory`
   et `PlayerScreenHandler` (sérialisation NBT comprise), risque de perte d'items jugé trop élevé.
 - **`HubBackButton`** : flèche « ← » partagée, en tête de chaque écran, qui rouvre le hub
@@ -649,25 +732,17 @@ http/
                              Secret URL-encodé (URLEncoder.encode) pour éviter les chars spéciaux dans l'URI
   EventQueue.java          → Persistance JSON de la file d'attente
 
-mixin/
-  BlockItemMixin.java              → @Inject BlockItem.place RETURN → PlacedBlockTracker.marquer()
-                                     Marque tout bloc posé par un joueur (voir anti-exploit ci-dessous)
-  CraftingResultSlotMixin.java     → @Inject onTakeItem HEAD → compte le craft en production
-                                     @Shadow du champ `input` : à HEAD la grille contient encore les
-                                     ingrédients, seul moment où la provenance du résultat est lisible.
-                                     Décompactage (1 bloc → 4/9 unités) : ne crédite rien et **retire**
-                                     1 du compteur du bloc → le cycle compacter/décompacter est neutre.
-                                     Le compactage (9 → 1) reste compté : fabriquer des blocs est la
-                                     façon prévue de les débloquer au Shop.
-  PlayerManagerMixin.java          → @Inject checkCanJoin HEAD → refuse les non-op quand le mode
-                                     maintenance est actif (même porte que la whitelist)
-  LivingEntityMixin.java           → Intercepte les morts joueurs → event PLAYER_DEATH
-  InGameHudMixin.java              → @Inject InGameHud.render HEAD → reset debugHudActive = false
-  DebugHudMixin.java               → @Inject DebugHud.render HEAD → set debugHudActive = true (détection F3)
-  ServerPlayerEntityMixin.java     → @Inject getPlayerListName HEAD → retourne "§fNomRP §8(§7pseudo§8)"
+mixin/                           ← 3 mixins seulement, le reste passe par des events NeoForge
+  PlayerManagerMixin.java          → @Inject PlayerList.canPlayerLogin HEAD → refuse les non-op
+                                     quand le mode maintenance est actif (même porte que la whitelist)
+  ServerPlayerEntityMixin.java     → @Inject getTabListDisplayName HEAD → "§fNomRP §8(§7pseudo§8)"
                                      depuis NouvelleTerreBridge.nomsRP (tab list côté serveur)
-  AbstractClientPlayerEntityMixin.java → @Inject getDisplayName HEAD (CLIENT) → lit PlayerListEntry.getDisplayName()
-                                         pour que le nameplate au-dessus de la tête affiche le nom RP
+  AbstractClientPlayerEntityMixin.java → (CLIENT) nom RP au-dessus de la tête
+  Convertis en events : pose de bloc (PlacedBlockTracker), craft et décompactage,
+  morts de joueurs, détection F3, lâcher du Parchemin.
+
+util/
+  FichierSur.java          → Écriture atomique des JSON (fichier temporaire + renommage)
 
 network/
   HdvNetworking.java       → Canaux : HDV_OPEN / HDV_ACTION / HDV_RESULT / NT_VERSION / NT_BALANCE
@@ -742,7 +817,7 @@ client/                    ← @Environment(CLIENT) uniquement
                              dur avait rendu un onglet ni dessiné ni cliquable.
                              Tooltip vanilla au survol (nom + enchantements) + ligne vendeur/prix
                              Chip solde haut-droit → BANK_REQUEST → ouvre BankScreen
-                             Catégorie "Médical" : items cottonmod (coton, bandage, medkit, plantes...)
+                             Catégorie "Médical" : items medicalmod (coton, bandage, medkit, plantes...)
   ServerShopScreen.java    → Shop Serveur autonome : onglets Acheter / Vendre, **liste** (1.4.0,
                              même forme que le HDV), scrollbar or draggable, modal quantité avec
                              `NumberInput`, tendance de prix en clair sur la ligne
@@ -810,7 +885,6 @@ client/                    ← @Environment(CLIENT) uniquement
                              biomeEnabled/X/Y, notifEnabled/X/Y, armureEnabled/X/Y,
                              xpEnabled/X/Y, dimensionEnabled/X/Y, effetsEnabled/X/Y
   NouvelleSettingsScreen.java → Bouton "Éditeur HUD →" + toggle Discord RPC
-  ModMenuIntegration.java  → Hook ModMenu optionnel (modCompileOnly)
 
 client/hud/                ← Widgets HUD individuels
   HudWidget.java           → Classe abstraite : id, label, anchorX/Y, enabled, getPixelX/Y (clamped),
@@ -837,8 +911,9 @@ market/
   MarketListing.java       → POJO annonce (id, seller, item, quantity, pricePerUnit)
   MarketActions.java       → Logique métier : buy / sellByItemId / withdraw
   FrenchItemNames.java     → Dictionnaire FR↔MC + toDisplay() (strip namespace)
-                             Inclut items cottonmod : coton, fil, tissu, aloé, camomille, calendula,
-                             bandage, medkit, parachute, etc. (namespace cottonmod:*)
+                             Inclut items medicalmod (remplace cottonmod, 1.21.1) : coton, fil, tissu,
+                             aloé, camomille, calendula, bandage, attelle, médicament, antidouleur,
+                             kit médical, parachute, etc. (namespace medicalmod:*)
 ```
 
 ---
@@ -954,7 +1029,7 @@ CONFLIT_RESULT: bool ok | string msg
   recevait une pile vierge — d'où « les items enchantés perdent leur enchantement à l'achat ».
   Le NBT lui-même n'était pas en cause (SNBT → JSON → SNBT vérifié intact).
   Les récepteurs Shop et Production suivaient déjà ce schéma ; HDV était le seul écart.
-- Screen Fabric pur — pas de `ScreenHandler`, pas de slots vanilla
+- Screen vanilla pur — pas de `ScreenHandler`/`AbstractContainerMenu`, pas de slots vanilla
 - Items rendus en 2× (32×32 px) via `drawItemScaled()` — transform matricielle sur `ctx.getMatrices()`
 - La vente lit l'inventaire côté client (`client.player.getInventory().main`) — le serveur revalide
 - Sidebar catégories : icône item Minecraft + compteur d'annonces par catégorie (`CAT_ICONS` map)
@@ -975,11 +1050,30 @@ CONFLIT_RESULT: bool ok | string msg
 - **Saisie numérique** : tous les champs prix/quantité passent par `NumberInput` (voir plus haut).
   L'écran hôte doit relayer `keyPressed`/`charTyped` au champ concerné, sinon seuls les paliers
   souris répondent.
+- **Flou par-dessus l'UI (portage NeoForge)** : tous les écrans dessinent leur propre fond puis
+  appellent `super.render()` en dernier, pour que les widgets vanilla (EditBox, Button) passent
+  par-dessus les panneaux custom. Or `Screen.render()` par défaut commence par
+  `renderBackground()` (flou + texture menu) **avant** de dessiner les widgets — `super.render()`
+  réappliquait donc flou + texture par-dessus notre UI déjà dessinée. Chaque écran du mod
+  override désormais `renderBackground(ctx, mx, my, delta)` en no-op (12 écrans concernés,
+  tous sauf `RegistreScreen` qui n'appelle jamais `super.render()`). Confirmé par lecture directe
+  du `Screen.java` décompilé — le bug n'est pas spécifique à un écran, c'est le comportement
+  vanilla par défaut qui ne collait pas avec l'ordre de rendu déjà en place.
 
 ## GUI Bank — décisions techniques
 
 - **Onglet Virements** : 2 cards (`cardW = (pw - GAP) / 2`), `renderInfoCard()` partagé
 - **Dropdowns** : rendu dans `render()` après le tab content, overlay `0xAA000000` + scissor + scroll. Champs montant cachés via `setY(-200)` quand dropdown ouvert
+- ⚠ **Champs EditBox affichés hors de leur onglet (portage NeoForge)** : un `EditBox` ajouté via
+  `addRenderableWidget` reste dans la liste de rendu de `Screen` en permanence — `super.render()`
+  le dessine à sa dernière position **quel que soit l'onglet actif**, pas seulement dans celui où
+  il est censé apparaître. `lbSearchField` (Classement) et `trfAmountField`/`recurAmountField`/
+  `recurIntervalMinsField` (Virements) restaient donc visibles en changeant d'onglet — jamais
+  masqués comme le sont déjà les champs modaux ci-dessus. Corrigé en forçant `setY(-200)` sur les
+  champs de l'onglet inactif à chaque frame de `render()`. Même bug et même correctif sur
+  `HdvScreen.searchField` (onglet Marché). `MarcheScreen` avait déjà résolu ça proprement avec un
+  helper générique `parquerChamps(EditBox... gardes)` — à réutiliser si un nouvel écran à onglets
+  est ajouté, plutôt que de refaire le correctif à la main.
 - **Focus des champs texte** : dans `mouseClicked` onglet TRANSFERS, appeler `super.mouseClicked()` AVANT `handleTransfersClick()` — sinon les TextFieldWidget ne prennent jamais le focus clavier
 - **Positions UI dans render()** : `trfDropX/Y/W`, `recurDropX/Y/W`, `trfSendBtnY`, `recurCreateBtnY`, `recurCancelBtnY[]` — relus dans `mouseClicked()`
 - Pénalité check : `while` dans `LoanManager.tick()` rattrape plusieurs jours si serveur éteint
@@ -1006,7 +1100,6 @@ CONFLIT_RESULT: bool ok | string msg
 - Snap aux bords : si le widget passe à moins de 8px d'un bord pendant le drag, il se colle
 - `HudEditorScreen.removed()` → `saveAll()` → `ClientConfig.save()` — sauvegarde à la fermeture uniquement
 - Touche H par défaut (catégorie `key.categories.nouvelle-terre-bridge`), rebindable dans Contrôles
-- ModMenu = `modCompileOnly "com.terraformersmc:modmenu:7.2.2"` — entrypoint `modmenu` dans `fabric.mod.json`
 
 ## Système noms RP — décisions techniques
 

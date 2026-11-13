@@ -1,5 +1,7 @@
 package com.nouvelleterrebridge.economy;
 
+import com.nouvelleterrebridge.util.FichierSur;
+
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
@@ -107,8 +109,8 @@ public class ServerShopPriceManager {
     }
 
     public static synchronized void save() {
-        try (Writer w = new OutputStreamWriter(new FileOutputStream(FILE.toFile()), StandardCharsets.UTF_8)) {
-            GSON.toJson(prices, w);
+        try {
+            FichierSur.ecrire(FILE, GSON.toJson(prices));
         } catch (Exception e) {
             NouvelleTerreBridge.LOGGER.error("[ServerShopPriceManager] Erreur sauvegarde : {}", e.getMessage());
         }

@@ -26,6 +26,11 @@ public final class MarketActions {
 
     private MarketActions() {}
 
+    /** Un inventaire plein : personne ne peut vendre ou recevoir davantage d'un coup. */
+    public static final int QTE_MAX  = 36 * 64;
+    /** Prix unitaire maximal d'une annonce. */
+    public static final int PRIX_MAX = 10_000_000;
+
     // ── Achat ─────────────────────────────────────────────────────────────────
 
     /**
@@ -41,6 +46,10 @@ public final class MarketActions {
         LocalEconomy eco = LocalEconomy.getInstance();
         String wanted  = itemNBT == null ? "" : itemNBT;
 
+        if (qty <= 0 || qty > QTE_MAX) return "§cQuantité invalide.";
+        ResourceLocation idItem = ResourceLocation.tryParse(itemId);
+        if (idItem == null || !BuiltInRegistries.ITEM.containsKey(idItem)) return "§cItem inconnu.";
+
         List<MarketListing> annonces = MarketManager.getInstance().getAll().stream()
             .filter(l -> l.item.equalsIgnoreCase(itemId) && !l.seller.equalsIgnoreCase(pseudo))
             .filter(l -> (l.itemNBT == null ? "" : l.itemNBT).equals(wanted))
@@ -54,19 +63,26 @@ public final class MarketActions {
         if (stockTotal < qty)
             return String.format("§cStock insuffisant — §f%d§c/%d dispo.", stockTotal, qty);
 
-        int coutTotal = 0, restCalc = qty;
+        // Calcul en long : une annonce au prix maximal ne doit pas faire déborder
+        // le total en négatif (l'achat deviendrait gratuit, voire rémunéré).
+        long coutLong = 0;
+        int restCalc = qty;
         for (MarketListing l : annonces) {
+            if (l.pricePerUnit <= 0 || l.quantity <= 0)
+                return "§cUne annonce de cet article est invalide — préviens un administrateur.";
             int pris = Math.min(restCalc, l.quantity);
-            coutTotal += pris * l.pricePerUnit;
+            coutLong += (long) pris * l.pricePerUnit;
             restCalc -= pris;
             if (restCalc == 0) break;
         }
+        if (coutLong > Integer.MAX_VALUE) return "§cMontant trop élevé — réduis la quantité.";
+        int coutTotal = (int) coutLong;
 
         if (eco.getBalance(pseudo) < coutTotal)
             return String.format("§cSolde insuffisant — §f%d💎§c requis, tu as §f%d💎§c.",
                 coutTotal, eco.getBalance(pseudo));
 
-        Item itemObj = BuiltInRegistries.ITEM.get(ResourceLocation.tryParse(itemId));
+        Item itemObj = BuiltInRegistries.ITEM.get(idItem);
         int restant = qty;
 
         for (MarketListing ann : annonces) {
@@ -136,6 +152,13 @@ public final class MarketActions {
         String pseudo  = player.getName().getString();
         String nomItem = FrenchItemNames.toDisplay(itemId);
         String wanted  = itemNBT == null ? "" : itemNBT;
+
+        // Le client borne déjà la saisie, mais il ne fait pas autorité : une
+        // quantité négative passait le test « tu n'en as pas assez », et un prix
+        // négatif faisait payer le vendeur par l'acheteur à l'envers.
+        if (qty <= 0 || qty > QTE_MAX) return "§cQuantité invalide.";
+        if (pricePerUnit <= 0 || pricePerUnit > PRIX_MAX)
+            return "§cPrix invalide (entre 1 et " + EconomieCommand.fmt(PRIX_MAX) + " ◆ l'unité).";
 
         // Compter la quantité disponible dont le NBT correspond exactement
         HolderLookup.Provider registries = player.getServer().registryAccess();

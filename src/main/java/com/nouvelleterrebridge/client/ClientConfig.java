@@ -1,5 +1,7 @@
 package com.nouvelleterrebridge.client;
 
+import com.nouvelleterrebridge.util.FichierSur;
+
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import net.neoforged.fml.loading.FMLPaths;
@@ -108,8 +110,8 @@ public class ClientConfig {
 
     public void save() {
         Path path = FMLPaths.CONFIGDIR.get().resolve(FILENAME);
-        try (Writer w = new FileWriter(path.toFile())) {
-            GSON.toJson(this, w);
+        try {
+            FichierSur.ecrire(path, GSON.toJson(this));
         } catch (IOException ignored) {}
     }
 }

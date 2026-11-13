@@ -1,5 +1,7 @@
 package com.nouvelleterrebridge.service;
 
+import com.nouvelleterrebridge.util.FichierSur;
+
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
@@ -137,8 +139,8 @@ public final class ServiceManager {
     private void sauver() {
         donnees.prochainIdAnnonce  = idAnnonce.get();
         donnees.prochainIdCommande = idCommande.get();
-        try (Writer w = new OutputStreamWriter(new FileOutputStream(FICHIER.toFile()), StandardCharsets.UTF_8)) {
-            GSON.toJson(donnees, w);
+        try {
+            FichierSur.ecrire(FICHIER, GSON.toJson(donnees));
         } catch (Exception e) {
             NouvelleTerreBridge.LOGGER.error("[LeBonCube] Erreur sauvegarde : {}", e.getMessage());
         }
@@ -352,6 +354,8 @@ public final class ServiceManager {
         if (etoiles >= 1 && etoiles <= 5) {
             c.note = etoiles;
             c.avis = avis == null ? "" : avis.trim();
+            // Affiché à tous sur les annonces du prestataire, donc borné
+            if (c.avis.length() > 300) c.avis = c.avis.substring(0, 300);
             donnees.notes.computeIfAbsent(c.prestataire.toLowerCase(), k -> new ArrayList<>())
                 .add(new Note(client, etoiles, c.avis, c.id));
         }

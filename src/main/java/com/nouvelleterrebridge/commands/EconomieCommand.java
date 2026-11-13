@@ -76,6 +76,9 @@ public class EconomieCommand {
                                 ctx.getSource(),
                                 StringArgumentType.getString(ctx, "joueur")))))
                     .then(Commands.literal("reset-economy")
+                        // Efface tous les soldes : niveau maximum, comme /server-admin
+                        .requires(src -> src.hasPermission(
+                            com.nouvelleterrebridge.service.ServiceNetworkHandler.NIVEAU_ADMIN))
                         .then(Commands.literal("confirmer")
                             .executes(ctx -> executerResetEconomy(ctx.getSource())))))
         );

@@ -1,5 +1,7 @@
 package com.nouvelleterrebridge.economy;
 
+import com.nouvelleterrebridge.util.FichierSur;
+
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
@@ -50,8 +52,8 @@ public class DailyBonusTracker {
     }
 
     private static void save() {
-        try (Writer w = new OutputStreamWriter(new FileOutputStream(FILE.toFile()), StandardCharsets.UTF_8)) {
-            GSON.toJson(lastClaim, w);
+        try {
+            FichierSur.ecrire(FILE, GSON.toJson(lastClaim));
         } catch (Exception e) {
             NouvelleTerreBridge.LOGGER.error("[DailyBonusTracker] Erreur sauvegarde : {}", e.getMessage());
         }

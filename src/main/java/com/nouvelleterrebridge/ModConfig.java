@@ -1,5 +1,7 @@
 package com.nouvelleterrebridge;
 
+import com.nouvelleterrebridge.util.FichierSur;
+
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import net.neoforged.fml.loading.FMLPaths;
@@ -40,6 +42,7 @@ public class ModConfig {
         try (Reader reader = new FileReader(fichier)) {
             ModConfig config = GSON.fromJson(reader, ModConfig.class);
             NouvelleTerreBridge.LOGGER.info("[Config] Configuration chargée depuis {}", cheminConfig);
+            if (config != null) config.avertirSiDefauts();
             return config;
         } catch (IOException e) {
             NouvelleTerreBridge.LOGGER.error("[Config] Impossible de lire la configuration, utilisation des valeurs par défaut", e);
@@ -49,11 +52,20 @@ public class ModConfig {
 
     public void sauvegarder() {
         Path cheminConfig = FMLPaths.CONFIGDIR.get().resolve(NOM_FICHIER);
-        try (Writer writer = new FileWriter(cheminConfig.toFile())) {
-            GSON.toJson(this, writer);
+        try {
+            FichierSur.ecrire(cheminConfig, GSON.toJson(this));
         } catch (IOException e) {
             NouvelleTerreBridge.LOGGER.error("[Config] Impossible de sauvegarder la configuration", e);
         }
+    }
+
+    /** Le secret d'exemple est public (il est dans le code) : le garder revient à ne pas en avoir. */
+    private void avertirSiDefauts() {
+        if ("changez_ce_secret".equals(sharedSecret))
+            NouvelleTerreBridge.LOGGER.warn("[Config] ⚠ sharedSecret est resté à sa valeur d'exemple — "
+                + "n'importe qui peut se faire passer pour ce serveur auprès du bot. Changez-le des deux côtés.");
+        if (botUrl != null && botUrl.startsWith("http://") && !botUrl.contains("localhost") && !botUrl.contains("127.0.0.1"))
+            NouvelleTerreBridge.LOGGER.warn("[Config] ⚠ botUrl est en http:// — le secret circule en clair. Utilisez https://.");
     }
 
     // --- Getters ---

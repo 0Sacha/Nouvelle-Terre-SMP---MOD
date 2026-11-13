@@ -24,8 +24,16 @@ public final class ServerShopActions {
 
     // ── Achat (joueur → serveur) ──────────────────────────────────────────────
 
+    /**
+     * Plafond par transaction : un inventaire plein (36 emplacements de 64).
+     * Sans lui, une quantité géante faisait déborder {@code prix × quantité} en
+     * négatif — l'achat créditait alors le joueur — et la boucle de livraison
+     * créait des millions de piles, gelant le serveur en un seul paquet.
+     */
+    public static final int QTE_MAX = 36 * 64;
+
     public static String buy(ServerPlayer player, String itemId, int qty) {
-        if (qty <= 0) return "§cQuantité invalide.";
+        if (qty <= 0 || qty > QTE_MAX) return "§cQuantité invalide (" + QTE_MAX + " maximum par achat).";
 
         Item item = resolve(itemId);
         if (item == null) return "§cItem inconnu.";
@@ -40,7 +48,9 @@ public final class ServerShopActions {
         int    prixBase = ServerShopPriceManager.getPrice(itemId);
         double taxe     = ServerShopPriceManager.taxeRichesse(pseudo);
         int    prixUnite = Math.max(1, (int) Math.round(prixBase * (1.0 + taxe)));
-        int    total     = prixUnite * qty;
+        long   totalLong = (long) prixUnite * qty;
+        if (totalLong > Integer.MAX_VALUE) return "§cMontant trop élevé — réduis la quantité.";
+        int    total     = (int) totalLong;
 
         if (eco.getBalance(pseudo) < total)
             return String.format("§cSolde insuffisant — §f%s ◆§c requis, tu as §f%s ◆§c.",
@@ -71,7 +81,7 @@ public final class ServerShopActions {
     // ── Revente (joueur → serveur) ────────────────────────────────────────────
 
     public static String sell(ServerPlayer player, String itemId, int qty) {
-        if (qty <= 0) return "§cQuantité invalide.";
+        if (qty <= 0 || qty > QTE_MAX) return "§cQuantité invalide (" + QTE_MAX + " maximum par vente).";
         // Le Parchemin est un outil d'interface distribué gratuitement : le revendre
         // reviendrait à imprimer des shards à volonté.
         if (itemId.equals("nouvelle-terre-bridge:parchemin"))
@@ -109,7 +119,9 @@ public final class ServerShopActions {
         ServerShopPriceManager.recordPurchase(itemId, qty);
 
         int prixUnite = ServerShopPriceManager.getBuybackPrice(itemId);
-        int total     = prixUnite * qty;
+        // qty ≤ QTE_MAX et un prix de rachat reste très loin de la limite, mais le
+        // calcul se fait en long pour qu'un prix admin aberrant ne déborde jamais.
+        int total     = (int) Math.min(Integer.MAX_VALUE, (long) prixUnite * qty);
 
         int aRetirer = qty;
         for (int i = 0; i < player.getInventory().items.size() && aRetirer > 0; i++) {

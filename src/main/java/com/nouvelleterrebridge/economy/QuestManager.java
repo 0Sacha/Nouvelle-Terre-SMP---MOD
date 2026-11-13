@@ -118,14 +118,14 @@ public class QuestManager {
     }
 
     private static void save() {
-        try (Writer w = new OutputStreamWriter(new FileOutputStream(FILE.toFile()), StandardCharsets.UTF_8)) {
+        try {
             Map<String, Object> root = new LinkedHashMap<>();
             root.put("players", players);
             root.put("globalGroup", globalGroup);
             root.put("dailySolo", dailySolo);
             root.put("community", community);
             root.put("dailyDate", dailyDate);
-            GSON.toJson(root, w);
+            com.nouvelleterrebridge.util.FichierSur.ecrire(FILE, GSON.toJson(root));
         } catch (Exception e) {
             NouvelleTerreBridge.LOGGER.error("[QuestManager] Erreur sauvegarde : {}", e.getMessage());
         }

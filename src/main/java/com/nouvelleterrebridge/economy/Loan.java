@@ -8,6 +8,9 @@ public class Loan {
     public long    dueTimestamp;
     public int     penaltyBase;
     public int     penaltyIncrease;
+
+    /** Hausse quotidienne de la pénalité, en ◆ — imposée par le serveur, non négociable. */
+    public static final int HAUSSE_PENALITE = 5;
     public int     daysOverdue;
     public int     totalPenalty;
     public boolean repaid;
@@ -34,7 +37,9 @@ public class Loan {
 
     /** Pénalité du prochain jour de retard (augmente chaque jour). */
     public int nextPenalty() {
-        return penaltyBase + daysOverdue * penaltyIncrease;
+        // Jamais négative : une hausse négative enregistrée avant le correctif
+        // aurait fini par verser de l'argent à l'emprunteur en retard.
+        return Math.max(0, penaltyBase + daysOverdue * Math.max(0, penaltyIncrease));
     }
 
     public boolean isOverdue() {

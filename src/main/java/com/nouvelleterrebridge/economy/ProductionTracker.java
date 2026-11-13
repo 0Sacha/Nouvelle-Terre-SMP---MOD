@@ -1,5 +1,7 @@
 package com.nouvelleterrebridge.economy;
 
+import com.nouvelleterrebridge.util.FichierSur;
+
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
@@ -37,8 +39,8 @@ public class ProductionTracker {
     }
 
     public static synchronized void save() {
-        try (Writer w = new OutputStreamWriter(new FileOutputStream(FILE.toFile()), StandardCharsets.UTF_8)) {
-            GSON.toJson(counts, w);
+        try {
+            FichierSur.ecrire(FILE, GSON.toJson(counts));
         } catch (Exception e) {
             NouvelleTerreBridge.LOGGER.error("[ProductionTracker] Erreur sauvegarde : {}", e.getMessage());
         }

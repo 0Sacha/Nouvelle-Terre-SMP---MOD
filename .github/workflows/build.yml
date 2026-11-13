@@ -71,10 +71,3 @@ jobs:
                 "color": 16753920
               }]
             }'
-
-      - name: Déclencher la mise à jour du modpack
-        uses: peter-evans/repository-dispatch@v3
-        with:
-          token: ${{ secrets.PACK_UPDATE_TOKEN }}
-          repository: 0Sacha/Nouvelle-Terre-SMP---Pack
-          event-type: mod-released

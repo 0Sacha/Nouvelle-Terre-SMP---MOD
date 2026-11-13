@@ -26,3 +26,9 @@ Thumbs.db
 /nouvelle-terre-*.json
 /economy-starters.json
 /backup-economie-*/
+/backup-1.20.1-fabric*/
+/backups-economie/
+
+# État local de Claude Code
+.claude/scheduled_tasks.lock
+.claude/worktrees/

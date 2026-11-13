@@ -140,6 +140,17 @@ public class NouvelleTerreBridge {
     public NouvelleTerreBridge(IEventBus modEventBus) {
         LOGGER.info("[NouvelleTerreBridge] Initialisation du mod...");
 
+        // Avant tout chargement : un fichier de données illisible est mis de côté
+        // et remplacé par sa dernière copie quotidienne, au lieu de laisser son
+        // gestionnaire repartir de zéro puis écraser l'original.
+        com.nouvelleterrebridge.economy.SauvegardeFichier.verifierAuDemarrage();
+        // Un serveur qui ne redémarre pas tous les jours doit quand même avoir sa
+        // copie du jour : vérification horaire, sans effet si elle existe déjà.
+        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.tick.ServerTickEvent.Post e) -> {
+            if (e.getServer().getTickCount() % 72000 == 0)
+                com.nouvelleterrebridge.economy.SauvegardeFichier.sauvegardeQuotidienne();
+        });
+
         // Doit être fait avant tout le reste : force le chargement des 34 canaux,
         // y compris ceux (comme WikiNetworking) qui ne sont sinon référencés que
         // depuis l'intérieur d'un lambda jamais évalué à ce stade.
@@ -213,6 +224,44 @@ public class NouvelleTerreBridge {
             event.accept(PARCHEMIN.get());
         }
     }
+
+    /**
+     * Commandes d'autres mods enregistrées sans aucune restriction de permission,
+     * réservées ici aux op (niveau 2).
+     *
+     * {@code /meteors} (Apocalyptic Meteors) déclenche une pluie de météores
+     * destructrice et n'importe quel joueur pouvait la lancer. Le mod est sous
+     * licence fermée : impossible de le corriger à la source, d'où ce filtre à
+     * l'exécution.
+     */
+    private static final java.util.Set<String> COMMANDES_RESERVEES_OP = java.util.Set.of("meteors");
+
+    @net.neoforged.bus.api.SubscribeEvent
+    public void onCommande(net.neoforged.neoforge.event.CommandEvent event) {
+        var parse = event.getParseResults();
+        String saisie = parse.getReader().getString().trim();
+        if (saisie.startsWith("/")) saisie = saisie.substring(1);
+        String racine = saisie.split(" ", 2)[0].toLowerCase(java.util.Locale.ROOT);
+        // Forme espacée « mod:commande » : on ne garde que le nom
+        int deuxPoints = racine.indexOf(':');
+        if (deuxPoints >= 0) racine = racine.substring(deuxPoints + 1);
+
+        if (COMMANDES_RESERVEES_OP.contains(racine)
+                && !parse.getContext().getSource().hasPermission(2)) {
+            event.setCanceled(true);
+            parse.getContext().getSource().sendFailure(
+                Component.literal("Cette commande est réservée aux administrateurs."));
+        }
+    }
+
+    /** Dernier usage par joueur, pour les actions qui appellent le bot (anti-spam). */
+    private static final Map<java.util.UUID, Long> dernierConflit  = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final Map<java.util.UUID, Long> dernierRegistre = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final long DELAI_CONFLIT_MS  = 60_000;
+    private static final long DELAI_REGISTRE_MS = 500;
+    private static final int  RAISON_CONFLIT_MAX = 300;
+    /** Un inventaire plein de billets de 100 : au-delà, le surplus tomberait au sol. */
+    private static final int  RETRAIT_MAX = 200_000;
 
     @net.neoforged.bus.api.SubscribeEvent
     public void onServerStarted(ServerStartedEvent event) {
@@ -601,10 +650,17 @@ public class NouvelleTerreBridge {
                         result = "§cVous ne pouvez pas vous preter a vous-meme.";
                     } else if (!LocalEconomy.getInstance().estConnu(borrowerName)) {
                         result = "§cJoueur inconnu.";
-                    } else if (amount <= 0 || durationDays <= 0 || penaltyBase <= 0) {
+                    } else if (borrowerName.startsWith("$")) {
+                        result = "§cJoueur inconnu.";
+                    } else if (amount <= 0 || durationDays <= 0 || penaltyBase <= 0
+                            || durationDays > 365 || penaltyBase > 100_000) {
                         result = "§cValeurs invalides.";
                     } else {
-                        String err = LoanManager.getInstance().request(borrowerName, lender, amount, durationDays, penaltyBase, penaltyIncrease);
+                        // La hausse quotidienne de la pénalité est imposée par le serveur :
+                        // la valeur du paquet est ignorée. L'emprunteur ne la voit pas dans
+                        // sa proposition — négative, elle le rémunérait chaque jour de
+                        // retard ; énorme, elle le ruinait par une clause invisible.
+                        String err = LoanManager.getInstance().request(borrowerName, lender, amount, durationDays, penaltyBase, Loan.HAUSSE_PENALITE);
                         if (err != null) {
                             result = "§c" + err;
                         } else {
@@ -614,7 +670,7 @@ public class NouvelleTerreBridge {
                                 if (bp != null) bp.sendSystemMessage(Component.literal(
                                     "§e[Banque] §f" + lender + " §evous propose un credit de §f" + amount
                                     + " ◆§e (duree " + durationDays + " j, penalite " + penaltyBase
-                                    + " ◆/j de retard). §7Ouvre /bank → Credits pour accepter ou refuser."));
+                                    + " ◆/j de retard, +" + Loan.HAUSSE_PENALITE + " ◆ par jour supplementaire). §7Ouvre /bank → Credits pour accepter ou refuser."));
                             });
                         }
                     }
@@ -690,6 +746,12 @@ public class NouvelleTerreBridge {
                     String sender = player.getName().getString();
                     if (sender.equalsIgnoreCase(target)) {
                         result = "§cVous ne pouvez pas vous envoyer des fonds.";
+                    } else if (amount <= 0) {
+                        // Un montant négatif inversait le virement : le client pouvait
+                        // vider le compte de n'importe qui, comptes système compris.
+                        result = "§cMontant invalide.";
+                    } else if (target.startsWith("$") || !LocalEconomy.getInstance().estConnu(target)) {
+                        result = "§cJoueur inconnu.";
                     } else {
                         boolean ok = LocalEconomy.getInstance().transfer(sender, target, amount);
                         if (ok) {
@@ -700,7 +762,7 @@ public class NouvelleTerreBridge {
                                     "§a[Nouvelle Terre] §f" + sender + " §avous a envoyé §f" + amount + " ◆§a !"));
                             });
                         } else {
-                            result = "§cSolde insuffisant ou joueur inconnu.";
+                            result = "§cSolde insuffisant.";
                         }
                     }
                 }
@@ -711,12 +773,16 @@ public class NouvelleTerreBridge {
                     String from = player.getName().getString();
                     if (from.equalsIgnoreCase(to)) {
                         result = "§cVous ne pouvez pas vous faire de virement récurrent.";
-                    } else if (!LocalEconomy.getInstance().estConnu(to)) {
+                    } else if (to.startsWith("$") || !LocalEconomy.getInstance().estConnu(to)) {
                         result = "§cJoueur inconnu.";
                     } else if (amount <= 0) {
                         result = "§cMontant invalide.";
                     } else if (intervalTicks < 1200) {
                         result = "§cIntervalle minimum : 1 minute.";
+                    } else if (RecurringTransferManager.getInstance().getForPlayer(from).size()
+                            >= RecurringTransferManager.MAX_PAR_JOUEUR) {
+                        result = "§cLimite atteinte : " + RecurringTransferManager.MAX_PAR_JOUEUR
+                            + " virements récurrents par joueur. Annulez-en un d'abord.";
                     } else {
                         RecurringTransferManager.getInstance().add(from, to, amount, intervalTicks);
                         result = "§a✅ Virement récurrent créé vers §f" + to + "§a !";
@@ -732,6 +798,9 @@ public class NouvelleTerreBridge {
                     String name = player.getName().getString();
                     if (amount <= 0) {
                         result = "§cMontant invalide.";
+                    } else if (amount > RETRAIT_MAX) {
+                        result = "§cRetrait limité à " + EconomieCommand.fmt(RETRAIT_MAX)
+                            + " ◆ à la fois — au-delà, les coupures ne tiendraient pas dans l'inventaire.";
                     } else if (LocalEconomy.getInstance().getBalance(name) < amount) {
                         result = "§cSolde insuffisant.";
                     } else {
@@ -1192,11 +1261,24 @@ public class NouvelleTerreBridge {
                 String pseudo = player.getName().getString();
                 boolean ok;
                 String msg;
+                long maintenant = System.currentTimeMillis();
+                long ecoule = maintenant - dernierConflit.getOrDefault(player.getUUID(), 0L);
                 if (pseudo.equalsIgnoreCase(cible)) {
                     ok = false; msg = "Vous ne pouvez pas vous déclarer conflit à vous-même.";
                 } else if (raison.trim().length() < 3) {
                     ok = false; msg = "Raison trop courte.";
+                } else if (raison.trim().length() > RAISON_CONFLIT_MAX) {
+                    ok = false; msg = "Raison trop longue (" + RAISON_CONFLIT_MAX + " caractères max).";
+                } else if (server.getPlayerList().getPlayerByName(cible) == null) {
+                    // La liste proposée ne contient que des joueurs connectés : toute
+                    // autre cible vient d'un paquet fabriqué.
+                    ok = false; msg = "Ce joueur n'est pas connecté.";
+                } else if (ecoule < DELAI_CONFLIT_MS) {
+                    // Chaque déclaration alerte le Conseil sur Discord
+                    ok = false; msg = "Patientez " + ((DELAI_CONFLIT_MS - ecoule) / 1000 + 1)
+                        + " s avant de déclarer un nouveau conflit.";
                 } else {
+                    dernierConflit.put(player.getUUID(), maintenant);
                     ok = true;
                     msg = "⚔ Conflit déclaré contre " + cible + " — le Conseil des Fondateurs est alerté.";
                     Map<String, Object> data = new HashMap<>();
@@ -1218,6 +1300,12 @@ public class NouvelleTerreBridge {
     private void registerRegistreNetworking() {
         NtNet.surServeur(RegistreNetworking.REGISTRE_DETAIL_REQUEST, (server, player, buf) -> {
                 String pseudo = buf.readUtf();
+                // Chaque demande déclenche un appel HTTP au bot : sans frein, un
+                // client pouvait le saturer en boucle.
+                long maintenant = System.currentTimeMillis();
+                if (maintenant - dernierRegistre.getOrDefault(player.getUUID(), 0L) < DELAI_REGISTRE_MS
+                        || pseudo.length() > 32) return;
+                dernierRegistre.put(player.getUUID(), maintenant);
                 EventDispatcher.fetchPersonnageDetail(pseudo, server, detail -> {
                     FriendlyByteBuf resp = com.nouvelleterrebridge.network.NtNet.buffer();
                     if (detail == null) {
