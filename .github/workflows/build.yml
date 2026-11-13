@@ -36,15 +36,25 @@ jobs:
           echo "sha=$SHA" >> $GITHUB_OUTPUT
           echo "tag=v$VERSION-$SHA" >> $GITHUB_OUTPUT
 
+      # La description de la release est le changelog de la version (changelogs/<version>.md),
+      # que le bot Discord relit ensuite pour /changelog. Voir changelogs/README.md.
+      - name: Préparer la description de la release
+        run: |
+          FICHIER="changelogs/${{ steps.version.outputs.version }}.md"
+          if [ -f "$FICHIER" ]; then
+            cp "$FICHIER" notes-release.md
+          else
+            echo "::warning::Pas de $FICHIER — /changelog ne pourra pas publier cette version."
+            printf 'Build automatique depuis le commit `%s`.
+' "${{ steps.version.outputs.sha }}" > notes-release.md
+          fi
+
       - name: Créer la Release GitHub
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: "NouvelleTerreBridge ${{ steps.version.outputs.version }} (${{ steps.version.outputs.sha }})"
-          body: |
-            Build automatique depuis le commit `${{ steps.version.outputs.sha }}`.
-
-            **Installation :** dépose `nouvelle-terre-bridge-${{ steps.version.outputs.version }}.jar` dans `mods/`.
+          body_path: notes-release.md
           files: |
             build/libs/nouvelle-terre-bridge-${{ steps.version.outputs.version }}.jar
           make_latest: true

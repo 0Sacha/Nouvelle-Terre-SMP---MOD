@@ -96,16 +96,29 @@ compile, crée la Release, puis remplace le JAR dans `/mods` du serveur par SFTP
 redémarrage reste manuel). Ne jamais y envoyer un build non testé en local.
 
 ### Mettre en ligne
-1. Commits sur `neoforge-natif-1.21.1`, puis `git push origin neoforge-natif-1.21.1`
+1. **Écrire le changelog** de la version : `changelogs/<version>.md`, au format décrit dans
+   `changelogs/README.md`. Obligatoire avant tout push qui change la version — c'est ce
+   fichier que le bot publie sur Discord, et il devient la description de la release.
+   Il s'adresse aux joueurs : ce qui change pour eux, sans nom de classe ni détail de faille.
+   Vérifier le rendu : `node scripts/apercu-changelog.js <fichier>` dans le dépôt du bot.
+2. Commits sur `neoforge-natif-1.21.1`, puis `git push origin neoforge-natif-1.21.1`
    (ne déploie rien) — **seulement quand Sacha le demande**.
-2. Pull request vers `main` (`gh pr create --base main`).
-3. **C'est Sacha qui fusionne la PR** : la fusion déclenche le déploiement, et le mode de
+3. Pull request vers `main` (`gh pr create --base main`).
+4. **C'est Sacha qui fusionne la PR** : la fusion déclenche le déploiement, et le mode de
    permission de Claude Code la refuse. Ne pas chercher à la contourner.
-4. Redémarrer le serveur depuis le panel MineStrator.
-5. Mettre le nouveau JAR dans le modpack Modrinth, sinon les joueurs ne peuvent plus se
-   connecter (le mod est requis des deux côtés).
-6. L'annonce Discord est rédigée par Claude et **postée par Sacha** : aucun accès à
-   Discord depuis Claude Code.
+5. Redémarrer le serveur depuis le panel MineStrator.
+6. Sur Discord, Sacha lance les deux commandes du bot (propriétaire uniquement) :
+   - `/changelog publier` → les nouveautés, dans le salon changelog ;
+   - `/changelog installation` → uniquement la marche à suivre (remplacer le JAR, mods à
+     ajouter), avec le bouton de téléchargement. Message **séparé** exprès : c'est le seul
+     que tout le monde doit suivre.
+   `/changelog apercu` montre le tout sans rien publier. Le bot lit la dernière release sur
+   GitHub : rien à copier-coller. Les annonces manuelles (ajout de mods hors version, etc.)
+   restent dans le salon d'annonces, à la main.
+
+⚠ Un mod que les joueurs doivent ajouter eux-mêmes se déclare dans le changelog par une
+ligne `<!-- mod: Nom | lien | à quoi il sert -->` : le bot en fait la liste du message
+d'installation.
 
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
