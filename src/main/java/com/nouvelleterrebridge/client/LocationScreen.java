@@ -400,7 +400,7 @@ public class LocationScreen extends Screen {
     private int modaleX() { return winX + (winW - MODAL_W) / 2; }
 
     private void renderModaleLouer(GuiGraphics ctx, int mx, int my) {
-        int mh = 176;
+        int mh = 192;
         int ox = modaleX(), oy = winY + (winH - mh) / 2;
         ctx.pose().pushPose();
         ctx.pose().translate(0, 0, 300);
@@ -417,6 +417,8 @@ public class LocationScreen extends Screen {
         ctx.drawString(font, "§7Caution (rendue au retour) : §6" + aLouer.caution() + " ◆", ox + 14, oy + 92, C_MID, false);
         ctx.drawString(font, "§fÀ payer maintenant : §6" + total + " ◆", ox + 14, oy + 110, C_WHITE, false);
         ctx.drawString(font, "§8Puis " + aLouer.prixJour() + " ◆ par jour, prélevés tout seuls", ox + 14, oy + 124, C_DIM, false);
+        if (LocationManager.aRaccommodage(pile(aLouer.item(), aLouer.nbt())))
+            ctx.drawString(font, "§eRaccommodage : à rendre réparé, comme reçu", ox + 14, oy + 138, C_DIM, false);
 
         int cbY = oy + mh - 34;
         drawWideButton(ctx, ox + 14, cbY, 120, "Annuler", C_RED, mx, my);
@@ -539,7 +541,7 @@ public class LocationScreen extends Screen {
     }
 
     private void clicModaleLouer(int x, int y) {
-        int mh = 176;
+        int mh = 192;
         int ox = modaleX(), oy = winY + (winH - mh) / 2;
         if (x < ox || x > ox + MODAL_W || y < oy || y > oy + mh) { aLouer = null; return; }
         int cbY = oy + mh - 34;

@@ -103,6 +103,8 @@ public final class LocationManager {
         /** Le propriétaire veut récupérer son bien : plus de loyer dû, objet à rendre. */
         public boolean resilie;
         public boolean perdu;
+        /** Usure de l'objet au moment de la location — référence pour le retour d'un objet à Raccommodage. */
+        public int degatsDepart;
 
         public int etat() {
             return perdu ? ETAT_PERDU : (bloqueDepuis > 0 ? ETAT_BLOQUE : ETAT_OK);
@@ -358,6 +360,7 @@ public final class LocationManager {
         c.prixJour = o.prixJour;
         c.caution = o.caution;
         c.echeance = System.currentTimeMillis() + JOUR_MS;
+        c.degatsDepart = s.getDamageValue();
 
         // Loyer du premier jour au propriétaire, caution retenue par le séquestre
         eco.removeShards(pseudo, (int) total);
@@ -383,9 +386,21 @@ public final class LocationManager {
         if (c == null || c.perdu) return "§cContrat introuvable.";
         if (!c.locataire.equalsIgnoreCase(joueur.getName().getString())) return "§cCe contrat n'est pas le tien.";
 
-        ItemStack pris = prendre(joueur, c.id);
-        if (pris.isEmpty()) return "§cL'objet doit être dans ton inventaire pour être rendu.";
+        ItemStack sur = trouver(joueur, c.id);
+        if (sur.isEmpty()) return "§cL'objet doit être dans ton inventaire pour être rendu.";
 
+        // Un objet à Raccommodage se répare en jouant : le locataire n'a aucune
+        // raison de le rendre plus usé qu'il ne l'a reçu.
+        if (aRaccommodage(sur) && sur.getDamageValue() > c.degatsDepart) {
+            int manque = sur.getDamageValue() - c.degatsDepart;
+            return c.degatsDepart == 0
+                ? "§cCet objet a Raccommodage : répare-le entièrement avant de le rendre (§f"
+                    + manque + "§c points de durabilité manquants)."
+                : "§cCet objet a Raccommodage : remets-le dans l'état où tu l'as reçu avant de le rendre (§f"
+                    + manque + "§c points de durabilité manquants).";
+        }
+
+        ItemStack pris = prendre(joueur, c.id);
         cloreAvecRetour(joueur.getServer(), c, pris, "Rendu par " + c.locataire);
         return null;
     }
@@ -537,6 +552,21 @@ public final class LocationManager {
     private Contrat contrat(int id) {
         for (Contrat c : donnees.contrats) if (c.id == id) return c;
         return null;
+    }
+
+    /** La pile du contrat dans l'inventaire du joueur, sans la retirer. */
+    private static ItemStack trouver(ServerPlayer joueur, int contratId) {
+        Inventory inv = joueur.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++)
+            if (contratDe(inv.getItem(i)) == contratId) return inv.getItem(i);
+        return ItemStack.EMPTY;
+    }
+
+    public static boolean aRaccommodage(ItemStack s) {
+        var enchantements = s.getOrDefault(DataComponents.ENCHANTMENTS,
+            net.minecraft.world.item.enchantment.ItemEnchantments.EMPTY);
+        return enchantements.keySet().stream()
+            .anyMatch(h -> h.is(net.minecraft.world.item.enchantment.Enchantments.MENDING));
     }
 
     /** Retire de l'inventaire (sac, armure, main secondaire) la pile du contrat. */

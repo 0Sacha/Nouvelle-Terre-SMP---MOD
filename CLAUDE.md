@@ -97,7 +97,8 @@ reste manuel). Ne jamais pousser sur `main` un build non testé en local.
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `2.1.0` (location d'objets — voir « Architecture Location »)
+- Version actuelle : `2.1.1` (location d'objets — voir « Architecture Location »)
+  - 2.1.1 : un objet loué à Raccommodage doit être rendu réparé
   - 2.1.0 : location d'objets entre joueurs, avec verrou et caution
   - 2.0.1 : failles d'argent fermées, écriture atomique, sauvegardes quotidiennes
   - 2.0.0 : portage Minecraft 1.21.1 puis NeoForge natif (en prod sous `2.0.0+neoforge.7`)
@@ -595,7 +596,7 @@ deux lignes de description ajoutées à la location — et non une copie de l'or
   de l'XP, ou fusion dans un autre objet avant de rendre) ;
 - un objet loué ne peut pas être mis en vente au HDV (le Shop Serveur le refusait déjà :
   il ne rachète que les piles vierges).
-L'usure reste normale : un outil loué revient abîmé.
+L'usure reste normale : un outil loué revient abîmé — **sauf s'il a Raccommodage** (Mending). Il se répare alors en jouant, donc `rendre()` le refuse tant qu'il est plus usé qu'au départ (`Contrat.degatsDepart`, relevé à la location). Une reprise forcée après impayé le prend tel quel : exiger une réparation bloquerait le retour au propriétaire.
 
 ### Réseau
 `LocationNetworking` : `LOC_OPEN` / `LOC_ACTION` / `LOC_RESULT`, format détaillé dans le
