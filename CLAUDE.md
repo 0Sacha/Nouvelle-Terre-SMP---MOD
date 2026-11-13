@@ -14,8 +14,9 @@ l'époque Fabric et citent encore des noms Yarn (`ServerPlayNetworking`, `Packet
 mappings (`FriendlyByteBuf`, `ServerPlayer`, `EditBox`…). La logique décrite reste exacte,
 seuls les noms ont changé. Table de correspondance complète : `docs/NEOFORGE_PORT_SPEC.md`.
 
-Branches : `fabric-1.21.1` reste sur GitHub comme archive du dernier état Fabric — à ne pas
-supprimer. `neoforge-natif-1.21.1` est la branche de travail du portage.
+Branches : `neoforge-natif-1.21.1` est la **branche de travail** — tout s'y commite.
+`main` est la production, on n'y arrive que par pull request (voir « Build »).
+`fabric-1.21.1` reste sur GitHub comme archive du dernier état Fabric — à ne pas supprimer.
 
 ## Ce qu'il faut retenir du portage 1.20.1 → 1.21.1
 
@@ -90,9 +91,21 @@ le JAR NeoForge côté client pour le GUI HDV/Bank/Registre.
 Le mod lui-même n'a besoin ni de Sinytra Connector ni de Forgified Fabric API. Le
 **pack** les garde pour trois mods Fabric-only (`lavender`, `LockAndBlock`, `mcef-fabric`).
 
-⚠ **Un push sur `main` déploie en production** : `.github/workflows/build.yml` compile,
-crée la Release, puis remplace le JAR dans `/mods` du serveur par SFTP (le redémarrage
-reste manuel). Ne jamais pousser sur `main` un build non testé en local.
+⚠ **Tout ce qui arrive sur `main` part en production** : `.github/workflows/build.yml`
+compile, crée la Release, puis remplace le JAR dans `/mods` du serveur par SFTP (le
+redémarrage reste manuel). Ne jamais y envoyer un build non testé en local.
+
+### Mettre en ligne
+1. Commits sur `neoforge-natif-1.21.1`, puis `git push origin neoforge-natif-1.21.1`
+   (ne déploie rien) — **seulement quand Sacha le demande**.
+2. Pull request vers `main` (`gh pr create --base main`).
+3. **C'est Sacha qui fusionne la PR** : la fusion déclenche le déploiement, et le mode de
+   permission de Claude Code la refuse. Ne pas chercher à la contourner.
+4. Redémarrer le serveur depuis le panel MineStrator.
+5. Mettre le nouveau JAR dans le modpack Modrinth, sinon les joueurs ne peuvent plus se
+   connecter (le mod est requis des deux côtés).
+6. L'annonce Discord est rédigée par Claude et **postée par Sacha** : aucun accès à
+   Discord depuis Claude Code.
 
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
@@ -127,7 +140,8 @@ reste manuel). Ne jamais pousser sur `main` un build non testé en local.
   - 1.2.2 : Admin Shop avec prix dynamique + rééquilibrage économie
   - 1.2.1 : quêtes complétées disparaissent et ne peuvent être refaites
   - 1.2.0 : item Shard ◆ monnaie physique + objectifs de quêtes explicites
-- À chaque rebuild : mettre à jour `mod_version` dans `gradle.properties`, puis `git commit` + `git push`
+- À chaque rebuild : mettre à jour `mod_version` dans `gradle.properties`, puis `git commit`.
+  Le push ne se fait que sur demande (voir « Mettre en ligne »).
 
 ## Pack de mods en production
 
@@ -182,8 +196,8 @@ serveur.
   suivant repartait de zéro puis l'écrasait.
   ⚠ Le contenu doit être **entièrement sérialisé en chaîne avant l'appel** : ne pas
   revenir à un `Writer` ouvert sur le fichier.
-- **Copie quotidienne** (`SauvegardeFichier.sauvegardeQuotidienne`) : les 10 fichiers
-  d'état sont copiés une fois par jour dans `backups-economie/` (motif `auto`), 14 jours
+- **Copie quotidienne** (`SauvegardeFichier.sauvegardeQuotidienne`) : les 11 fichiers
+  d'état (`locations.json` compris) sont copiés une fois par jour dans `backups-economie/` (motif `auto`), 14 jours
   gardés. Vérifiée au démarrage puis toutes les heures.
 - **Fichier illisible au démarrage** (`verifierAuDemarrage`, appelé **avant tout
   chargement**) : mis de côté (motif `corrompu`) puis remplacé par sa dernière copie
@@ -465,7 +479,7 @@ sinon les entrées déjà estampillées restent figées sur leurs mauvais prix.
 - L'argent d'achat va sur `$Serveur` ; le rachat le déduit via `forceDeduct` (compte système
   exclu des totaux, il peut passer négatif — c'est un puits comptable, pas une trésorerie).
 
-## Parchemin (1.3.0)
+## Parchemin (1.3.0, écran refait en 2.2.3)
 - Item `nouvelle-terre-bridge:parchemin` — terminal portatif, clic droit → `HubScreen`.
   Nom identique en fr_fr et en_us : « Parchemin » (traduire par « Scroll » cassait la DA RP).
 - `HubScreen` : construit comme le Guide depuis la 2.2.3 — cadre, liste des 10 entrées à
@@ -483,7 +497,7 @@ sinon les entrées déjà estampillées restent figées sur leurs mauvais prix.
   et `PlayerScreenHandler` (sérialisation NBT comprise), risque de perte d'items jugé trop élevé.
 - **`HubBackButton`** : flèche « ← » partagée, en tête de chaque écran, qui rouvre le hub
   côté client (aucune donnée serveur requise). Présente dans Hdv, Shop, Bank, Quetes,
-  Production, Registre, Conflit et Wiki.
+  Production, Registre, Conflit, Wiki, LeBonCube et Location.
   Les écrans à onglets mémorisent `tabsStartX` au rendu au lieu de recalculer l'offset dans
   `mouseClicked` — le HDV avait déjà 4 px de dérive avant l'ajout de la flèche.
 
@@ -649,7 +663,8 @@ entre joueurs.
 - **Refuser/Annuler** (`ACTION_LOAN_DECLINE`) : l'emprunteur refuse OU le prêteur annule sa proposition
 - Une seule proposition en attente par paire emprunteur/prêteur
 - Pénalités automatiques : vérifiées toutes les minutes (1200 ticks), appliquées chaque jour de retard
-- Pénalité jour N = `penaltyBase + (N-1) * 5` ◆ (augmente de 5 ◆/j par défaut)
+- Pénalité jour N = `penaltyBase + (N-1) * 5` ◆ — la hausse de 5 ◆/j est imposée par le serveur
+  (`Loan.HAUSSE_PENALITE`), elle ne vient plus du paquet
 - `LocalEconomy.forceDeduct()` permet de passer en solde négatif pour les pénalités
 - Remboursement : l'emprunteur renvoie le principal au prêteur via `/bank`
 - Pardon ("Effacer la dette") : le prêteur peut annuler un crédit sans remboursement
@@ -676,8 +691,8 @@ entre joueurs.
 |---|---|
 | `/economie bourse` | Solde du joueur (redondant avec le HUD, conservé pour admin/debug) |
 | `/economie admin give/take/check <joueur>` | Admin (op 2) |
-| `/hdv` | Ouvre le GUI Marché (screen client Fabric) |
-| `/bank` | Ouvre le GUI Banque (screen client Fabric) |
+| `/hdv` | Ouvre le GUI Marché |
+| `/bank` | Ouvre le GUI Banque |
 | `/pay <joueur> <montant>` | Virement rapide en chat (autocomplete joueurs connus, retour par toast) |
 | `/discord` | Lier compte Minecraft ↔ Discord |
 | `/conflit` | Ouvre le GUI Conflit RP (liste joueurs en ligne + raison → alerte Discord) |
@@ -685,9 +700,10 @@ entre joueurs.
 | `/quetes` | Ouvre le GUI Quêtes |
 | `/quetes refresh` | Recharge quetes-templates.json (op 2) |
 | `/quetes reset` | Réinitialise toute la progression (op 2) |
-| `/registre` | Ouvre le GUI Registre des personnages (screen client Fabric) |
+| `/registre` | Ouvre le GUI Registre des personnages |
 | `/production` | Ouvre le GUI Production naturelle (tous les joueurs ; boutons admin si op 2, pas de sous-commandes) |
 | `/shop` | Ouvre le GUI Shop Serveur (achat / revente) |
+| `/wiki` | Ouvre le Guide du serveur |
 | `/leboncube` | Ouvre LeBonCube — annonces de services entre joueurs |
 | `/location` | Ouvre la location d'objets entre joueurs |
 | `/server-admin` | Monitoring économique + arbitrage des litiges (op 4 uniquement) |
@@ -696,6 +712,7 @@ entre joueurs.
 
 > Toutes les opérations marché (vendre, acheter, retirer) se font **uniquement via `/hdv`**.
 > Virements, crédits et historique se gèrent via `/bank`.
+> `/meteors` (mod Apocalyptic Meteors) est réservée aux op par ce mod — voir « Durcissement 2.0.1 ».
 
 ---
 
@@ -832,6 +849,19 @@ mixin/                           ← 3 mixins seulement, le reste passe par des 
 
 util/
   FichierSur.java          → Écriture atomique des JSON (fichier temporaire + renommage)
+  SauvegardeDifferee.java  → Regroupe les écritures des fichiers modifiés à haute fréquence
+                             (production, quêtes, virements) : au plus une toutes les 5 s
+
+location/                        ← Location d'objets — voir « Architecture Location »
+  LocationManager.java     → Singleton locations.json : offres, contrats, retours, étiquette
+                             `nt_location`, loyers et reprises (`tick`, une fois par minute)
+  LocationVerrou.java      → Events qui rendent inutilisable un objet dont le contrat n'est
+                             plus à jour ; enclume et meule refusées à tout objet loué
+  LocationReseau.java      → Récepteur LOC_ACTION, ouverture de l'écran, commande /location
+
+service/                         ← LeBonCube — voir « Architecture LeBonCube »
+  ServiceManager.java      → Singleton leboncube.json ; porte le compte `$Sequestre`
+  ServiceNetworkHandler.java → Récepteurs LeBonCube et /server-admin ; `NIVEAU_ADMIN` = op 4
 
 network/
   HdvNetworking.java       → Canaux : HDV_OPEN / HDV_ACTION / HDV_RESULT / NT_VERSION / NT_BALANCE
@@ -862,7 +892,13 @@ network/
                              / CONFLIT_RESULT (S→C, ok+msg → toast NotificationHud, ferme le screen si ok)
   HubNetworking.java       → Canaux : HUB_OPEN (S→C, ouvre HubScreen) / HUB_ACTION (C→S)
                              Actions : HDV(0) BANK(1) QUETES(2) PRODUCTION(3) REGISTRE(4)
-                                       CONFLIT(5) WIKI(6) SHOP(7)
+                                       CONFLIT(5) WIKI(6) SHOP(7) MARCHE(8) LOCATION(9)
+  LocationNetworking.java  → Canaux : LOC_OPEN / LOC_ACTION / LOC_RESULT
+                             Actions : PROPOSER(0) RETIRER(1) LOUER(2) RENDRE(3) PERDU(4)
+                                       RESILIER(5) RECUPERER(6)
+  NtNet.java / NtPayload.java → Routeur réseau commun. ⚠ Toute nouvelle classe `*Networking`
+                             doit être ajoutée à `NtNet.precharger()`, sinon ses canaux ne
+                             sont pas enregistrés auprès de NeoForge.
   ShopNetworking.java      → Canaux : SHOP_OPEN (S→C) / SHOP_ACTION (C→S) / SHOP_RESULT (S→C)
                              Actions : ACTION_BUY(0) / ACTION_SELL(1) / ACTION_CLAIM_PARCHEMIN(2)
 
@@ -912,7 +948,11 @@ client/                    ← @Environment(CLIENT) uniquement
                              `NumberInput`, tendance de prix en clair sur la ligne
                              Bandeau Parchemin épinglé en tête de l'onglet Acheter (offert) —
                              la liste est décalée de BANNER_H pour ne pas passer dessous
-  HubScreen.java           → Hub du Parchemin, 10 cartes cliquables, habillage commun
+  HubScreen.java           → Hub du Parchemin : liste des 10 entrées + volet de détail (voir « Parchemin »)
+  LocationScreen.java      → Location : onglets Louer / Mes locations / Proposer, barre de
+                             réparation, infobulle des objets loués (`infobulle()`)
+  MarcheScreen.java        → LeBonCube
+  WikiScreen.java          → Guide en jeu — à compléter à chaque nouvelle fonctionnalité joueur
   BankScreen.java          → Screen banque : 5 onglets (Compte / Economie / Classement / Credits / Virements)
                              **Compte (1.4.2)** : transactions en **deux colonnes** —
                              `estAvecJoueur(type)` sépare les échanges entre joueurs
@@ -959,13 +999,14 @@ client/                    ← @Environment(CLIENT) uniquement
                              Row : point coloré + nomRp (blanc) + "— pseudoMc" (gris) + "● en ligne" si online
   BalanceHudOverlay.java   → Contient uniquement `cachedBalance` statique (int, init -1)
                              Mis à jour par NT_BALANCE / HDV_OPEN / HDV_RESULT. Plus de rendering ici.
-  HudEditorScreen.java     → Éditeur HUD (touche H) — voir « Système HUD ». Trois modes :
-                             PLACEMENT (glisser, aligner, redimensionner sur le jeu),
-                             MODS (grille des widgets), OPTIONS (réglages d'un widget).
+  HudEditorScreen.java     → Menu du HUD (touche H) — voir « Système HUD ». Quatre modes :
+                             MODS (grille, à l'ouverture), REGLAGES, OPTIONS (un widget),
+                             PLACEMENT (disposition sur le jeu). Gère aussi les profils.
                              WIDGETS (List<HudWidget>) statique, rempli par NouvelleTerreBridgeClient.
   ClientConfig.java        → Config client-only (config/nouvelle-terre-client.json)
                              `widgets` : Map id → WidgetState (enabled, x, y, taille, fond, ombre,
-                             options). Les anciens champs par widget restent pour la reprise
+                             options). `profils` + `profilActif` : dispositions enregistrées.
+                             Les anciens champs par widget restent pour la reprise
                              (`ancienEtat`), ils ne sont plus écrits.
 
 client/hud/                ← Un widget ne décrit que son contenu, HudWidget fait le reste
@@ -1015,6 +1056,19 @@ entries[]  : int count → (string itemId, int buyPrice, int sellPrice, long net
 ### Hub (Parchemin)
 HUB_OPEN   : (vide)
 HUB_ACTION : int action
+
+### Location
+LOC_OPEN   : int balance | offres[] | contrats[] | retours[]
+LOC_ACTION : int action | int id | int prix | int caution
+             id = emplacement d'inventaire pour PROPOSER, sinon numéro d'offre, de contrat
+             ou de retour ; prix et caution = 0 hors PROPOSER
+LOC_RESULT : bool ok | string msg | [même contenu que LOC_OPEN]
+offres[]   : int n → (int id, string proprietaire, string item, string nbt, int prixJour,
+                      int caution, bool mienne) × n
+contrats[] : int n → (int id, string proprietaire, string locataire, string item, int prixJour,
+                      int caution, long resteMs, int etat, bool resilie, bool jeSuisLocataire) × n
+             etat : 0 à jour / 1 verrouillé / 2 perdu
+retours[]  : int n → (int id, string item, string nbt, string origine) × n
 ```
 
 ### Bank
@@ -1158,10 +1212,12 @@ CONFLIT_RESULT: bool ok | string msg
 - Solde peut passer négatif via `forceDeduct()` uniquement pour les pénalités crédit
 - `buildCasingMap` inclut les vendeurs HDV pour la liste joueurs connus dans dropdowns
 
-## Système HUD — décisions techniques (refonte 2.2.0)
+## Système HUD — décisions techniques (refonte 2.2.0, menu en 2.2.2)
 
-Éditeur dans l'esprit des clients PvP modernes : on règle son HUD **sur le jeu**, pas dans
-un menu à part. Touche H par défaut, rebindable dans Contrôles.
+Dans l'esprit des clients PvP modernes : un menu en grille pour choisir et régler ses
+widgets, et une disposition qui se fait **directement sur le jeu**. Touche H par défaut,
+rebindable dans Contrôles. Design propre au mod — même organisation que la capture
+fournie par Sacha, mais notre nom et notre accent or, pas l'habillage d'un autre client.
 
 ### Les widgets
 - **Un widget ne dessine que son contenu**, à partir de l'origine (`renderContent`).
@@ -1222,7 +1278,7 @@ Avant la 2.2.0 chaque widget avait ses champs dans `ClientConfig` (`coordsX`,
 
 ## Système noms RP — décisions techniques
 
-- **Signed chat 1.20.1** : `GameProfile.getName()` ne peut pas être changé → seule solution = `ALLOW_CHAT_MESSAGE` cancel + rebroadcast system message
+- **Chat signé** : `GameProfile.getName()` ne peut pas être changé → seule solution = `ALLOW_CHAT_MESSAGE` cancel + rebroadcast system message
 - **Tab list** : `ServerPlayerEntityMixin.getPlayerListName()` lit le cache `nomsRP` côté serveur
   → `PlayerListS2CPacket(UPDATE_DISPLAY_NAME)` broadcast immédiat après fetchNomRP pour que tous les clients voient le nom RP
 - `URLEncoder.encode(secret, UTF_8)` dans les query params GET — les chars spéciaux (`=`, `+`, etc.) cassent `URI.create()` sinon
