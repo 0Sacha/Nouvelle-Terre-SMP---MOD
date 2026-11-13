@@ -97,7 +97,8 @@ reste manuel). Ne jamais pousser sur `main` un build non testé en local.
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `2.2.1` (refonte de l'éditeur HUD — voir « Système HUD »)
+- Version actuelle : `2.2.2` (refonte de l'éditeur HUD — voir « Système HUD »)
+  - 2.2.2 : menu du HUD refait (barre latérale, profils, filtres, cartes Activé/Désactivé)
   - 2.2.1 : Parchemin aligné sur le design des autres écrans
   - 2.2.0 : éditeur HUD refait (placement sur le jeu, guides, taille, grille MODS), widgets Armure et Direction
   - 2.1.4 : section Location dans le guide en jeu
@@ -1174,17 +1175,29 @@ un menu à part. Touche H par défaut, rebindable dans Contrôles.
   la lecture. À l'écriture on ajoute un demi-pixel : la relecture tronque, et sans ça un
   widget dérivait d'un pixel à chaque déplacement.
 
-### L'éditeur (`HudEditorScreen`)
-- **Placement** (à l'ouverture) : glisser un widget, **guides dorés** quand il s'aligne
-  sur un bord, le centre de l'écran ou un autre widget (`aimanter()`, 5 px d'accroche,
-  Maj pour le désactiver). Molette ou poignée en bas à droite pour la taille, clic droit
-  pour les options.
-- **MODS** (bouton central) : grille de cartes avec aperçu réel, interrupteur et
-  recherche au clavier.
-- **Options** : interrupteurs, curseur de taille, réinitialisation.
+### Le menu (`HudEditorScreen`, refait en 2.2.2 sur le modèle demandé par Sacha)
+La touche H ouvre le **menu**, pas la disposition :
+- **En-tête** : nom du serveur, onglets MODS / RÉGLAGES, bouton fermer.
+- **Barre latérale** : profils (une disposition complète par profil, 6 au plus) et le
+  bouton « Disposition du HUD ».
+- **Onglet MODS** : filtres par catégorie (TOUS / INFOS / JOUEUR / SERVEUR), recherche au
+  clavier, grille de cartes. Une carte = aperçu réel du widget, son nom, une rangée
+  Options + placement, et une barre pleine largeur **verte « Activé » / rouge « Désactivé »**.
+- **Onglet RÉGLAGES** : présence Discord, tout activer / désactiver, réinitialiser.
+- **Options d'un widget** : interrupteurs, curseur de taille, réinitialisation.
+- **Disposition** (sur le jeu) : glisser un widget, **guides dorés** quand il s'aligne sur
+  un bord, le centre ou un autre widget (`aimanter()`, 5 px d'accroche, Maj pour le
+  désactiver). Molette ou poignée en bas à droite pour la taille, clic droit pour les
+  options, Échap pour revenir au menu.
+
+- **Profils** : `ClientConfig.profils` (nom → réglages de tous les widgets).
+  `ClientConfig.widgets` reste la disposition courante, recopiée dans le profil actif à
+  chaque `saveAll()`. Changer de profil range donc d'abord la disposition courante.
+- La catégorie d'un widget vient de la table `CATEGORIE` de l'écran (par identifiant),
+  pas du widget : un widget absent de la table tombe dans INFOS.
 - ⚠ Les zones cliquables des panneaux sont **enregistrées au rendu** (`zones`) et relues
   au clic, rognées à la partie visible de la grille. Recalculer les positions côté clic
-  les désynchronise du défilement et de la recherche — le défaut qu'avait eu le HDV.
+  les désynchronise du défilement, des filtres et de la recherche.
 - Le panneau est dessiné à `z = 300` : les icônes d'objets (widget Armure) ont une
   profondeur propre et passaient sinon par-dessus le voile sombre.
 - Sauvegarde à la fermeture uniquement (`removed()`).

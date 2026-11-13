@@ -37,6 +37,14 @@ public class ClientConfig {
     /** Identifiant du widget → ses réglages. Seule source lue une fois remplie. */
     public Map<String, WidgetState> widgets = new HashMap<>();
 
+    /**
+     * Dispositions enregistrées : nom du profil → réglages de tous les widgets.
+     * {@link #widgets} reste la disposition courante ; elle est recopiée dans le
+     * profil actif à chaque fermeture du menu.
+     */
+    public Map<String, Map<String, WidgetState>> profils = new java.util.LinkedHashMap<>();
+    public String profilActif = "Principal";
+
     // ── Anciens réglages du HUD (avant la refonte de l'éditeur) ───────────────
     //
     // Chaque widget avait ses propres champs. Ils ne sont plus écrits, mais ils
@@ -111,6 +119,7 @@ public class ClientConfig {
                 ClientConfig loaded = GSON.fromJson(r, ClientConfig.class);
                 INSTANCE = loaded != null ? loaded : new ClientConfig();
                 if (INSTANCE.widgets == null) INSTANCE.widgets = new HashMap<>();
+                if (INSTANCE.profils == null) INSTANCE.profils = new java.util.LinkedHashMap<>();
                 return;
             } catch (Exception ignored) {
                 // Fichier illisible : on repart des réglages par défaut plutôt que de planter
