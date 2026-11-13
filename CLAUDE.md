@@ -97,7 +97,8 @@ reste manuel). Ne jamais pousser sur `main` un build non testé en local.
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `2.2.0` (refonte de l'éditeur HUD — voir « Système HUD »)
+- Version actuelle : `2.2.1` (refonte de l'éditeur HUD — voir « Système HUD »)
+  - 2.2.1 : Parchemin aligné sur le design des autres écrans
   - 2.2.0 : éditeur HUD refait (placement sur le jeu, guides, taille, grille MODS), widgets Armure et Direction
   - 2.1.4 : section Location dans le guide en jeu
   - 2.1.3 : écritures disque regroupées, virements récurrents qui survivent au redémarrage
@@ -465,8 +466,11 @@ sinon les entrées déjà estampillées restent figées sur leurs mauvais prix.
 ## Parchemin (1.3.0)
 - Item `nouvelle-terre-bridge:parchemin` — terminal portatif, clic droit → `HubScreen`.
   Nom identique en fr_fr et en_us : « Parchemin » (traduire par « Scroll » cassait la DA RP).
-- `HubScreen` : DA carte électronique (substrat vert, bus et pistes cuivre, puces à broches),
-  8 entrées → Marché, Shop, Banque, Quêtes, Production, Registre, Conflit, Guide.
+- `HubScreen` : même habillage que les autres écrans depuis la 2.2.1 (fond sombre, barre de
+  titre, accent or, solde en haut à droite). Il avait une DA « carte électronique » verte,
+  seul écran du mod à ne ressembler à aucun autre — **retirée sur demande, ne pas la remettre**.
+  10 cartes sur 5 colonnes (moins si la fenêtre est étroite) → Marché, Shop, LeBonCube,
+  Location, Banque, Quêtes, Production, Registre, Conflit, Guide.
 - Donné à la connexion et après un respawn (`donnerParcheminSiAbsent`), et récupérable
   gratuitement via le bandeau épinglé du Shop (`ACTION_CLAIM_PARCHEMIN`). **Non vendable.**
 - Le jet du Parchemin est bloqué par un `ItemTossEvent` dans `NouvelleTerreBridge`
@@ -904,7 +908,7 @@ client/                    ← @Environment(CLIENT) uniquement
                              `NumberInput`, tendance de prix en clair sur la ligne
                              Bandeau Parchemin épinglé en tête de l'onglet Acheter (offert) —
                              la liste est décalée de BANNER_H pour ne pas passer dessous
-  HubScreen.java           → Hub du Parchemin, DA carte électronique, 8 puces cliquables
+  HubScreen.java           → Hub du Parchemin, 10 cartes cliquables, habillage commun
   BankScreen.java          → Screen banque : 5 onglets (Compte / Economie / Classement / Credits / Virements)
                              **Compte (1.4.2)** : transactions en **deux colonnes** —
                              `estAvecJoueur(type)` sépare les échanges entre joueurs

@@ -1,9 +1,7 @@
 package com.nouvelleterrebridge.client;
 
-import com.nouvelleterrebridge.network.NtNet;
-
 import com.nouvelleterrebridge.network.HubNetworking;
-import io.netty.buffer.Unpooled;
+import com.nouvelleterrebridge.network.NtNet;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.FriendlyByteBuf;
@@ -13,53 +11,55 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Hub du Parchemin — carte électronique donnant accès aux fenêtres du mod.
- * Chaque entrée est une « puce » reliée au bus central par des pistes.
+ * Hub du Parchemin — porte d'entrée vers toutes les fenêtres du mod.
+ *
+ * Même habillage que le reste (fond sombre, barre de titre, accent or) : le hub
+ * avait sa propre direction artistique « carte électronique » verte, et c'était
+ * le seul écran du mod à ne ressembler à aucun autre.
  */
 public class HubScreen extends Screen {
 
-    // ── Couleurs (DA carte électronique) ──────────────────────────────────────
-    private static final int C_BG      = 0xFF0E1512;   // substrat vert très sombre
-    private static final int C_PANEL   = 0xFF14201B;
-    private static final int C_CHIP    = 0xFF1B2A23;
-    private static final int C_HOVER   = 0xFF24382E;
-    private static final int C_TRACE   = 0xFF2F6B4F;   // pistes cuivre-vert
-    private static final int C_TRACE_H = 0xFF57C08A;   // piste active
-    private static final int C_BORDER  = 0xFF2A3D33;
-    private static final int C_GOLD    = 0xFFE8A838;   // pastilles / accents
-    private static final int C_WHITE   = 0xFFFFFFFF;
-    private static final int C_MID     = 0xFF9096A3;
-    private static final int C_DIM     = 0xFF565C6A;
+    // ── Couleurs communes aux écrans du mod ───────────────────────────────────
+    private static final int C_BG     = 0xFF14161A;
+    private static final int C_PANEL  = 0xFF1B1D22;
+    private static final int C_HOVER  = 0xFF282B34;
+    private static final int C_STRIP  = 0xFF1E2128;
+    private static final int C_BORDER = 0xFF2A2D38;
+    private static final int C_GOLD   = 0xFFE8A838;
+    private static final int C_WHITE  = 0xFFFFFFFF;
+    private static final int C_MID    = 0xFF9096A3;
+    private static final int C_DIM    = 0xFF565C6A;
 
     // ── Layout ────────────────────────────────────────────────────────────────
-    private static final int PW_MAX  = 420;
-    // 10 entrées sur 3 colonnes = 4 rangées
-    private static final int PH_MAX  = 366;
-    private static final int TOP_H   = 40;
-    private static final int PAD     = 14;
-    private static final int COLS    = 3;
-    private static final int CHIP_H  = 58;
-    private static final int GAP     = 10;
+    private static final int WIN_MAX_W = 580;
+    private static final int TOP_H     = 44;
+    private static final int PAD       = 12;
+    private static final int GAP       = 8;
+    private static final int CARTE_H   = 76;
+    private static final int PIED_H    = 26;
+    /** Largeur en dessous de laquelle une carte devient illisible : on retire une colonne. */
+    private static final int CARTE_MIN_W = 92;
 
-    private int pw, ph, px, py;
+    private int winX, winY, winW, winH, colonnes;
 
-    /** Une entrée du hub : action réseau, libellé, glyphe dessiné sur la puce. */
+    /** Une entrée du hub : action réseau, libellé, description, glyphe. */
     private record Entry(int action, String label, String hint, String glyph) {}
 
     private static final List<Entry> ENTRIES = List.of(
-        new Entry(HubNetworking.ACTION_HDV,        "Marché",     "Entre joueurs", "⇄"),
-        new Entry(HubNetworking.ACTION_SHOP,       "Shop",       "Boutique du serveur", "🏛"),
-        new Entry(HubNetworking.ACTION_MARCHE,     "LeBonCube",  "Services entre joueurs", "📰"),
-        new Entry(HubNetworking.ACTION_LOCATION,   "Location",   "Louer un objet", "⌛"),
+        new Entry(HubNetworking.ACTION_HDV,        "Marché",     "Entre joueurs",   "⇄"),
+        new Entry(HubNetworking.ACTION_SHOP,       "Shop",       "Boutique serveur", "🏛"),
+        new Entry(HubNetworking.ACTION_MARCHE,     "LeBonCube",  "Services",        "📰"),
+        new Entry(HubNetworking.ACTION_LOCATION,   "Location",   "Louer un objet",  "⌛"),
         new Entry(HubNetworking.ACTION_BANK,       "Banque",     "Solde, virements", "◆"),
         new Entry(HubNetworking.ACTION_QUETES,     "Quêtes",     "Objectifs du jour", "⚔"),
-        new Entry(HubNetworking.ACTION_PRODUCTION, "Production", "Ressources du serveur", "⛏"),
-        new Entry(HubNetworking.ACTION_REGISTRE,   "Registre",   "Personnages RP", "☰"),
+        new Entry(HubNetworking.ACTION_PRODUCTION, "Production", "Ressources",      "⛏"),
+        new Entry(HubNetworking.ACTION_REGISTRE,   "Registre",   "Personnages RP",  "☰"),
         new Entry(HubNetworking.ACTION_CONFLIT,    "Conflit",    "Signaler un litige", "⚠"),
-        new Entry(HubNetworking.ACTION_WIKI,       "Guide",      "Aide et règles", "?")
+        new Entry(HubNetworking.ACTION_WIKI,       "Guide",      "Aide et règles",  "?")
     );
 
-    private final List<int[]> chipBounds = new ArrayList<>();
+    /** Cartes dessinées à la dernière image : {x, y, largeur, action}, relues par mouseClicked. */
+    private final List<int[]> cartes = new ArrayList<>();
 
     public HubScreen() {
         super(Component.literal("Parchemin — Nouvelle Terre"));
@@ -70,105 +70,94 @@ public class HubScreen extends Screen {
         return false;
     }
 
-    private void computePanel() {
-        pw = Math.min(PW_MAX, width  - 40);
-        ph = Math.min(PH_MAX, height - 40);
-        px = (width  - pw) / 2;
-        py = (height - ph) / 2;
+    private void computeWin() {
+        winW = Math.min(WIN_MAX_W, width - 40);
+        // Cinq colonnes si la fenêtre le permet, sinon moins : jamais de carte écrasée
+        colonnes = 5;
+        while (colonnes > 2 && largeurCarte() < CARTE_MIN_W) colonnes--;
+        int rangs = (ENTRIES.size() + colonnes - 1) / colonnes;
+        winH = TOP_H + PAD + rangs * (CARTE_H + GAP) - GAP + PAD + PIED_H;
+        winX = (width - winW) / 2;
+        winY = Math.max(4, (height - winH) / 2);
+    }
+
+    private int largeurCarte() {
+        return (winW - PAD * 2 - (colonnes - 1) * GAP) / colonnes;
     }
 
     @Override
     public void renderBackground(GuiGraphics ctx, int mx, int my, float delta) {
-        // No-op — cet écran dessine son propre fond ; super.render() (appelé en dernier
-        // pour les widgets vanilla) réappliquerait sinon flou + texture menu par-dessus.
+        // No-op — cet écran dessine son propre fond (voir « Flou par-dessus l'UI » dans CLAUDE.md)
     }
 
     @Override
     public void render(GuiGraphics ctx, int mx, int my, float delta) {
         ctx.fill(0, 0, width, height, 0x78000000);
-        computePanel();
+        computeWin();
 
-        // Substrat + liseré
-        ctx.fill(px + 3, py + 3, px + pw + 3, py + ph + 3, 0x40000000);
-        ctx.fill(px, py, px + pw, py + ph, C_BG);
-        drawBorder(ctx, px, py, pw, ph, C_BORDER);
+        ctx.fill(winX + 3, winY + 3, winX + winW + 3, winY + winH + 3, 0x40000000);
+        ctx.fill(winX, winY, winX + winW, winY + winH, 0xCC14161A);
 
-        renderHeader(ctx);
-        renderTraces(ctx);
-        renderChips(ctx, mx, my);
+        renderTopBar(ctx);
+        renderCartes(ctx, mx, my);
 
-        ctx.drawCenteredString(font,
-            "§8Clic droit sur le parchemin à tout moment",
-            px + pw / 2, py + ph - 16, C_DIM);
+        ctx.fill(winX, winY + winH - PIED_H, winX + winW, winY + winH - PIED_H + 1, C_BORDER);
+        ctx.drawCenteredString(font, "Clic droit sur le Parchemin pour revenir ici",
+            winX + winW / 2, winY + winH - PIED_H + 9, C_DIM);
 
         super.render(ctx, mx, my, delta);
     }
 
-    private void renderHeader(GuiGraphics ctx) {
-        ctx.fill(px + 1, py + 1, px + pw - 1, py + TOP_H, C_PANEL);
-        ctx.fill(px + 1, py + TOP_H - 1, px + pw - 1, py + TOP_H, C_TRACE);
+    private void renderTopBar(GuiGraphics ctx) {
+        ctx.fill(winX, winY, winX + winW, winY + TOP_H, 0xE01B1D22);
+        ctx.fill(winX, winY + TOP_H - 1, winX + winW, winY + TOP_H, C_BORDER);
 
-        // Pastilles de connecteur, à gauche du titre
-        for (int i = 0; i < 3; i++) {
-            int cx = px + PAD + i * 7;
-            ctx.fill(cx, py + 15, cx + 4, py + 19, C_GOLD);
-        }
+        int ty = winY + (TOP_H - font.lineHeight) / 2;
+        int tx = winX + PAD;
+        ctx.drawString(font, "PARCHEMIN", tx, ty, C_GOLD, false);
+        tx += font.width("PARCHEMIN") + 8;
+        ctx.fill(tx, winY + (TOP_H - 16) / 2, tx + 1, winY + (TOP_H + 16) / 2, C_BORDER);
+        ctx.drawString(font, "Nouvelle Terre", tx + 9, ty, C_MID, false);
 
-        ctx.drawString(font, "PARCHEMIN", px + PAD + 28, py + 10, C_GOLD, false);
-        ctx.drawString(font, "Terminal Nouvelle Terre", px + PAD + 28, py + 22, C_DIM, false);
+        // Solde, comme sur les autres écrans
+        String bal = BalanceHudOverlay.cachedBalance < 0 ? "? ◆" : BalanceHudOverlay.cachedBalance + " ◆";
+        int bw = font.width(bal) + 18;
+        int bx = winX + winW - bw - PAD;
+        int by = winY + (TOP_H - 20) / 2;
+        ctx.fill(bx, by, bx + bw, by + 20, C_STRIP);
+        ctx.fill(bx, by, bx + 2, by + 20, C_GOLD);
+        ctx.drawString(font, bal, bx + 10, by + 6, C_GOLD, false);
     }
 
-    /** Bus central + dérivations vers chaque rangée de puces. */
-    private void renderTraces(GuiGraphics ctx) {
-        int busY = py + TOP_H + 6;
-        ctx.fill(px + PAD, busY, px + pw - PAD, busY + 1, C_TRACE);
-        for (int i = 0; i <= COLS; i++) {
-            int tx = px + PAD + i * ((pw - PAD * 2) / COLS);
-            tx = Math.min(tx, px + pw - PAD - 1);
-            ctx.fill(tx, busY, tx + 1, busY + 6, C_TRACE);
-        }
-    }
-
-    private void renderChips(GuiGraphics ctx, int mx, int my) {
-        chipBounds.clear();
-        int gridX = px + PAD;
-        int gridY = py + TOP_H + 16;
-        int chipW = (pw - PAD * 2 - (COLS - 1) * GAP) / COLS;
+    private void renderCartes(GuiGraphics ctx, int mx, int my) {
+        cartes.clear();
+        int cw = largeurCarte();
+        int gx = winX + PAD;
+        int gy = winY + TOP_H + PAD;
 
         for (int i = 0; i < ENTRIES.size(); i++) {
             Entry e = ENTRIES.get(i);
-            int col = i % COLS;
-            int row = i / COLS;
-            int cx  = gridX + col * (chipW + GAP);
-            int cy  = gridY + row * (CHIP_H + GAP);
-            boolean hov = mx >= cx && mx < cx + chipW && my >= cy && my < cy + CHIP_H;
+            int cx = gx + (i % colonnes) * (cw + GAP);
+            int cy = gy + (i / colonnes) * (CARTE_H + GAP);
+            boolean hov = mx >= cx && mx < cx + cw && my >= cy && my < cy + CARTE_H;
 
-            ctx.fill(cx, cy, cx + chipW, cy + CHIP_H, hov ? C_HOVER : C_CHIP);
-            drawBorder(ctx, cx, cy, chipW, CHIP_H, hov ? C_TRACE_H : C_BORDER);
+            ctx.fill(cx, cy, cx + cw, cy + CARTE_H, hov ? C_HOVER : C_PANEL);
+            cadre(ctx, cx, cy, cw, CARTE_H, hov ? C_GOLD : C_BORDER);
 
-            // Broches sur les flancs de la puce
-            int pins = 3;
-            for (int p = 0; p < pins; p++) {
-                int pinY = cy + 12 + p * ((CHIP_H - 24) / Math.max(1, pins - 1));
-                int pinC = hov ? C_TRACE_H : C_TRACE;
-                ctx.fill(cx - 3, pinY, cx, pinY + 2, pinC);
-                ctx.fill(cx + chipW, pinY, cx + chipW + 3, pinY + 2, pinC);
-            }
+            // Pastille du glyphe
+            int ps = 26, pxg = cx + (cw - ps) / 2, pyg = cy + 9;
+            ctx.fill(pxg, pyg, pxg + ps, pyg + ps, C_BG);
+            ctx.fill(pxg, pyg + ps - 2, pxg + ps, pyg + ps, hov ? C_GOLD : C_BORDER);
+            ctx.drawCenteredString(font, e.glyph(), cx + cw / 2, pyg + 8, hov ? C_GOLD : C_MID);
 
-            // Glyphe + libellés
-            ctx.drawCenteredString(font, e.glyph(),
-                cx + chipW / 2, cy + 10, hov ? C_GOLD : C_TRACE_H);
-            ctx.drawCenteredString(font, e.label(),
-                cx + chipW / 2, cy + 26, hov ? C_WHITE : C_MID);
-            String hint = truncate(e.hint(), chipW - 8);
-            ctx.drawCenteredString(font, hint,
-                cx + chipW / 2, cy + 40, C_DIM);
+            ctx.drawCenteredString(font, e.label(), cx + cw / 2, cy + 43, hov ? C_WHITE : C_MID);
+            ctx.drawCenteredString(font, truncate(e.hint(), cw - 8), cx + cw / 2, cy + 57, C_DIM);
 
-            chipBounds.add(new int[]{cx, cy, chipW, CHIP_H, e.action()});
+            cartes.add(new int[]{cx, cy, cw, e.action()});
         }
     }
 
-    private void drawBorder(GuiGraphics ctx, int x, int y, int w, int h, int color) {
+    private void cadre(GuiGraphics ctx, int x, int y, int w, int h, int color) {
         ctx.fill(x, y, x + w, y + 1, color);
         ctx.fill(x, y + h - 1, x + w, y + h, color);
         ctx.fill(x, y, x + 1, y + h, color);
@@ -185,12 +174,12 @@ public class HubScreen extends Screen {
     @Override
     public boolean mouseClicked(double mx0, double my0, int btn) {
         int x = (int) mx0, y = (int) my0;
-        if (x < px || x > px + pw || y < py || y > py + ph) { onClose(); return true; }
+        if (x < winX || x > winX + winW || y < winY || y > winY + winH) { onClose(); return true; }
 
-        for (int[] b : chipBounds) {
-            if (x >= b[0] && x < b[0] + b[2] && y >= b[1] && y < b[1] + b[3]) {
-                FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
-                buf.writeInt(b[4]);
+        for (int[] c : cartes) {
+            if (x >= c[0] && x < c[0] + c[2] && y >= c[1] && y < c[1] + CARTE_H) {
+                FriendlyByteBuf buf = NtNet.buffer();
+                buf.writeInt(c[3]);
                 NtNet.versServeur(HubNetworking.HUB_ACTION, buf);
                 return true;
             }
