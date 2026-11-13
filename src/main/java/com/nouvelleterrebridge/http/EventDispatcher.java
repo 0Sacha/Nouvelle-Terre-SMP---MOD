@@ -34,7 +34,8 @@ public class EventDispatcher {
     private static final Gson GSON = new Gson();
     private static HttpClient httpClient;
     private static ModConfig config;
-    private static boolean botEnLigne = false;
+    // volatile : écrit depuis les threads du client HTTP, lu depuis le thread serveur
+    private static volatile boolean botEnLigne = false;
     private static final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
     public static void init(ModConfig cfg) {
@@ -85,6 +86,12 @@ public class EventDispatcher {
                             NouvelleTerreBridge.LOGGER.info("[EventDispatcher] Bot de nouveau en ligne !");
                             botEnLigne = true;
                         }
+                    } else if (response.statusCode() >= 400 && response.statusCode() < 500
+                            && response.statusCode() != 408 && response.statusCode() != 429) {
+                        // Refus définitif (requête invalide, secret refusé…) : renvoyer
+                        // le même événement donnerait la même réponse, indéfiniment.
+                        NouvelleTerreBridge.LOGGER.warn("[EventDispatcher] Événement {} refusé par le bot (HTTP {}) — abandonné.",
+                            type, response.statusCode());
                     } else {
                         NouvelleTerreBridge.LOGGER.warn("[EventDispatcher] Réponse HTTP {} pour {}", response.statusCode(), type);
                         EventQueue.getInstance().ajouter(type, json);

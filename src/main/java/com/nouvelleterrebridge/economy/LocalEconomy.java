@@ -1,5 +1,7 @@
 package com.nouvelleterrebridge.economy;
 
+import com.nouvelleterrebridge.util.FichierSur;
+
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
@@ -28,6 +30,8 @@ public class LocalEconomy {
 
     private final Path fichier;
     private final Map<String, Integer> soldes = new HashMap<>();
+    /** Médiane des soldes, recalculée à la demande ; null dès qu'un solde change. */
+    private Integer medianCache = null;
 
     private LocalEconomy() {
         fichier = FMLPaths.GAMEDIR.get().resolve("shards.json");
@@ -50,6 +54,10 @@ public class LocalEconomy {
     public synchronized boolean transfer(String de, String vers, int montant) {
         String deKey = de.toLowerCase();
         String versKey = vers.toLowerCase();
+        // Un montant négatif inverserait le virement : le « destinataire » serait
+        // débité au profit de l'émetteur. Refusé ici, au plus bas niveau, pour
+        // qu'aucun appelant ne puisse l'oublier.
+        if (montant <= 0 || deKey.equals(versKey)) return false;
         int soldeDe = soldes.getOrDefault(deKey, 0);
         if (soldeDe < montant) return false;
         soldes.put(deKey, soldeDe - montant);
@@ -76,6 +84,7 @@ public class LocalEconomy {
      *               provenance dans /bank.
      */
     public synchronized void addShards(String pseudo, int montant, String raison) {
+        if (montant < 0) { refuserNegatif("addShards", pseudo, montant); return; }
         soldes.merge(pseudo.toLowerCase(), montant, Integer::sum);
         save();
         TransactionLog.log(pseudo, TransactionLog.TYPE_REWARD, raison, montant);
@@ -90,6 +99,7 @@ public class LocalEconomy {
      * Ne journalise pas : l'appelant le fait avec le détail du dépôt.
      */
     public synchronized void depositShards(String pseudo, int montant) {
+        if (montant < 0) { refuserNegatif("depositShards", pseudo, montant); return; }
         soldes.merge(pseudo.toLowerCase(), montant, Integer::sum);
         save();
         Map<String, Object> data = new HashMap<>();
@@ -135,15 +145,19 @@ public class LocalEconomy {
      * joueurs pauvres et une poignée de très riches.
      */
     public synchronized int soldeMedian() {
+        // Mis en cache : ouvrir le Shop demande la médiane trois fois par article
+        // (inflation, taxe, rachat), et chaque calcul triait tous les soldes.
+        if (medianCache != null) return medianCache;
         List<Integer> l = soldesJoueurs();
-        if (l.isEmpty()) return 0;
+        if (l.isEmpty()) return medianCache = 0;
         java.util.Collections.sort(l);
         int n = l.size();
-        return n % 2 == 1 ? l.get(n / 2) : (l.get(n / 2 - 1) + l.get(n / 2)) / 2;
+        return medianCache = (n % 2 == 1 ? l.get(n / 2) : (l.get(n / 2 - 1) + l.get(n / 2)) / 2);
     }
 
     /** Retire des shards à un joueur (ne passe pas en négatif). */
     public synchronized void removeShards(String pseudo, int montant) {
+        if (montant < 0) { refuserNegatif("removeShards", pseudo, montant); return; }
         String key = pseudo.toLowerCase();
         soldes.put(key, Math.max(0, soldes.getOrDefault(key, 0) - montant));
         save();
@@ -155,6 +169,7 @@ public class LocalEconomy {
 
     /** Retire des shards, peut passer en négatif (pénalités de crédit). */
     public synchronized void forceDeduct(String pseudo, int montant) {
+        if (montant < 0) { refuserNegatif("forceDeduct", pseudo, montant); return; }
         String key = pseudo.toLowerCase();
         soldes.merge(key, -montant, Integer::sum);
         save();
@@ -173,6 +188,22 @@ public class LocalEconomy {
     public synchronized void resetAll() {
         soldes.clear();
         save();
+    }
+
+    /**
+     * Un montant négatif transformerait un crédit en débit (et inversement).
+     * Aucun appelant légitime n'en passe : c'est soit un bug, soit un paquet forgé.
+     */
+    private static void refuserNegatif(String operation, String pseudo, int montant) {
+        NouvelleTerreBridge.LOGGER.warn("[LocalEconomy] {} refusé pour {} : montant négatif ({}).",
+            operation, pseudo, montant);
+    }
+
+    /** Relit shards.json (après une restauration par /nt-sauvegarde). */
+    public synchronized void recharger() {
+        soldes.clear();
+        medianCache = null;
+        load();
     }
 
     // ── Persistance ──────────────────────────────────────────────────────────
@@ -196,8 +227,10 @@ public class LocalEconomy {
     }
 
     private void save() {
-        try (Writer w = new OutputStreamWriter(new FileOutputStream(fichier.toFile()), StandardCharsets.UTF_8)) {
-            GSON.toJson(soldes, w);
+        // Toute modification de solde passe par ici
+        medianCache = null;
+        try {
+            FichierSur.ecrire(fichier, GSON.toJson(soldes));
         } catch (Exception e) {
             NouvelleTerreBridge.LOGGER.error("[LocalEconomy] Erreur sauvegarde : {}", e.getMessage());
         }

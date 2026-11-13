@@ -1,76 +1,46 @@
-# Nouvelle Terre — Mod NeoForge natif 1.21.1 (branche `neoforge-natif-1.21.1`)
+# Nouvelle Terre — Mod NeoForge natif 1.21.1
 
 Mod de bridge entre un serveur Minecraft SMP RP et un bot Discord (Railway).
 Lit ce fichier automatiquement pour avoir le contexte complet avant de coder.
 
-⚠ **Cette branche est un portage natif NeoForge** (Mojang mappings, event bus
-NeoForge, réseau via `RegisterPayloadHandlersEvent`) — pas de Sinytra Connector.
-Repartie de `fabric-1.21.1` (pas de l'ancien brouillon abandonné sur
-`neoforge-1.21.1`, obsolète). Build + tests manuels complets validés (voir
-`docs/NEOFORGE_PORT_SPEC.md` pour le détail de chaque point de passage Fabric
-→ NeoForge : réseau, entrypoint, events, mixins, items).
-⚠ **La branche `fabric-1.21.1` reste le développement de référence** — on peut
-y revenir à tout moment ; le choix définitif entre Connector et ce natif pour
-le serveur de production n'a pas encore été tranché.
+**État courant** : NeoForge natif (Mojang mappings, event bus NeoForge, réseau via
+`RegisterPayloadHandlersEvent`), Minecraft 1.21.1, NeoForge `21.1.250`, Java 21.
+**Le serveur de production tourne dessus depuis le 01/11** — la migration depuis
+Fabric 1.20.1 est terminée et close.
 
-## Portage 1.20.1 → 1.21.1 (2.0.0)
+⚠ **Noms de classes dans ce document** : les sections d'architecture ont été écrites à
+l'époque Fabric et citent encore des noms Yarn (`ServerPlayNetworking`, `PacketByteBuf`,
+`ServerPlayerEntity`, `TextFieldWidget`, `ScreenHandler`…). Le code, lui, est en Mojang
+mappings (`FriendlyByteBuf`, `ServerPlayer`, `EditBox`…). La logique décrite reste exacte,
+seuls les noms ont changé. Table de correspondance complète : `docs/NEOFORGE_PORT_SPEC.md`.
 
-Contexte historique (valable pour la branche `fabric-1.21.1`) : le mod a
-d'abord été porté en Fabric 1.21.1, avec l'intention de le faire tourner sur
-un serveur NeoForge via **Sinytra Connector** + **Forgified Fabric API**. Un
-premier essai de portage natif avait alors été commencé puis abandonné au
-profit de cette voie. C'est ce premier essai (stale, 1.20.1) qui a été mis de
-côté — **pas** le portage natif actuel de cette branche, qui repart du code
-Fabric 1.21.1 terminé et est fonctionnellement à jour avec lui.
+Branches : `neoforge-natif-1.21.1` est la **branche de travail** — tout s'y commite.
+`main` est la production, on n'y arrive que par pull request (voir « Build »).
+`fabric-1.21.1` reste sur GitHub comme archive du dernier état Fabric — à ne pas supprimer.
 
-Deux changements imposés par **Minecraft lui-même** (1.20.5+), indépendants du
-loader — c'est le seul vrai travail de ce portage, tout le reste est mécanique :
-- **Réseau typé** : `ServerPlayNetworking`/`ClientPlayNetworking` n'acceptent
-  plus un `PacketByteBuf` brut, il faut un `CustomPayload` enregistré via
-  `PayloadTypeRegistry`. Plutôt que réécrire les 34 canaux du mod en records
-  typés (aucun ne sérialise autre chose que des primitives), `network/NtPayload.java`
-  transporte le tampon brut et `network/NtNet.java` réexpose exactement l'ancienne
-  forme d'appel (`NtNet.surServeur/surClient/versServeur/versClient`). Les ~530
-  appels `readInt`/`writeString`/… du mod n'ont pas bougé.
-- **NBT d'item → composants de données** : `stack.getNbt()/setNbt()/hasNbt()`
-  n'existent plus. `MarketListing.itemNBT` reste une chaîne SNBT (schéma de
-  `marche.json` inchangé), mais encode désormais un `ComponentChanges` — le
-  strict équivalent conceptuel de l'ancien NBT (la différence entre une pile et
-  l'état par défaut de son item). Voir `market/ItemComponentCodec.java`, seul
-  point du mod qui touche à ça. ⚠ Encoder/décoder exige un
-  `RegistryWrapper.WrapperLookup` (`client.world.getRegistryManager()` côté
-  client, `player.getServer().getRegistryManager()` côté serveur) — absent en
-  1.20.1. `appliquer()` ne lève jamais : une annonce créée avant la migration
-  contient un ancien NBT brut, pas un `ComponentChanges`, et n'est plus
-  relisible — la pile livrée reste vierge plutôt que de planter.
+## Ce qu'il faut retenir du portage 1.20.1 → 1.21.1
 
-Autres correctifs, tous mécaniques (renommages/signatures vanilla, sans lien
-avec Fabric/NeoForge) :
-- `new Identifier(ns, path)` → `Identifier.of(ns, path)` (constructeur privé
-  depuis la 1.21).
-- `Item.appendTooltip` perd son paramètre `World` et gagne `TooltipType` en
-  dernier ; `TooltipContext` devient l'interface imbriquée `Item.TooltipContext`.
-- `Screen.mouseScrolled` gagne un paramètre `horizontalAmount` (défilement
-  horizontal, 1.21) — ignoré partout dans ce mod, aucun écran ne s'en sert.
-- `RecipeManager.values()` renvoie des `RecipeEntry<?>` (id + recette) et non
-  plus des `Recipe<?>` ; `Recipe.getOutput()` renommé `getResult()`.
-- `e.getEffectType()` (sur un `StatusEffectInstance`) renvoie désormais un
-  `RegistryEntry<StatusEffect>` — `.value()` pour retrouver l'ancien comportement.
-- `Scoreboard.addPlayerToTeam` renommé `addScoreHolderToTeam`.
-
-`gradle.properties` sur **cette branche** : Java 21 via toolchain Gradle (aucun
-JDK 21 sur le poste de dev, `foojay-resolver` le récupère), plugin
-`net.neoforged.moddev` 2.0.147, `neoforge_version=21.1.250`. Pas de Yarn, pas
-de Loom, pas de `fabric.mod.json` — `META-INF/neoforge.mods.toml` à la place,
-avec `modId="nouvelle_terre_bridge"` (underscore imposé par NeoForge) tout en
-gardant le namespace de ressources `nouvelle-terre-bridge` (items, réseau)
-inchangé pour ne pas perdre les Shards/Parchemins déjà en circulation.
-`mod_version` porte un qualificatif `+neoforge.N` pendant les tests en
-parallèle du JAR Fabric — voir « Convention de version ».
-
-⚠ **Cadmus n'a pas de build 1.21.1** (dernier NeoForge en 1.20.4) — l'intégration
-par réflexion reste en place mais ne trouvera rien tant qu'un remplaçant n'est
-pas choisi.
+- **Réseau** : `network/NtPayload.java` transporte un tampon brut et `network/NtNet.java`
+  expose `NtNet.surServeur/surClient/versServeur/versClient`. Les canaux ne sont pas des
+  records typés : ils ne sérialisent que des primitives. Les handlers s'exécutent sur le
+  thread principal (défaut NeoForge 21.1).
+- **NBT d'item → composants de données** : `MarketListing.itemNBT` reste une chaîne SNBT,
+  mais elle encode un `DataComponentPatch`. `market/ItemComponentCodec.java` est le seul
+  point du mod qui touche à ça ; `appliquer()` ne lève jamais (pile vierge en cas d'échec).
+  Encoder/décoder exige un `HolderLookup.Provider` (`registryAccess()`).
+- **`modId="nouvelle_terre_bridge"`** (underscore imposé par NeoForge) mais le namespace de
+  ressources reste `nouvelle-terre-bridge` (items, réseau) : le changer ferait disparaître
+  les Shards et Parchemins en circulation.
+- **Mixins restants** : 3 seulement (`PlayerManagerMixin`, `ServerPlayerEntityMixin`,
+  `AbstractClientPlayerEntityMixin`). Tout le reste (pose/casse de blocs, craft, morts,
+  HUD, lâcher du Parchemin) passe par des events NeoForge dans `NouvelleTerreBridge` et
+  `NouvelleTerreBridgeClient`.
+- **Enregistrement explicite, pas `@EventBusSubscriber`** : la découverte par annotation
+  ne s'est pas montrée fiable avec un seul sourceSet client+serveur. La classe cliente
+  n'est chargée que si `FMLEnvironment.dist.isClient()`.
+- **Cadmus n'a pas de build 1.21.1** — l'intégration par réflexion est suspendue.
+- **Mod médical** : `cottonmod` remplacé par `medicalmod` (namespace `medicalmod:`),
+  référencé dans `FrenchItemNames`, `ShopThresholds.PRIX_REFERENCE` et `HdvScreen`.
 
 ## Repos
 - Mod : `https://github.com/0Sacha/Nouvelle-Terre-SMP---MOD.git`
@@ -81,6 +51,31 @@ pas choisi.
 - RCON port : `40539` (pas le 25575 par défaut)
 - Bot Discord : Railway (Node.js), user `Nouvelle Terre#9576`
 - Guild ID : `1508123190797406432`
+
+## Instance de test locale (portage NeoForge)
+
+ModrinthApp, profil **« NeoForge 1.20.1 »** (nom de dossier trompeur — tourne
+réellement en 1.21.1 NeoForge, `%APPDATA%\ModrinthApp\profiles\NeoForge 1.20.1\`).
+C'est là que le portage natif a été validé, séparément de la vraie SMP.
+- Le profil **`nouvelle-terre-mod (1)`** est l'ancien client 1.20.1 Fabric d'avant la
+  migration — archive, plus utilisé.
+- Le mod (`shards.json`, `seuils-shop.json`, `production.json`,
+  `server-shop-prices.json`) et les autres JSON serveur vivent à la racine du
+  profil (`FMLPaths.GAMEDIR`), pas dans `saves/<monde>/`.
+  ⚠ **Ne sont lus qu'au lancement du jeu** (constructeur du mod / mod bus),
+  pas à l'ouverture du monde — éditer ces fichiers exige de **fermer
+  complètement Minecraft**, pas juste quitter le monde, pour qu'ils soient
+  repris en compte.
+- **Monde de test sans triche** (`allowCommands: false` dans `level.dat`,
+  pas d'`ops.json`) : les commandes op (`/nt-maintenance`, `/server-admin`,
+  `/nt-sauvegarde`) sont enregistrées mais invisibles côté client — Brigadier
+  masque les nœuds dont `.requires()` échoue, ça ressemble à une commande
+  manquante plutôt qu'à un problème de permission. Un `ops.json` (niveau 4)
+  a été ajouté pour débloquer les tests admin.
+- `InventoryProfilesNext` est **désactivé** (`.jar.disabled`) dans ce profil —
+  bug interne au mod (`NullPointerException` sur son propre
+  `Features.ENABLE_PROFILES$delegate`, planté pendant `WorldOpenFlows`, avant
+  même qu'un écran du mod s'ouvre) sans rapport avec Nouvelle Terre Bridge.
 
 ## Build
 ```powershell
@@ -93,13 +88,53 @@ pas choisi.
 GitHub Action crée une Release automatique à chaque push sur `main`.
 Le mod tourne sur le **client ET le serveur** — les joueurs doivent installer
 le JAR NeoForge côté client pour le GUI HDV/Bank/Registre.
-⚠ Sur cette branche, le JAR est un mod **NeoForge natif** — plus besoin de
-Sinytra Connector ni de Forgified Fabric API côté serveur ou client.
+Le mod lui-même n'a besoin ni de Sinytra Connector ni de Forgified Fabric API. Le
+**pack** les garde pour trois mods Fabric-only (`lavender`, `LockAndBlock`, `mcef-fabric`).
+
+⚠ **Tout ce qui arrive sur `main` part en production** : `.github/workflows/build.yml`
+compile, crée la Release, puis remplace le JAR dans `/mods` du serveur par SFTP (le
+redémarrage reste manuel). Ne jamais y envoyer un build non testé en local.
+
+### Mettre en ligne
+1. **Écrire le changelog** de la version : `changelogs/<version>.md`, au format décrit dans
+   `changelogs/README.md`. Obligatoire avant tout push qui change la version — c'est ce
+   fichier que le bot publie sur Discord, et il devient la description de la release.
+   Il s'adresse aux joueurs : ce qui change pour eux, sans nom de classe ni détail de faille.
+   Vérifier le rendu : `node scripts/apercu-changelog.js <fichier>` dans le dépôt du bot.
+2. Commits sur `neoforge-natif-1.21.1`, puis `git push origin neoforge-natif-1.21.1`
+   (ne déploie rien) — **seulement quand Sacha le demande**.
+3. Pull request vers `main` (`gh pr create --base main`).
+4. **C'est Sacha qui fusionne la PR** : la fusion déclenche le déploiement, et le mode de
+   permission de Claude Code la refuse. Ne pas chercher à la contourner.
+5. Redémarrer le serveur depuis le panel MineStrator.
+6. Sur Discord, Sacha lance les deux commandes du bot (propriétaire uniquement) :
+   - `/changelog publier` → les nouveautés, dans le salon changelog ;
+   - `/changelog installation` → uniquement la marche à suivre (remplacer le JAR, mods à
+     ajouter), avec le bouton de téléchargement. Message **séparé** exprès : c'est le seul
+     que tout le monde doit suivre.
+   `/changelog apercu` montre le tout sans rien publier. Le bot lit la dernière release sur
+   GitHub : rien à copier-coller. Les annonces manuelles (ajout de mods hors version, etc.)
+   restent dans le salon d'annonces, à la main.
+
+⚠ Un mod que les joueurs doivent ajouter eux-mêmes se déclare dans le changelog par une
+ligne `<!-- mod: Nom | lien | à quoi il sert -->` : le bot en fait la liste du message
+d'installation.
 
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `2.0.0` (portage Minecraft 1.21.1 — voir « Portage 1.20.1 → 1.21.1 » ci-dessus)
+- Version actuelle : `2.2.3` (refonte de l'éditeur HUD — voir « Système HUD »)
+  - 2.2.3 : Parchemin refait sur le modèle du Guide (liste + volet de détail, icônes d'objets)
+  - 2.2.2 : menu du HUD refait (barre latérale, profils, filtres, cartes Activé/Désactivé)
+  - 2.2.1 : Parchemin aligné sur le design des autres écrans
+  - 2.2.0 : éditeur HUD refait (placement sur le jeu, guides, taille, grille MODS), widgets Armure et Direction
+  - 2.1.4 : section Location dans le guide en jeu
+  - 2.1.3 : écritures disque regroupées, virements récurrents qui survivent au redémarrage
+  - 2.1.2 : barre et pourcentage de réparation sur l'objet loué
+  - 2.1.1 : un objet loué à Raccommodage doit être rendu réparé
+  - 2.1.0 : location d'objets entre joueurs, avec verrou et caution
+  - 2.0.1 : failles d'argent fermées, écriture atomique, sauvegardes quotidiennes
+  - 2.0.0 : portage Minecraft 1.21.1 puis NeoForge natif (en prod sous `2.0.0+neoforge.7`)
   - 1.6.3 : correctif de la boucle d'inflation des recettes réversibles
   - 1.6.2 : la dérivation des prix était perdue à la migration
   - 1.6.1 : mode maintenance + sauvegardes restaurables
@@ -118,7 +153,105 @@ Sinytra Connector ni de Forgified Fabric API côté serveur ou client.
   - 1.2.2 : Admin Shop avec prix dynamique + rééquilibrage économie
   - 1.2.1 : quêtes complétées disparaissent et ne peuvent être refaites
   - 1.2.0 : item Shard ◆ monnaie physique + objectifs de quêtes explicites
-- À chaque rebuild : mettre à jour `mod_version` dans `gradle.properties`, puis `git commit` + `git push`
+- À chaque rebuild : mettre à jour `mod_version` dans `gradle.properties`, puis `git commit`.
+  Le push ne se fait que sur demande (voir « Mettre en ligne »).
+
+## Pack de mods en production
+
+Le serveur tourne en NeoForge 1.21.1 depuis le 01/11 (~188 mods). Le modpack est publié
+sur Modrinth comme projet à part ; il n'y a plus de repo packwiz (l'ancien
+`Nouvelle-Terre-SMP---Pack` est abandonné).
+
+Pièges à connaître avant de toucher au pack :
+- **watermedia a deux lignées en NeoForge 1.21.1** : `waterframes` et `watervision`
+  exigent la `2.1.x` (`>=2.1.34 <2.2`). La `3.0.0.x`, pourtant plus récente, fait planter
+  le lancement. Toujours vérifier la plage de version attendue par chaque dépendant.
+- **Un jar Fabric-only mal identifié dans `mods/`** peut faire échouer tout le lot traité
+  par Sinytra Connector, y compris des mods sans rapport.
+- **medicalmod** : pas de release 3.x sur GitHub (la `v2.4.1` est une build Fabric). Le jar
+  vient d'un clone + `./gradlew build` de `main`.
+- **Simple Nicknames** remplace `FakenameFabric` sans reprendre ses données.
+- **Sculk Horde** : pas de build NeoForge 1.21.1. La branche `1.21.1` du dépôt officiel
+  (`TeamPeril/Sculk-Horde`) est en développement — attendre leur release, ne pas forker.
+- **Apocalyptic Meteors** : rien ne tombe tant que `/meteors` n'est pas lancée. Le mod
+  n'impose aucune permission ; c'est Nouvelle Terre Bridge qui la réserve aux op
+  (voir « Durcissement 2.0.1 »).
+
+## Durcissement 2.0.1
+
+Audit complet du code serveur : tout ce que le client envoie est désormais revalidé.
+**Règle à garder pour tout nouveau paquet : le client borne la saisie, mais il ne fait
+jamais autorité** — montants, quantités, prix, cibles et longueurs se vérifient côté
+serveur.
+
+### Failles d'argent fermées
+- **Virement `/bank`** (`ACTION_TRANSFER`) : le montant n'était pas vérifié. Négatif, il
+  inversait le virement — un client modifié vidait n'importe quel compte, `$Serveur` et
+  `$Sequestre` compris. `/pay` faisait déjà les contrôles, le GUI non.
+  `LocalEconomy.transfer()` refuse maintenant tout montant `<= 0` **au plus bas niveau**,
+  et `addShards`/`removeShards`/`forceDeduct`/`depositShards` refusent les négatifs :
+  aucun appelant ne peut l'oublier.
+- **Crédits** : la hausse quotidienne de la pénalité venait du paquet sans validation et
+  n'était jamais montrée à l'emprunteur. Elle est imposée par le serveur
+  (`Loan.HAUSSE_PENALITE` = 5 ◆), la valeur du paquet est ignorée, et
+  `Loan.nextPenalty()` ne peut plus être négative. Durée plafonnée à 365 j.
+- **Shop Serveur** : quantité plafonnée à `ServerShopActions.QTE_MAX` (un inventaire,
+  36 × 64) et total calculé en `long`. Sans plafond, `prix × quantité` débordait en
+  négatif et la boucle de livraison gelait le serveur en un paquet.
+- **HDV** : quantité et prix d'une annonce validés (`MarketActions.QTE_MAX`, `PRIX_MAX`),
+  coût d'achat calculé en `long`, item inconnu refusé.
+- **Retrait en Shards physiques** plafonné à 200 000 ◆ par opération.
+
+### Fichiers de données
+- **Écriture atomique** (`util/FichierSur.ecrire`) : tous les `save()` passent par un
+  fichier temporaire renommé d'un seul geste. Avant, le fichier vivant était tronqué puis
+  réécrit — un crash au mauvais moment laissait un `shards.json` vide, et le chargement
+  suivant repartait de zéro puis l'écrasait.
+  ⚠ Le contenu doit être **entièrement sérialisé en chaîne avant l'appel** : ne pas
+  revenir à un `Writer` ouvert sur le fichier.
+- **Copie quotidienne** (`SauvegardeFichier.sauvegardeQuotidienne`) : les 11 fichiers
+  d'état (`locations.json` compris) sont copiés une fois par jour dans `backups-economie/` (motif `auto`), 14 jours
+  gardés. Vérifiée au démarrage puis toutes les heures.
+- **Fichier illisible au démarrage** (`verifierAuDemarrage`, appelé **avant tout
+  chargement**) : mis de côté (motif `corrompu`) puis remplacé par sa dernière copie
+  quotidienne, avec une erreur dans les logs.
+- `/nt-sauvegarde restaurer` recharge maintenant `shards.json` en mémoire
+  (`LocalEconomy.recharger()`), sans redémarrage.
+
+### Anti-abus
+- `/conflit` : un par minute et par joueur, raison ≤ 300 caractères, cible connectée.
+- Fiche du registre : une demande par 500 ms (chaque demande appelle le bot).
+- 10 virements récurrents maximum par joueur.
+- `/economie admin reset-economy` passe au niveau op 4.
+- File d'attente vers le bot bornée à 2 000 événements ; un refus définitif (4xx)
+  n'est plus renvoyé en boucle.
+- Avertissement dans les logs si `sharedSecret` est resté à sa valeur d'exemple, ou si
+  `botUrl` est en `http://` hors localhost.
+- **Commandes d'autres mods** : `NouvelleTerreBridge.COMMANDES_RESERVEES_OP` liste les
+  commandes tierces sans permission à réserver aux op (niveau 2), filtrées par
+  `CommandEvent`. Contient `meteors`. Ajouter ici toute commande dangereuse d'un mod
+  qu'on ne peut pas corriger à la source.
+
+### Performance (2.1.3)
+- **Écritures regroupées** (`util/SauvegardeDifferee`) : `production.json` et `quetes.json`
+  étaient réécrits en entier, sur le thread serveur, à **chaque bloc cassé et chaque mob
+  tué**. Ils sont maintenant écrits au plus toutes les 5 secondes, et à l'arrêt du serveur.
+  ⚠ Réservé aux compteurs et à la progression : **l'argent (`shards.json`) reste écrit
+  immédiatement**. Tout nouveau fichier modifié à haute fréquence doit passer par là.
+- **Médiane en cache** (`LocalEconomy.soldeMedian`) : ouvrir le Shop la demandait trois
+  fois par article, avec un tri de tous les soldes à chaque fois. Le cache est vidé dans
+  `save()`, par où passe toute modification de solde.
+- **Virements récurrents** : le décompte n'était écrit qu'à la création du virement, donc
+  il repartait de zéro à chaque redémarrage — un virement quotidien sur un serveur
+  redémarré tous les jours ne partait jamais. Il est enregistré chaque minute.
+- Code mort retiré : widgets HUD Santé / Nourriture / Armure / XP (jamais enregistrés dans
+  l'éditeur) et `NouvelleSettingsScreen` (n'était ouvert que par ModMenu, mod Fabric).
+
+### Limite connue, non traitée
+Les comptes sont indexés par **pseudo en minuscules**, pas par UUID : un joueur qui change
+de pseudo Mojang repart d'un compte vide (l'ancien solde reste sous l'ancien pseudo, à
+transférer à la main par `/economie admin`). Migrer vers l'UUID touche tous les fichiers
+de données et le bot — à ne faire que sur décision explicite.
 
 ---
 
@@ -229,7 +362,10 @@ Toute opération irréversible copie d'abord son fichier dans `backups-economie/
 migration des prix, purge du marché, et la restauration elle-même. `/nt-sauvegarde` liste
 les copies (cliquables) et `restaurer <fichier>` les remet en place puis **recharge en
 mémoire** — copier le fichier ne suffit pas, les gestionnaires travaillent sur leur copie
-chargée au démarrage.
+chargée au démarrage. Le rechargement à chaud existe pour `seuils-shop.json`,
+`server-shop-prices.json` et `shards.json` ; les autres fichiers demandent un redémarrage.
+Depuis la 2.0.1 s'y ajoute une copie quotidienne de tous les fichiers d'état (voir
+« Durcissement 2.0.1 »).
 ⚠ Restaurer `seuils-shop.json` passe par `ShopThresholds.rechargerRestaure()` et **non**
 par `load()` : ce dernier enchaîne sur `migrerPrix()`, qui réappliquerait aussitôt la table
 courante et annulerait la restauration dans la seconde. Les entrées restaurées sont
@@ -356,22 +492,25 @@ sinon les entrées déjà estampillées restent figées sur leurs mauvais prix.
 - L'argent d'achat va sur `$Serveur` ; le rachat le déduit via `forceDeduct` (compte système
   exclu des totaux, il peut passer négatif — c'est un puits comptable, pas une trésorerie).
 
-## Parchemin (1.3.0)
+## Parchemin (1.3.0, écran refait en 2.2.3)
 - Item `nouvelle-terre-bridge:parchemin` — terminal portatif, clic droit → `HubScreen`.
   Nom identique en fr_fr et en_us : « Parchemin » (traduire par « Scroll » cassait la DA RP).
-- `HubScreen` : DA carte électronique (substrat vert, bus et pistes cuivre, puces à broches),
-  8 entrées → Marché, Shop, Banque, Quêtes, Production, Registre, Conflit, Guide.
+- `HubScreen` : construit comme le Guide depuis la 2.2.3 — cadre, liste des 10 entrées à
+  gauche, volet de détail à droite. **Survoler** une entrée la présente dans le volet (grande
+  icône, commande, à quoi elle sert) ; **un clic l'ouvre**, sans étape intermédiaire.
+  Les entrées portent une vraie icône d'objet : les symboles de la police ne faisaient que
+  quelques pixels à l'écran, ce que Sacha a jugé « moche ».
+  ⚠ Historique : DA « carte électronique » verte (retirée), puis grille de cartes à symboles
+  (2.2.1, rejetée). Ne revenir ni à l'une ni à l'autre.
 - Donné à la connexion et après un respawn (`donnerParcheminSiAbsent`), et récupérable
   gratuitement via le bandeau épinglé du Shop (`ACTION_CLAIM_PARCHEMIN`). **Non vendable.**
-- `ParcheminDropMixin` bloque la touche « lâcher » (cible `ServerPlayerEntity.dropSelectedItem`
-  et **non** `dropItem` : à ce stade la pile est déjà retirée, l'annuler la supprimerait).
-  ⚠ Ne bloque **pas** le glisser hors de l'inventaire — le tooltip ne promet donc que
-  la restitution automatique, pas l'impossibilité de le jeter.
+- Le jet du Parchemin est bloqué par un `ItemTossEvent` dans `NouvelleTerreBridge`
+  (ancien `ParcheminDropMixin`) : touche « lâcher » **et** glisser hors de l'inventaire.
 - Occupe un slot normal — un vrai slot supplémentaire exigerait de mixiner `PlayerInventory`
   et `PlayerScreenHandler` (sérialisation NBT comprise), risque de perte d'items jugé trop élevé.
 - **`HubBackButton`** : flèche « ← » partagée, en tête de chaque écran, qui rouvre le hub
   côté client (aucune donnée serveur requise). Présente dans Hdv, Shop, Bank, Quetes,
-  Production, Registre, Conflit et Wiki.
+  Production, Registre, Conflit, Wiki, LeBonCube et Location.
   Les écrans à onglets mémorisent `tabsStartX` au rendu au lieu de recalculer l'offset dans
   `mouseClicked` — le HDV avait déjà 4 px de dérive avant l'ajout de la flèche.
 
@@ -461,6 +600,65 @@ et **toute la conversation** en lecture seule.
 existait toujours dans `leboncube.json` mais n'était plus consultable par les joueurs.
 `termineeLe` est transmis au client uniquement pour cet écran.
 
+## Architecture Location (objets loués entre joueurs, 2.1.0)
+
+Un joueur fait louer un objet à un autre, contre un loyer par jour réel. Tout se fait
+dans l'écran `LocationScreen` (Parchemin → Location, ou `/location`) : proposer, louer,
+rendre, récupérer. Données : `locations.json` (`location/LocationManager`).
+
+### Parcours
+- **Proposer** : le propriétaire choisit un objet de son inventaire, un loyer par jour et
+  une caution (au moins un jour de loyer). L'objet quitte son inventaire et vit dans
+  l'offre, comme une annonce du HDV.
+- **Louer** : le locataire paie le premier jour (versé au propriétaire) et la caution
+  (retenue sur `$Sequestre`, le même compte que LeBonCube). Il reçoit l'objet **étiqueté**.
+- **Chaque jour** : le loyer est prélevé tout seul (`tick`, une fois par minute).
+- **Rendre** : depuis l'écran, l'objet étant dans l'inventaire. La caution est rendue,
+  l'objet part dans les « retours » du propriétaire, qui le **récupère depuis l'écran**.
+- **Résilier** (propriétaire) : plus de loyer dû, l'objet se verrouille à la fin du jour
+  déjà payé et doit être rendu.
+- **Perdu** (locataire) : objet cassé ou introuvable, la caution part au propriétaire.
+
+### Le verrou
+L'étiquette est une clé `nt_location` (numéro du contrat) dans le composant `custom_data`
+de la pile : elle suit l'objet partout, inventaire, coffre ou sol.
+`LocationManager.estVerrouille()` est vrai dès que le contrat n'est plus à jour (loyer
+impayé, résilié arrivé à terme, perdu, ou contrat inconnu). `LocationVerrou` annule alors
+toute action faite avec l'objet : clic droit (objet, bloc, entité), clic gauche sur bloc,
+attaque, casse de bloc. Une armure ou un objet en main secondaire verrouillé est retiré
+de son emplacement toutes les deux secondes — il protégerait sinon sans qu'aucun clic ne
+passe par les events.
+
+Impayé : l'objet se verrouille aussitôt. Le prélèvement est retenté chaque minute, et le
+verrou saute dès qu'il passe. Après **24 h** (`GRACE_MS`), l'objet est repris dans
+l'inventaire du locataire s'il est connecté et l'a sur lui ; un jour de loyer est retenu
+sur la caution. Après **7 jours** (`ABANDON_MS`) sans avoir pu le reprendre, la caution
+part au propriétaire et le contrat passe « perdu » — il est **conservé**, pour que l'objet
+retourne à son propriétaire s'il réapparaît dans l'inventaire de n'importe quel joueur.
+
+⚠ **La caution existe parce que le verrou ne peut pas tout couvrir** : un objet d'un autre
+mod peut avoir ses propres actions hors de ces events, et un objet caché dans un coffre
+ne peut pas être repris. Ne pas rendre la caution facultative.
+
+### Pourquoi l'objet rendu est l'objet réel
+`cloreAvecRetour()` rend la pile **telle qu'elle est**, nettoyée de son étiquette et des
+deux lignes de description ajoutées à la location — et non une copie de l'original.
+⚠ Reconstituer l'original ouvrait une duplication : louer un contenant, le vider, le
+« rendre » plein. D'où trois règles qui vont ensemble :
+- seuls les objets **non empilables** se louent, et un contenant ou un sac garni est refusé ;
+- **enclume et meule refusent tout objet loué**, même à jour (sinon désenchantement contre
+  de l'XP, ou fusion dans un autre objet avant de rendre) ;
+- un objet loué ne peut pas être mis en vente au HDV (le Shop Serveur le refusait déjà :
+  il ne rachète que les piles vierges).
+L'usure reste normale : un outil loué revient abîmé — **sauf s'il a Raccommodage** (Mending). Il se répare alors en jouant, donc `rendre()` le refuse tant qu'il est plus usé qu'au départ (`Contrat.degatsDepart`, relevé à la location). Une reprise forcée après impayé le prend tel quel : exiger une réparation bloquerait le retour au propriétaire.
+L'usure de départ est aussi recopiée sur la pile (`nt_location_usure`) : le client affiche ainsi l'objectif sans aller-retour réseau — deux lignes dans l'infobulle de l'objet partout en jeu (`ItemTooltipEvent` → `LocationScreen.infobulle`) et une barre avec repère dans « Mes locations ». `LocationManager.reparation()` fait le calcul pour les deux, et n'affiche jamais 100 % tant qu'il manque un point.
+
+### Réseau
+`LocationNetworking` : `LOC_OPEN` / `LOC_ACTION` / `LOC_RESULT`, format détaillé dans le
+fichier. `LOC_ACTION` porte toujours `(action, id, prix, caution)`. Les durées sont
+envoyées en **temps restant**, pas en date : les horloges client et serveur ne concordent
+pas forcément.
+
 ## Architecture /server-admin (1.5.0)
 Écran de monitoring réservé au **niveau op 4** (`ServiceNetworkHandler.NIVEAU_ADMIN`) :
 trésorerie `$Serveur`, argent retenu en `$Sequestre`, masse monétaire, solde médian,
@@ -478,7 +676,8 @@ entre joueurs.
 - **Refuser/Annuler** (`ACTION_LOAN_DECLINE`) : l'emprunteur refuse OU le prêteur annule sa proposition
 - Une seule proposition en attente par paire emprunteur/prêteur
 - Pénalités automatiques : vérifiées toutes les minutes (1200 ticks), appliquées chaque jour de retard
-- Pénalité jour N = `penaltyBase + (N-1) * 5` ◆ (augmente de 5 ◆/j par défaut)
+- Pénalité jour N = `penaltyBase + (N-1) * 5` ◆ — la hausse de 5 ◆/j est imposée par le serveur
+  (`Loan.HAUSSE_PENALITE`), elle ne vient plus du paquet
 - `LocalEconomy.forceDeduct()` permet de passer en solde négatif pour les pénalités
 - Remboursement : l'emprunteur renvoie le principal au prêteur via `/bank`
 - Pardon ("Effacer la dette") : le prêteur peut annuler un crédit sans remboursement
@@ -505,8 +704,8 @@ entre joueurs.
 |---|---|
 | `/economie bourse` | Solde du joueur (redondant avec le HUD, conservé pour admin/debug) |
 | `/economie admin give/take/check <joueur>` | Admin (op 2) |
-| `/hdv` | Ouvre le GUI Marché (screen client Fabric) |
-| `/bank` | Ouvre le GUI Banque (screen client Fabric) |
+| `/hdv` | Ouvre le GUI Marché |
+| `/bank` | Ouvre le GUI Banque |
 | `/pay <joueur> <montant>` | Virement rapide en chat (autocomplete joueurs connus, retour par toast) |
 | `/discord` | Lier compte Minecraft ↔ Discord |
 | `/conflit` | Ouvre le GUI Conflit RP (liste joueurs en ligne + raison → alerte Discord) |
@@ -514,16 +713,19 @@ entre joueurs.
 | `/quetes` | Ouvre le GUI Quêtes |
 | `/quetes refresh` | Recharge quetes-templates.json (op 2) |
 | `/quetes reset` | Réinitialise toute la progression (op 2) |
-| `/registre` | Ouvre le GUI Registre des personnages (screen client Fabric) |
+| `/registre` | Ouvre le GUI Registre des personnages |
 | `/production` | Ouvre le GUI Production naturelle (tous les joueurs ; boutons admin si op 2, pas de sous-commandes) |
 | `/shop` | Ouvre le GUI Shop Serveur (achat / revente) |
+| `/wiki` | Ouvre le Guide du serveur |
 | `/leboncube` | Ouvre LeBonCube — annonces de services entre joueurs |
+| `/location` | Ouvre la location d'objets entre joueurs |
 | `/server-admin` | Monitoring économique + arbitrage des litiges (op 4 uniquement) |
 | `/nt-sauvegarde` | Liste les copies de l'économie ; `restaurer <fichier>` revient en arrière (op 4) |
 | `/nt-maintenance [on [msg] \| off]` | Ferme le serveur aux non-op, état persistant (op 4) |
 
 > Toutes les opérations marché (vendre, acheter, retirer) se font **uniquement via `/hdv`**.
 > Virements, crédits et historique se gèrent via `/bank`.
+> `/meteors` (mod Apocalyptic Meteors) est réservée aux op par ce mod — voir « Durcissement 2.0.1 ».
 
 ---
 
@@ -649,25 +851,30 @@ http/
                              Secret URL-encodé (URLEncoder.encode) pour éviter les chars spéciaux dans l'URI
   EventQueue.java          → Persistance JSON de la file d'attente
 
-mixin/
-  BlockItemMixin.java              → @Inject BlockItem.place RETURN → PlacedBlockTracker.marquer()
-                                     Marque tout bloc posé par un joueur (voir anti-exploit ci-dessous)
-  CraftingResultSlotMixin.java     → @Inject onTakeItem HEAD → compte le craft en production
-                                     @Shadow du champ `input` : à HEAD la grille contient encore les
-                                     ingrédients, seul moment où la provenance du résultat est lisible.
-                                     Décompactage (1 bloc → 4/9 unités) : ne crédite rien et **retire**
-                                     1 du compteur du bloc → le cycle compacter/décompacter est neutre.
-                                     Le compactage (9 → 1) reste compté : fabriquer des blocs est la
-                                     façon prévue de les débloquer au Shop.
-  PlayerManagerMixin.java          → @Inject checkCanJoin HEAD → refuse les non-op quand le mode
-                                     maintenance est actif (même porte que la whitelist)
-  LivingEntityMixin.java           → Intercepte les morts joueurs → event PLAYER_DEATH
-  InGameHudMixin.java              → @Inject InGameHud.render HEAD → reset debugHudActive = false
-  DebugHudMixin.java               → @Inject DebugHud.render HEAD → set debugHudActive = true (détection F3)
-  ServerPlayerEntityMixin.java     → @Inject getPlayerListName HEAD → retourne "§fNomRP §8(§7pseudo§8)"
+mixin/                           ← 3 mixins seulement, le reste passe par des events NeoForge
+  PlayerManagerMixin.java          → @Inject PlayerList.canPlayerLogin HEAD → refuse les non-op
+                                     quand le mode maintenance est actif (même porte que la whitelist)
+  ServerPlayerEntityMixin.java     → @Inject getTabListDisplayName HEAD → "§fNomRP §8(§7pseudo§8)"
                                      depuis NouvelleTerreBridge.nomsRP (tab list côté serveur)
-  AbstractClientPlayerEntityMixin.java → @Inject getDisplayName HEAD (CLIENT) → lit PlayerListEntry.getDisplayName()
-                                         pour que le nameplate au-dessus de la tête affiche le nom RP
+  AbstractClientPlayerEntityMixin.java → (CLIENT) nom RP au-dessus de la tête
+  Convertis en events : pose de bloc (PlacedBlockTracker), craft et décompactage,
+  morts de joueurs, détection F3, lâcher du Parchemin.
+
+util/
+  FichierSur.java          → Écriture atomique des JSON (fichier temporaire + renommage)
+  SauvegardeDifferee.java  → Regroupe les écritures des fichiers modifiés à haute fréquence
+                             (production, quêtes, virements) : au plus une toutes les 5 s
+
+location/                        ← Location d'objets — voir « Architecture Location »
+  LocationManager.java     → Singleton locations.json : offres, contrats, retours, étiquette
+                             `nt_location`, loyers et reprises (`tick`, une fois par minute)
+  LocationVerrou.java      → Events qui rendent inutilisable un objet dont le contrat n'est
+                             plus à jour ; enclume et meule refusées à tout objet loué
+  LocationReseau.java      → Récepteur LOC_ACTION, ouverture de l'écran, commande /location
+
+service/                         ← LeBonCube — voir « Architecture LeBonCube »
+  ServiceManager.java      → Singleton leboncube.json ; porte le compte `$Sequestre`
+  ServiceNetworkHandler.java → Récepteurs LeBonCube et /server-admin ; `NIVEAU_ADMIN` = op 4
 
 network/
   HdvNetworking.java       → Canaux : HDV_OPEN / HDV_ACTION / HDV_RESULT / NT_VERSION / NT_BALANCE
@@ -698,7 +905,13 @@ network/
                              / CONFLIT_RESULT (S→C, ok+msg → toast NotificationHud, ferme le screen si ok)
   HubNetworking.java       → Canaux : HUB_OPEN (S→C, ouvre HubScreen) / HUB_ACTION (C→S)
                              Actions : HDV(0) BANK(1) QUETES(2) PRODUCTION(3) REGISTRE(4)
-                                       CONFLIT(5) WIKI(6) SHOP(7)
+                                       CONFLIT(5) WIKI(6) SHOP(7) MARCHE(8) LOCATION(9)
+  LocationNetworking.java  → Canaux : LOC_OPEN / LOC_ACTION / LOC_RESULT
+                             Actions : PROPOSER(0) RETIRER(1) LOUER(2) RENDRE(3) PERDU(4)
+                                       RESILIER(5) RECUPERER(6)
+  NtNet.java / NtPayload.java → Routeur réseau commun. ⚠ Toute nouvelle classe `*Networking`
+                             doit être ajoutée à `NtNet.precharger()`, sinon ses canaux ne
+                             sont pas enregistrés auprès de NeoForge.
   ShopNetworking.java      → Canaux : SHOP_OPEN (S→C) / SHOP_ACTION (C→S) / SHOP_RESULT (S→C)
                              Actions : ACTION_BUY(0) / ACTION_SELL(1) / ACTION_CLAIM_PARCHEMIN(2)
 
@@ -742,13 +955,17 @@ client/                    ← @Environment(CLIENT) uniquement
                              dur avait rendu un onglet ni dessiné ni cliquable.
                              Tooltip vanilla au survol (nom + enchantements) + ligne vendeur/prix
                              Chip solde haut-droit → BANK_REQUEST → ouvre BankScreen
-                             Catégorie "Médical" : items cottonmod (coton, bandage, medkit, plantes...)
+                             Catégorie "Médical" : items medicalmod (coton, bandage, medkit, plantes...)
   ServerShopScreen.java    → Shop Serveur autonome : onglets Acheter / Vendre, **liste** (1.4.0,
                              même forme que le HDV), scrollbar or draggable, modal quantité avec
                              `NumberInput`, tendance de prix en clair sur la ligne
                              Bandeau Parchemin épinglé en tête de l'onglet Acheter (offert) —
                              la liste est décalée de BANNER_H pour ne pas passer dessous
-  HubScreen.java           → Hub du Parchemin, DA carte électronique, 8 puces cliquables
+  HubScreen.java           → Hub du Parchemin : liste des 10 entrées + volet de détail (voir « Parchemin »)
+  LocationScreen.java      → Location : onglets Louer / Mes locations / Proposer, barre de
+                             réparation, infobulle des objets loués (`infobulle()`)
+  MarcheScreen.java        → LeBonCube
+  WikiScreen.java          → Guide en jeu — à compléter à chaque nouvelle fonctionnalité joueur
   BankScreen.java          → Screen banque : 5 onglets (Compte / Economie / Classement / Credits / Virements)
                              **Compte (1.4.2)** : transactions en **deux colonnes** —
                              `estAvecJoueur(type)` sépare les échanges entre joueurs
@@ -795,50 +1012,39 @@ client/                    ← @Environment(CLIENT) uniquement
                              Row : point coloré + nomRp (blanc) + "— pseudoMc" (gris) + "● en ligne" si online
   BalanceHudOverlay.java   → Contient uniquement `cachedBalance` statique (int, init -1)
                              Mis à jour par NT_BALANCE / HDV_OPEN / HDV_RESULT. Plus de rendering ici.
-  HudEditorScreen.java     → Éditeur HUD (touche H). Deux modes :
-                               Mode PANEL : panneau centré en haut (PW=372px), grille 2 colonnes de cards.
-                                 Chaque card : preview widget, toggle ACTIVÉ/DÉSACTIVÉ, bouton OPTIONS ⚙.
-                                 Bouton "Placer les widgets" → bascule en mode LAYOUT.
-                               Mode LAYOUT : panneau caché, widgets activés draggables avec bordure or.
-                                 Bouton "Terminer" centré en haut. ESC → retour mode PANEL.
-                             WIDGETS (List<HudWidget>) statique — initialisé dans NouvelleTerreBridgeClient.
-                             Positions relatives (0.0-1.0), snap aux bords, sauvegarde sur close.
+  HudEditorScreen.java     → Menu du HUD (touche H) — voir « Système HUD ». Quatre modes :
+                             MODS (grille, à l'ouverture), REGLAGES, OPTIONS (un widget),
+                             PLACEMENT (disposition sur le jeu). Gère aussi les profils.
+                             WIDGETS (List<HudWidget>) statique, rempli par NouvelleTerreBridgeClient.
   ClientConfig.java        → Config client-only (config/nouvelle-terre-client.json)
-                             Champs : discordRPCEnabled, hudEnabled/balanceX/Y, coordsEnabled/X/Y/ShowDecimals,
-                             timeEnabled/X/Y/ShowIcon,
-                             santeEnabled/X/Y, nourritureEnabled/X/Y, fpsEnabled/X/Y/ShowPing,
-                             biomeEnabled/X/Y, notifEnabled/X/Y, armureEnabled/X/Y,
-                             xpEnabled/X/Y, dimensionEnabled/X/Y, effetsEnabled/X/Y
-  NouvelleSettingsScreen.java → Bouton "Éditeur HUD →" + toggle Discord RPC
-  ModMenuIntegration.java  → Hook ModMenu optionnel (modCompileOnly)
+                             `widgets` : Map id → WidgetState (enabled, x, y, taille, fond, ombre,
+                             options). `profils` + `profilActif` : dispositions enregistrées.
+                             Les anciens champs par widget restent pour la reprise
+                             (`ancienEtat`), ils ne sont plus écrits.
 
-client/hud/                ← Widgets HUD individuels
-  HudWidget.java           → Classe abstraite : id, label, anchorX/Y, enabled, getPixelX/Y (clamped),
-                             renderCheckbox() helper. loadFromConfig/saveToConfig abstraits.
-                             isDragOnly() → false par défaut (true = widget de position pure, pas rendu dans le HUD).
-  BalanceWidget.java       → Affiche cachedBalance + " ◆". Pas de paramètres.
-  CoordsWidget.java        → "XYZ x / y / z". Paramètre : coordsShowDecimals.
-  TimeWidget.java          → Heure Minecraft HH:MM. Paramètre : timeShowIcon (☀/☽).
-  SanteWidget.java         → Santé du joueur "X / max ♥". Couleur : rouge < 25%, or < 60%, rouge vif sinon.
-  NourritureWidget.java    → Niveau de faim "Faim X / 20". Couleur : rouge ≤4, or ≤10, vert sinon.
-  FpsWidget.java           → FPS + ping optionnel. FPS mesuré via FpsWidget.onFrame() appelé dans HudRenderCallback.
-                             Paramètre : fpsShowPing.
-  BiomeWidget.java         → Biome courant (getKey().getPath(), premier caractère capitalisé).
-  ArmureWidget.java        → "Arm. X / 20". Couleur : rouge ≤4, or ≤14, vert sinon.
-  XpWidget.java            → "Niv. X" + barre de progression XP (4px, vert). mc.player.experienceLevel/experienceProgress.
-  DimensionWidget.java     → Dimension courante : "Monde" (vert), "Nether" (rouge), "End" (violet).
-  EffetsWidget.java        → Liste d'effets de potion actifs (max 5), chiffres romains + durée en secondes.
-                             Hauteur variable : Math.max(14, count * 12 + 6). Vert=bénéfique, rouge=négatif.
-  NotificationWidget.java  → Widget de position pour les toasts. isDragOnly()=true, render() vide.
-                             Aperçu mock dans la card de l'éditeur. Position lue par NotificationHud.
+client/hud/                ← Un widget ne décrit que son contenu, HudWidget fait le reste
+  HudWidget.java           → Base : position, taille, fond, ombre, options oui/non, persistance.
+                             À fournir : contentWidth / contentHeight / renderContent.
+  BalanceWidget.java       → Solde ◆
+  CoordsWidget.java        → Coordonnées (option : décimales)
+  TimeWidget.java          → Heure du monde (option : icône ☀ / ☽)
+  FpsWidget.java           → FPS coloré selon la fluidité (option : ping)
+  BiomeWidget.java         → Biome courant
+  DimensionWidget.java     → Dimension courante, colorée
+  DirectionWidget.java     → Direction regardée, N / NE / E… (option : degrés)
+  EffetsWidget.java        → Effets de potion et durée restante ; masqué s'il n'y en a aucun
+  ArmureWidget.java        → Pièces d'armure et objet en main avec leur durabilité en %
+  QuestWidget.java         → Quêtes actives et progression ; masqué s'il n'y en a aucune
+  NotificationWidget.java  → Emplacement des notifications (isDragOnly : ne dessine rien en jeu)
 
 market/
   MarketManager.java       → Singleton marche.json — CRUD annonces
   MarketListing.java       → POJO annonce (id, seller, item, quantity, pricePerUnit)
   MarketActions.java       → Logique métier : buy / sellByItemId / withdraw
   FrenchItemNames.java     → Dictionnaire FR↔MC + toDisplay() (strip namespace)
-                             Inclut items cottonmod : coton, fil, tissu, aloé, camomille, calendula,
-                             bandage, medkit, parachute, etc. (namespace cottonmod:*)
+                             Inclut items medicalmod (remplace cottonmod, 1.21.1) : coton, fil, tissu,
+                             aloé, camomille, calendula, bandage, attelle, médicament, antidouleur,
+                             kit médical, parachute, etc. (namespace medicalmod:*)
 ```
 
 ---
@@ -863,6 +1069,19 @@ entries[]  : int count → (string itemId, int buyPrice, int sellPrice, long net
 ### Hub (Parchemin)
 HUB_OPEN   : (vide)
 HUB_ACTION : int action
+
+### Location
+LOC_OPEN   : int balance | offres[] | contrats[] | retours[]
+LOC_ACTION : int action | int id | int prix | int caution
+             id = emplacement d'inventaire pour PROPOSER, sinon numéro d'offre, de contrat
+             ou de retour ; prix et caution = 0 hors PROPOSER
+LOC_RESULT : bool ok | string msg | [même contenu que LOC_OPEN]
+offres[]   : int n → (int id, string proprietaire, string item, string nbt, int prixJour,
+                      int caution, bool mienne) × n
+contrats[] : int n → (int id, string proprietaire, string locataire, string item, int prixJour,
+                      int caution, long resteMs, int etat, bool resilie, bool jeSuisLocataire) × n
+             etat : 0 à jour / 1 verrouillé / 2 perdu
+retours[]  : int n → (int id, string item, string nbt, string origine) × n
 ```
 
 ### Bank
@@ -954,7 +1173,7 @@ CONFLIT_RESULT: bool ok | string msg
   recevait une pile vierge — d'où « les items enchantés perdent leur enchantement à l'achat ».
   Le NBT lui-même n'était pas en cause (SNBT → JSON → SNBT vérifié intact).
   Les récepteurs Shop et Production suivaient déjà ce schéma ; HDV était le seul écart.
-- Screen Fabric pur — pas de `ScreenHandler`, pas de slots vanilla
+- Screen vanilla pur — pas de `ScreenHandler`/`AbstractContainerMenu`, pas de slots vanilla
 - Items rendus en 2× (32×32 px) via `drawItemScaled()` — transform matricielle sur `ctx.getMatrices()`
 - La vente lit l'inventaire côté client (`client.player.getInventory().main`) — le serveur revalide
 - Sidebar catégories : icône item Minecraft + compteur d'annonces par catégorie (`CAT_ICONS` map)
@@ -975,11 +1194,30 @@ CONFLIT_RESULT: bool ok | string msg
 - **Saisie numérique** : tous les champs prix/quantité passent par `NumberInput` (voir plus haut).
   L'écran hôte doit relayer `keyPressed`/`charTyped` au champ concerné, sinon seuls les paliers
   souris répondent.
+- **Flou par-dessus l'UI (portage NeoForge)** : tous les écrans dessinent leur propre fond puis
+  appellent `super.render()` en dernier, pour que les widgets vanilla (EditBox, Button) passent
+  par-dessus les panneaux custom. Or `Screen.render()` par défaut commence par
+  `renderBackground()` (flou + texture menu) **avant** de dessiner les widgets — `super.render()`
+  réappliquait donc flou + texture par-dessus notre UI déjà dessinée. Chaque écran du mod
+  override désormais `renderBackground(ctx, mx, my, delta)` en no-op (12 écrans concernés,
+  tous sauf `RegistreScreen` qui n'appelle jamais `super.render()`). Confirmé par lecture directe
+  du `Screen.java` décompilé — le bug n'est pas spécifique à un écran, c'est le comportement
+  vanilla par défaut qui ne collait pas avec l'ordre de rendu déjà en place.
 
 ## GUI Bank — décisions techniques
 
 - **Onglet Virements** : 2 cards (`cardW = (pw - GAP) / 2`), `renderInfoCard()` partagé
 - **Dropdowns** : rendu dans `render()` après le tab content, overlay `0xAA000000` + scissor + scroll. Champs montant cachés via `setY(-200)` quand dropdown ouvert
+- ⚠ **Champs EditBox affichés hors de leur onglet (portage NeoForge)** : un `EditBox` ajouté via
+  `addRenderableWidget` reste dans la liste de rendu de `Screen` en permanence — `super.render()`
+  le dessine à sa dernière position **quel que soit l'onglet actif**, pas seulement dans celui où
+  il est censé apparaître. `lbSearchField` (Classement) et `trfAmountField`/`recurAmountField`/
+  `recurIntervalMinsField` (Virements) restaient donc visibles en changeant d'onglet — jamais
+  masqués comme le sont déjà les champs modaux ci-dessus. Corrigé en forçant `setY(-200)` sur les
+  champs de l'onglet inactif à chaque frame de `render()`. Même bug et même correctif sur
+  `HdvScreen.searchField` (onglet Marché). `MarcheScreen` avait déjà résolu ça proprement avec un
+  helper générique `parquerChamps(EditBox... gardes)` — à réutiliser si un nouvel écran à onglets
+  est ajouté, plutôt que de refaire le correctif à la main.
 - **Focus des champs texte** : dans `mouseClicked` onglet TRANSFERS, appeler `super.mouseClicked()` AVANT `handleTransfersClick()` — sinon les TextFieldWidget ne prennent jamais le focus clavier
 - **Positions UI dans render()** : `trfDropX/Y/W`, `recurDropX/Y/W`, `trfSendBtnY`, `recurCreateBtnY`, `recurCancelBtnY[]` — relus dans `mouseClicked()`
 - Pénalité check : `while` dans `LoanManager.tick()` rattrape plusieurs jours si serveur éteint
@@ -987,30 +1225,73 @@ CONFLIT_RESULT: bool ok | string msg
 - Solde peut passer négatif via `forceDeduct()` uniquement pour les pénalités crédit
 - `buildCasingMap` inclut les vendeurs HDV pour la liste joueurs connus dans dropdowns
 
-## Système HUD — décisions techniques
+## Système HUD — décisions techniques (refonte 2.2.0, menu en 2.2.2)
 
-- `BalanceHudOverlay.cachedBalance` statique, initialisé à `-1` (affiche `? ◆`), mis à jour depuis réseau
-- `NouvelleTerreBridge.sendBalanceToPlayer(player)` appelé : JOIN, kill reward, playtime reward, virement récurrent
-- Rendering HUD : single `HudRenderCallback` dans `NouvelleTerreBridgeClient` itère `HudEditorScreen.WIDGETS`
-- HUD masqué quand F3 actif : `NouvelleTerreBridgeClient.debugHudActive` (mis à false par `InGameHudMixin`, true par `DebugHudMixin`)
-- HUD masqué quand screen quelconque ouvert — SAUF `ChatScreen` (commandes/tchat) ET `HudEditorScreen`
-- Chat ouvert : widgets chevauchant la barre de saisie (< 15px du bas) masqués individuelement
-- `HudEditorScreen` rend les widgets lui-même en mode LAYOUT, sinon `HudRenderCallback` les rend
-- `HudWidget.getPixelX/Y` clamp automatiquement pour rester dans les bords de l'écran
-- Positions stockées en fractions `0.0–1.0` → indépendantes de la résolution
-- Preview widget dans card : anchorX/Y temporairement modifiés puis restaurés, scissor appliqué pour clipper
-- Widgets `isDragOnly()` (ex: NotificationWidget) : render() = no-op, aperçu mock dans card, zone fantôme en mode placement
-- Grille de cards scrollable (VISIBLE_ROWS=2, molette) — taille panneau constante quel que soit le nb de widgets
-- `FpsWidget.onFrame()` appelé dans le HudRenderCallback à chaque frame pour mesurer les FPS
-- Boutons des cards sans shadow (`drawText(..., false)`) pour aspect moins "bold"
-- Snap aux bords : si le widget passe à moins de 8px d'un bord pendant le drag, il se colle
-- `HudEditorScreen.removed()` → `saveAll()` → `ClientConfig.save()` — sauvegarde à la fermeture uniquement
-- Touche H par défaut (catégorie `key.categories.nouvelle-terre-bridge`), rebindable dans Contrôles
-- ModMenu = `modCompileOnly "com.terraformersmc:modmenu:7.2.2"` — entrypoint `modmenu` dans `fabric.mod.json`
+Dans l'esprit des clients PvP modernes : un menu en grille pour choisir et régler ses
+widgets, et une disposition qui se fait **directement sur le jeu**. Touche H par défaut,
+rebindable dans Contrôles. Design propre au mod — même organisation que la capture
+fournie par Sacha, mais notre nom et notre accent or, pas l'habillage d'un autre client.
+
+### Les widgets
+- **Un widget ne dessine que son contenu**, à partir de l'origine (`renderContent`).
+  `HudWidget.renderAt()` applique position, échelle, fond translucide et marges. Avant la
+  refonte chaque widget dessinait sa propre boîte : neuf copies du même cadre, et aucun
+  réglage commun possible.
+- Réglages communs à tous : `taille` (50 à 200 %), `fond`, `ombre` du texte. Réglages
+  propres : `option(cle, label, defaut)` dans le constructeur, lus par `opt(cle)` —
+  l'éditeur les affiche tout seul, sans code d'interface dans le widget.
+- `HudWidget.enEdition` est vrai pendant le rendu de l'éditeur : un widget qui n'a rien
+  à montrer en jeu (effets, quêtes, armure) affiche alors un **exemple**. On ne peut ni
+  placer ni régler un widget invisible. En jeu, `aAfficher()` le masque.
+- Position stockée en fraction `0.0–1.0` du coin haut-gauche, ramenée dans les bords à
+  la lecture. À l'écriture on ajoute un demi-pixel : la relecture tronque, et sans ça un
+  widget dérivait d'un pixel à chaque déplacement.
+
+### Le menu (`HudEditorScreen`, refait en 2.2.2 sur le modèle demandé par Sacha)
+La touche H ouvre le **menu**, pas la disposition :
+- **En-tête** : nom du serveur, onglets MODS / RÉGLAGES, bouton fermer.
+- **Barre latérale** : profils (une disposition complète par profil, 6 au plus) et le
+  bouton « Disposition du HUD ».
+- **Onglet MODS** : filtres par catégorie (TOUS / INFOS / JOUEUR / SERVEUR), recherche au
+  clavier, grille de cartes. Une carte = aperçu réel du widget, son nom, une rangée
+  Options + placement, et une barre pleine largeur **verte « Activé » / rouge « Désactivé »**.
+- **Onglet RÉGLAGES** : présence Discord, tout activer / désactiver, réinitialiser.
+- **Options d'un widget** : interrupteurs, curseur de taille, réinitialisation.
+- **Disposition** (sur le jeu) : glisser un widget, **guides dorés** quand il s'aligne sur
+  un bord, le centre ou un autre widget (`aimanter()`, 5 px d'accroche, Maj pour le
+  désactiver). Molette ou poignée en bas à droite pour la taille, clic droit pour les
+  options, Échap pour revenir au menu.
+
+- **Profils** : `ClientConfig.profils` (nom → réglages de tous les widgets).
+  `ClientConfig.widgets` reste la disposition courante, recopiée dans le profil actif à
+  chaque `saveAll()`. Changer de profil range donc d'abord la disposition courante.
+- La catégorie d'un widget vient de la table `CATEGORIE` de l'écran (par identifiant),
+  pas du widget : un widget absent de la table tombe dans INFOS.
+- ⚠ Les zones cliquables des panneaux sont **enregistrées au rendu** (`zones`) et relues
+  au clic, rognées à la partie visible de la grille. Recalculer les positions côté clic
+  les désynchronise du défilement, des filtres et de la recherche.
+- Le panneau est dessiné à `z = 300` : les icônes d'objets (widget Armure) ont une
+  profondeur propre et passaient sinon par-dessus le voile sombre.
+- Sauvegarde à la fermeture uniquement (`removed()`).
+
+### Affichage en jeu
+- Une seule couche (`RegisterGuiLayersEvent`) dans `NouvelleTerreBridgeClient` parcourt
+  `HudEditorScreen.WIDGETS`. Masqué sous F3 et quand un écran est ouvert, sauf le chat ;
+  chat ouvert, les widgets qui chevauchent la barre de saisie sont masqués un par un.
+- `BalanceHudOverlay.cachedBalance` (statique, `-1` = « ? ◆ ») est mis à jour par le
+  réseau ; `NouvelleTerreBridge.sendBalanceToPlayer()` l'envoie à chaque changement de solde.
+- `NotificationHud` dessine les notifications à la position du widget `notif`, et partage
+  `dessiner()` avec l'aperçu de l'éditeur pour que les deux soient identiques.
+
+### Reprise des anciens réglages
+Avant la 2.2.0 chaque widget avait ses champs dans `ClientConfig` (`coordsX`,
+`fpsShowPing`…). Tout vit maintenant dans `widgets`. Au premier lancement,
+`ClientConfig.ancienEtat(id)` relit les anciens champs : personne ne perd sa disposition.
+⚠ Ne pas supprimer ces champs tant que des joueurs peuvent venir d'une version antérieure.
 
 ## Système noms RP — décisions techniques
 
-- **Signed chat 1.20.1** : `GameProfile.getName()` ne peut pas être changé → seule solution = `ALLOW_CHAT_MESSAGE` cancel + rebroadcast system message
+- **Chat signé** : `GameProfile.getName()` ne peut pas être changé → seule solution = `ALLOW_CHAT_MESSAGE` cancel + rebroadcast system message
 - **Tab list** : `ServerPlayerEntityMixin.getPlayerListName()` lit le cache `nomsRP` côté serveur
   → `PlayerListS2CPacket(UPDATE_DISPLAY_NAME)` broadcast immédiat après fetchNomRP pour que tous les clients voient le nom RP
 - `URLEncoder.encode(secret, UTF_8)` dans les query params GET — les chars spéciaux (`=`, `+`, etc.) cassent `URI.create()` sinon

@@ -111,6 +111,7 @@ public final class NtNet {
             com.nouvelleterrebridge.network.ShopNetworking.class,
             com.nouvelleterrebridge.network.ServiceNetworking.class,
             com.nouvelleterrebridge.network.WikiNetworking.class,
+            com.nouvelleterrebridge.network.LocationNetworking.class,
         };
         for (Class<?> c : classes) {
             try {

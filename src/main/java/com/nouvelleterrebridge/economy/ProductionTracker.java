@@ -1,5 +1,7 @@
 package com.nouvelleterrebridge.economy;
 
+import com.nouvelleterrebridge.util.FichierSur;
+
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
@@ -37,8 +39,8 @@ public class ProductionTracker {
     }
 
     public static synchronized void save() {
-        try (Writer w = new OutputStreamWriter(new FileOutputStream(FILE.toFile()), StandardCharsets.UTF_8)) {
-            GSON.toJson(counts, w);
+        try {
+            FichierSur.ecrire(FILE, GSON.toJson(counts));
         } catch (Exception e) {
             NouvelleTerreBridge.LOGGER.error("[ProductionTracker] Erreur sauvegarde : {}", e.getMessage());
         }
@@ -48,7 +50,8 @@ public class ProductionTracker {
         if (amount <= 0) return;
         long avant  = counts.getOrDefault(itemId, 0L);
         long newVal = counts.merge(itemId, amount, Long::sum);
-        save();
+        // Appelé à chaque bloc cassé : l'écriture est regroupée (voir SauvegardeDifferee)
+        com.nouvelleterrebridge.util.SauvegardeDifferee.demander("production", ProductionTracker::save);
         ProductionShopManager.onProduction(itemId, avant, newVal);
     }
 
@@ -65,7 +68,7 @@ public class ProductionTracker {
         long nouveau = Math.max(0L, actuel - amount);
         if (nouveau == 0L) counts.remove(itemId);
         else               counts.put(itemId, nouveau);
-        save();
+        com.nouvelleterrebridge.util.SauvegardeDifferee.demander("production", ProductionTracker::save);
     }
 
     public static synchronized long get(String itemId) {

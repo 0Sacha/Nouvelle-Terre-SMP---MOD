@@ -1,5 +1,7 @@
 package com.nouvelleterrebridge.http;
 
+import com.nouvelleterrebridge.util.FichierSur;
+
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import com.nouvelleterrebridge.NouvelleTerreBridge;
@@ -23,6 +25,7 @@ public class EventQueue {
     private static final EventQueue INSTANCE = new EventQueue();
 
     private final List<EvenementEnAttente> file = new ArrayList<>();
+    private static final int TAILLE_MAX = 2000;
 
     private EventQueue() {}
 
@@ -46,6 +49,11 @@ public class EventQueue {
      * Ajoute un événement à la file et persiste immédiatement.
      */
     public synchronized void ajouter(String type, String json) {
+        // Bot injoignable pendant des jours : sans plafond la file grossissait
+        // sans fin, et elle est réécrite en entier à chaque ajout. Les plus
+        // anciens événements sont sacrifiés — le solde est de toute façon
+        // resynchronisé à la prochaine connexion de chaque joueur.
+        while (file.size() >= TAILLE_MAX) file.remove(0);
         file.add(new EvenementEnAttente(type, json, System.currentTimeMillis()));
         sauvegarder();
     }
@@ -89,8 +97,8 @@ public class EventQueue {
 
     private void sauvegarder() {
         Path chemin = obtenirChemin();
-        try (Writer writer = new FileWriter(chemin.toFile())) {
-            GSON.toJson(file, writer);
+        try {
+            FichierSur.ecrire(chemin, GSON.toJson(file));
         } catch (IOException e) {
             NouvelleTerreBridge.LOGGER.error("[EventQueue] Impossible de sauvegarder la file d'attente", e);
         }

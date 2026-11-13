@@ -1,29 +1,63 @@
 package com.nouvelleterrebridge.client.hud;
 
-import com.nouvelleterrebridge.client.ClientConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
+import java.util.ArrayList;
+import java.util.List;
+
+/** Pièces d'armure portées et objet en main, avec leur durabilité restante. */
 public class ArmureWidget extends HudWidget {
 
-    public ArmureWidget() { super("armure", "Armure", 0.01f, 0.20f, false); }
+    private static final int RANG = 17;
 
-    @Override
-    public void render(GuiGraphics ctx, Minecraft mc) {
-        if (mc.player == null) return;
-        int sw = mc.getWindow().getGuiScaledWidth(), sh = mc.getWindow().getGuiScaledHeight();
-        int x = getPixelX(sw, mc), y = getPixelY(sh, mc);
-        int armor  = mc.player.getArmorValue(); // 0-20 points
-        int accent = armor <= 4 ? C_RED : armor <= 12 ? C_GOLD : C_GREEN;
-        String t   = "Arm. " + armor + " / 20";
-        ctx.fill(x, y, x + getWidth(mc), y + getHeight(mc), C_PANEL);
-        ctx.fill(x, y, x + 2, y + getHeight(mc), accent);
-        ctx.drawString(mc.font, t, x + 6, y + 3, accent, false);
+    public ArmureWidget() {
+        super("armure", "Armure", 0.99f, 0.50f, false);
+        option("main", "Objet en main", true);
     }
 
-    @Override public int getWidth(Minecraft mc)  { return mc.font.width("Arm. 20 / 20") + 12; }
-    @Override public int getHeight(Minecraft mc) { return 14; }
+    private List<ItemStack> pieces(Minecraft mc) {
+        List<ItemStack> out = new ArrayList<>();
+        if (mc.player != null) {
+            for (EquipmentSlot slot : new EquipmentSlot[]{
+                    EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET}) {
+                ItemStack s = mc.player.getItemBySlot(slot);
+                if (!s.isEmpty()) out.add(s);
+            }
+            // En main : seulement ce qui s'use, sinon la liste suivrait chaque bloc tenu
+            ItemStack main = mc.player.getMainHandItem();
+            if (opt("main") && main.isDamageableItem()) out.add(main);
+        }
+        if (out.isEmpty() && enEdition) {
+            out.add(new ItemStack(Items.IRON_HELMET));
+            out.add(new ItemStack(Items.IRON_CHESTPLATE));
+            out.add(new ItemStack(Items.IRON_LEGGINGS));
+            out.add(new ItemStack(Items.IRON_BOOTS));
+        }
+        return out;
+    }
 
-    @Override public void loadFromConfig(ClientConfig cfg) { enabled = cfg.armureEnabled; anchorX = cfg.armureX; anchorY = cfg.armureY; }
-    @Override public void saveToConfig(ClientConfig cfg)   { cfg.armureEnabled = enabled; cfg.armureX = anchorX; cfg.armureY = anchorY; }
+    @Override
+    public boolean aAfficher(Minecraft mc) {
+        return !pieces(mc).isEmpty();
+    }
+
+    @Override protected int contentWidth(Minecraft mc)  { return 16 + 4 + mc.font.width("100 %"); }
+    @Override protected int contentHeight(Minecraft mc) { return Math.max(1, pieces(mc).size()) * RANG - 1; }
+
+    @Override
+    protected void renderContent(GuiGraphics ctx, Minecraft mc) {
+        List<ItemStack> ps = pieces(mc);
+        for (int i = 0; i < ps.size(); i++) {
+            ItemStack s = ps.get(i);
+            int y = i * RANG;
+            ctx.renderItem(s, 0, y);
+            if (!s.isDamageableItem()) continue;
+            int pct = Math.round((s.getMaxDamage() - s.getDamageValue()) * 100f / s.getMaxDamage());
+            texte(ctx, mc, pct + " %", 20, y + 4, pct > 50 ? C_GREEN : pct > 20 ? C_ACCENT : C_RED);
+        }
+    }
 }

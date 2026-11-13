@@ -1,5 +1,7 @@
 package com.nouvelleterrebridge.economy;
 
+import com.nouvelleterrebridge.util.FichierSur;
+
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
@@ -266,10 +268,10 @@ public class ShopThresholds {
         PRIX_REFERENCE.put("minecraft:sugar_cane",           2);
         PRIX_REFERENCE.put("minecraft:glass",                2);
 
-        // ── Mod médical (cottonmod) ──────────────────────────────────────────
-        PRIX_REFERENCE.put("cottonmod:medkit",              45);
-        PRIX_REFERENCE.put("cottonmod:bandage",             15);
-        PRIX_REFERENCE.put("cottonmod:cotton",               6);
+        // ── Mod médical (medicalmod) ──────────────────────────────────────────
+        PRIX_REFERENCE.put("medicalmod:medkit",             45);
+        PRIX_REFERENCE.put("medicalmod:bandage",            15);
+        PRIX_REFERENCE.put("medicalmod:cotton",              6);
     }
 
     /**
@@ -327,8 +329,8 @@ public class ShopThresholds {
     }
 
     public static synchronized void save() {
-        try (Writer w = new OutputStreamWriter(new FileOutputStream(FILE.toFile()), StandardCharsets.UTF_8)) {
-            GSON.toJson(thresholds, w);
+        try {
+            FichierSur.ecrire(FILE, GSON.toJson(thresholds));
         } catch (Exception e) {
             NouvelleTerreBridge.LOGGER.error("[ShopThresholds] Erreur sauvegarde : {}", e.getMessage());
         }

@@ -117,15 +117,19 @@ public class QuestManager {
         }
     }
 
+    private static synchronized void sauverMaintenant() {
+        save();
+    }
+
     private static void save() {
-        try (Writer w = new OutputStreamWriter(new FileOutputStream(FILE.toFile()), StandardCharsets.UTF_8)) {
+        try {
             Map<String, Object> root = new LinkedHashMap<>();
             root.put("players", players);
             root.put("globalGroup", globalGroup);
             root.put("dailySolo", dailySolo);
             root.put("community", community);
             root.put("dailyDate", dailyDate);
-            GSON.toJson(root, w);
+            com.nouvelleterrebridge.util.FichierSur.ecrire(FILE, GSON.toJson(root));
         } catch (Exception e) {
             NouvelleTerreBridge.LOGGER.error("[QuestManager] Erreur sauvegarde : {}", e.getMessage());
         }
@@ -508,7 +512,9 @@ public class QuestManager {
             for (ActiveQuest aq : e.getValue()) autoClaim(e.getKey(), aq, server);
 
         changed |= advanceCommunity(player, type, target, amount, server);
-        if (changed) save();
+        // Progression avancée à chaque bloc cassé ou mob tué : écriture regroupée.
+        // Les récompenses, elles, sont déjà versées et écrites par LocalEconomy.
+        if (changed) com.nouvelleterrebridge.util.SauvegardeDifferee.demander("quetes", QuestManager::sauverMaintenant);
     }
 
     /** Termine automatiquement une quête KILL/HARVEST arrivée à 100 %. */

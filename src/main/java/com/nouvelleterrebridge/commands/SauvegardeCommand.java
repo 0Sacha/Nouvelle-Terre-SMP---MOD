@@ -94,6 +94,9 @@ public final class SauvegardeCommand {
         } else if (cible.startsWith("server-shop-prices")) {
             ServerShopPriceManager.load();
             detail = "État du marché restauré (flux et demande).";
+        } else if (cible.equals("shards.json")) {
+            com.nouvelleterrebridge.economy.LocalEconomy.getInstance().recharger();
+            detail = "Soldes restaurés.";
         } else {
             detail = "§eFichier restauré, mais un redémarrage est nécessaire pour le prendre en compte.";
         }

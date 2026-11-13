@@ -106,6 +106,8 @@ public class NouvelleTerreBridgeClient {
         HudEditorScreen.WIDGETS.add(new EffetsWidget());
         HudEditorScreen.WIDGETS.add(new NotificationWidget());
         HudEditorScreen.WIDGETS.add(new QuestWidget());
+        HudEditorScreen.WIDGETS.add(new com.nouvelleterrebridge.client.hud.ArmureWidget());
+        HudEditorScreen.WIDGETS.add(new com.nouvelleterrebridge.client.hud.DirectionWidget());
         HudEditorScreen.loadAll();
 
         registerNetworking();
@@ -133,7 +135,7 @@ public class NouvelleTerreBridgeClient {
 
                 int sh = mc.getWindow().getGuiScaledHeight();
                 for (HudWidget w : HudEditorScreen.WIDGETS) {
-                    if (!w.enabled || w.isDragOnly()) continue;
+                    if (!w.enabled || w.isDragOnly() || !w.aAfficher(mc)) continue;
                     // Chat ouvert → cacher les widgets qui chevauchent la barre de saisie
                     if (chatOpen && w.getPixelY(sh, mc) + w.getHeight(mc) > sh - 15) continue;
                     w.render(ctx, mc);
@@ -259,6 +261,29 @@ public class NouvelleTerreBridgeClient {
 
         NtNet.surClient(com.nouvelleterrebridge.network.HubNetworking.HUB_OPEN, (client, buf) ->
                 client.execute(() -> client.setScreen(new com.nouvelleterrebridge.client.HubScreen())));
+
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(
+            (net.neoforged.neoforge.event.entity.player.ItemTooltipEvent e) ->
+                com.nouvelleterrebridge.client.LocationScreen.infobulle(e.getItemStack(), e.getToolTip()));
+
+        NtNet.surClient(com.nouvelleterrebridge.network.LocationNetworking.LOC_OPEN, (client, buf) -> {
+                var etat = com.nouvelleterrebridge.client.LocationScreen.lire(buf);
+                client.execute(() -> {
+                    BalanceHudOverlay.cachedBalance = etat.balance();
+                    client.setScreen(new com.nouvelleterrebridge.client.LocationScreen(etat));
+                });
+            });
+
+        NtNet.surClient(com.nouvelleterrebridge.network.LocationNetworking.LOC_RESULT, (client, buf) -> {
+                boolean ok  = buf.readBoolean();
+                String  msg = buf.readUtf();
+                var etat = com.nouvelleterrebridge.client.LocationScreen.lire(buf);
+                client.execute(() -> {
+                    BalanceHudOverlay.cachedBalance = etat.balance();
+                    if (client.screen instanceof com.nouvelleterrebridge.client.LocationScreen s)
+                        s.handleResult(ok, msg, etat);
+                });
+            });
 
         NtNet.surClient(com.nouvelleterrebridge.network.ShopNetworking.SHOP_OPEN, (client, buf) -> {
                 int balance = buf.readInt();

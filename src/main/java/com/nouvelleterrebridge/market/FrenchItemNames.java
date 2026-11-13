@@ -125,25 +125,29 @@ public class FrenchItemNames {
         add("tocsin",        "minecraft:bell");
         add("lanterne",      "minecraft:lantern");
 
-        // ── Cotton Mod ────────────────────────────────────────────────────────
-        add("coton",              "cottonmod:cotton");
-        add("graines coton",      "cottonmod:cotton_seeds");
-        add("fil",                "cottonmod:thread");
-        add("tissu",              "cottonmod:cloth");
-        add("seringue",           "cottonmod:syringe");
-        add("graines aloe",       "cottonmod:aloe_seeds");
-        add("graines camomille",  "cottonmod:chamomile_seeds");
-        add("graines souci",      "cottonmod:calendula_seeds");
-        add("feuille aloe",       "cottonmod:aloe_leaf");
-        add("fleur camomille",    "cottonmod:chamomile_flower");
-        add("fleur souci",        "cottonmod:calendula_flower");
-        add("antiseptique",       "cottonmod:antiseptic");
-        add("gel aloe",           "cottonmod:aloe_gel");
-        add("baume",              "cottonmod:salve");
-        add("remede herbal",      "cottonmod:herbal_medicine");
-        add("bandage",            "cottonmod:bandage");
-        add("kit medical",        "cottonmod:medkit");
-        add("parachute",          "cottonmod:parachute");
+        // ── Medical Mod (remplace Cotton Mod, 1.21.1) ───────────────────────────
+        add("coton",              "medicalmod:cotton");
+        add("graines coton",      "medicalmod:cotton_seeds");
+        add("fil",                "medicalmod:thread");
+        add("tissu",              "medicalmod:cloth");
+        add("seringue",           "medicalmod:syringe");
+        add("graines aloe",       "medicalmod:aloe_seeds");
+        add("graines camomille",  "medicalmod:chamomile_seeds");
+        add("graines souci",      "medicalmod:calendula_seeds");
+        add("feuille aloe",       "medicalmod:aloe_leaf");
+        add("fleur camomille",    "medicalmod:chamomile_flower");
+        add("fleur souci",        "medicalmod:calendula_flower");
+        add("antiseptique",       "medicalmod:antiseptic");
+        add("gel aloe",           "medicalmod:aloe_gel");
+        add("baume",              "medicalmod:salve");
+        add("remede herbal",      "medicalmod:herbal_medicine");
+        add("bandage",            "medicalmod:bandage");
+        add("attelle",            "medicalmod:splint");
+        add("medicament",         "medicalmod:medicine");
+        add("antidouleur",        "medicalmod:painkiller");
+        add("kit medical",        "medicalmod:medkit");
+        add("parachute",          "medicalmod:parachute");
+        add("machine a potions",  "medicalmod:potion_machine");
 
         // Construire le dictionnaire inverse
         FR_TO_MC.forEach((fr, mc) -> MC_TO_FR.putIfAbsent(mc, fr));

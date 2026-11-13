@@ -41,6 +41,9 @@ public class RecurringTransferManager {
         NeoForge.EVENT_BUS.addListener((ServerTickEvent.Post event) -> getInstance().tick(event.getServer()));
     }
 
+    /** Chaque virement est évalué à chaque tick et envoyé dans le paquet /bank. */
+    public static final int MAX_PAR_JOUEUR = 10;
+
     // ── API ───────────────────────────────────────────────────────────────────
 
     public synchronized int add(String from, String to, int amount, int intervalTicks) {
@@ -65,6 +68,13 @@ public class RecurringTransferManager {
     // ── Tick ─────────────────────────────────────────────────────────────────
 
     private synchronized void tick(MinecraftServer server) {
+        // Le décompte de chaque virement n'était écrit qu'à sa création : à chaque
+        // redémarrage il repartait de zéro, et un virement quotidien sur un serveur
+        // redémarré tous les jours ne partait jamais. Il est maintenant enregistré
+        // chaque minute (écriture regroupée, et vidée à l'arrêt du serveur).
+        if (!transfers.isEmpty() && server.getTickCount() % 1200 == 0)
+            com.nouvelleterrebridge.util.SauvegardeDifferee.demander("virements", this::sauvegarderMaintenant);
+
         for (RecurringTransfer rt : transfers) {
             rt.ticksSince++;
             if (rt.ticksSince >= rt.intervalTicks) {
@@ -105,12 +115,16 @@ public class RecurringTransferManager {
         }
     }
 
+    private synchronized void sauvegarderMaintenant() {
+        sauvegarder();
+    }
+
     private void sauvegarder() {
-        try (Writer w = new OutputStreamWriter(new FileOutputStream(fichier.toFile()), StandardCharsets.UTF_8)) {
+        try {
             JsonObject root = new JsonObject();
             root.addProperty("nextId", nextId);
             root.add("transfers", GSON.toJsonTree(transfers));
-            GSON.toJson(root, w);
+            com.nouvelleterrebridge.util.FichierSur.ecrire(fichier, GSON.toJson(root));
         } catch (Exception e) {
             NouvelleTerreBridge.LOGGER.error("[RecurringTransfer] Erreur sauvegarde : {}", e.getMessage());
         }

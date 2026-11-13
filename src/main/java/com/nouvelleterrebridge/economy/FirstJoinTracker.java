@@ -1,5 +1,7 @@
 package com.nouvelleterrebridge.economy;
 
+import com.nouvelleterrebridge.util.FichierSur;
+
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
@@ -62,8 +64,8 @@ public class FirstJoinTracker {
     }
 
     private void save() {
-        try (Writer w = new OutputStreamWriter(new FileOutputStream(fichier.toFile()), StandardCharsets.UTF_8)) {
-            GSON.toJson(received, w);
+        try {
+            FichierSur.ecrire(fichier, GSON.toJson(received));
         } catch (Exception e) {
             NouvelleTerreBridge.LOGGER.error("[FirstJoinTracker] Erreur sauvegarde : {}", e.getMessage());
         }

@@ -1,12 +1,12 @@
 package com.nouvelleterrebridge.client.hud;
 
-import com.nouvelleterrebridge.client.ClientConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 
 import java.util.ArrayList;
 import java.util.List;
 
+/** Quêtes en cours et leur progression. */
 public class QuestWidget extends HudWidget {
 
     // Listes mises à jour par NouvelleTerreBridgeClient sur QUEST_OPEN / QUEST_RESULT
@@ -14,66 +14,45 @@ public class QuestWidget extends HudWidget {
     public static final List<String>  activeProgresses = new ArrayList<>();
     public static final List<Boolean> activeGroups     = new ArrayList<>();
 
-    private static final int C_BG = 0xAA14161A;
-
     public QuestWidget() {
         super("quest", "Quêtes actives", 0.35f, 0.02f, false);
     }
 
-    @Override
-    public void loadFromConfig(ClientConfig cfg) {
-        enabled = cfg.questEnabled;
-        anchorX = cfg.questX;
-        anchorY = cfg.questY;
-    }
-
-    @Override
-    public void saveToConfig(ClientConfig cfg) {
-        cfg.questEnabled = enabled;
-        cfg.questX       = anchorX;
-        cfg.questY       = anchorY;
-    }
-
-    @Override
-    public int getWidth(Minecraft mc) {
-        if (activeLabels.isEmpty()) return 80;
-        int max = 0;
-        for (int i = 0; i < activeLabels.size(); i++)
-            max = Math.max(max, mc.font.width(buildLine(i)));
-        return max + 12;
-    }
-
-    @Override
-    public int getHeight(Minecraft mc) {
-        int n = activeLabels.size();
-        return n == 0 ? 13 : n * 13 + 2;
-    }
-
-    @Override
-    public void render(GuiGraphics ctx, Minecraft mc) {
-        if (activeLabels.isEmpty()) return;
-
-        int x = getPixelX(mc.getWindow().getGuiScaledWidth(), mc);
-        int y = getPixelY(mc.getWindow().getGuiScaledHeight(), mc);
-        int w = getWidth(mc);
-        int h = getHeight(mc);
-
-        ctx.fill(x, y, x + w, y + h, C_BG);
-        // Barre d'accent gauche colorée selon le type de la première quête
-        boolean firstGroup = !activeGroups.isEmpty() && activeGroups.get(0);
-        ctx.fill(x, y, x + 2, y + h, firstGroup ? 0xFF5BA8D4 : C_GOLD);
-
+    private List<String> lignes() {
+        List<String> out = new ArrayList<>();
         for (int i = 0; i < activeLabels.size(); i++) {
-            ctx.drawString(mc.font, buildLine(i), x + 6, y + 2 + i * 13, C_WHITE, false);
+            String prog = i < activeProgresses.size() ? activeProgresses.get(i) : null;
+            boolean groupe = i < activeGroups.size() && activeGroups.get(i);
+            out.add((groupe ? "§b● §f" : "§6● §f") + activeLabels.get(i)
+                + (prog != null ? " §7" + prog : ""));
         }
+        if (out.isEmpty() && enEdition) {
+            out.add("§6● §fTuer des zombies §73/10");
+            out.add("§b● §fRécolter du blé §748/64");
+        }
+        return out;
     }
 
-    private static String buildLine(int i) {
-        String lbl  = activeLabels.get(i);
-        String prog = i < activeProgresses.size() ? activeProgresses.get(i) : null;
-        boolean grp = i < activeGroups.size() && activeGroups.get(i);
-        String prefix  = grp ? "§b● §f" : "§6● §f";
-        String progStr = prog != null ? " §7[" + prog + "]" : "";
-        return prefix + lbl + progStr;
+    @Override
+    public boolean aAfficher(Minecraft mc) {
+        return !activeLabels.isEmpty();
+    }
+
+    @Override
+    protected int contentWidth(Minecraft mc) {
+        int max = 0;
+        for (String l : lignes()) max = Math.max(max, mc.font.width(l));
+        return Math.max(max, 20);
+    }
+
+    @Override
+    protected int contentHeight(Minecraft mc) {
+        return Math.max(1, lignes().size()) * LIGNE - 2;
+    }
+
+    @Override
+    protected void renderContent(GuiGraphics ctx, Minecraft mc) {
+        List<String> ls = lignes();
+        for (int i = 0; i < ls.size(); i++) texte(ctx, mc, ls.get(i), 0, i * LIGNE, C_WHITE);
     }
 }

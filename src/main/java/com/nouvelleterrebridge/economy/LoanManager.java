@@ -237,12 +237,12 @@ public class LoanManager {
     }
 
     private void sauvegarder() {
-        try (Writer w = new OutputStreamWriter(new FileOutputStream(fichier.toFile()), StandardCharsets.UTF_8)) {
+        try {
             JsonObject root = new JsonObject();
             root.addProperty("nextId", nextId);
             root.add("loans", GSON.toJsonTree(loans));
             root.add("requests", GSON.toJsonTree(requests));
-            GSON.toJson(root, w);
+            com.nouvelleterrebridge.util.FichierSur.ecrire(fichier, GSON.toJson(root));
         } catch (Exception e) {
             NouvelleTerreBridge.LOGGER.error("[LoanManager] Erreur sauvegarde : {}", e.getMessage());
         }

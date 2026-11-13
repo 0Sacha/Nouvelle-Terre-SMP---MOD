@@ -1,5 +1,7 @@
 package com.nouvelleterrebridge.market;
 
+import com.nouvelleterrebridge.util.FichierSur;
+
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
@@ -134,8 +136,8 @@ public class MarketManager {
     }
 
     private void save() {
-        try (Writer writer = new OutputStreamWriter(new FileOutputStream(fichierMarche.toFile()), StandardCharsets.UTF_8)) {
-            GSON.toJson(annonces, writer);
+        try {
+            FichierSur.ecrire(fichierMarche, GSON.toJson(annonces));
         } catch (Exception e) {
             NouvelleTerreBridge.LOGGER.error("[MarketManager] Erreur de sauvegarde de marche.json : {}", e.getMessage());
         }
