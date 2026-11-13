@@ -97,7 +97,9 @@ reste manuel). Ne jamais pousser sur `main` un build non testé en local.
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `2.1.4` (location d'objets — voir « Architecture Location »)
+- Version actuelle : `2.2.0` (refonte de l'éditeur HUD — voir « Système HUD »)
+  - 2.2.0 : éditeur HUD refait (placement sur le jeu, guides, taille, grille MODS), widgets Armure et Direction
+  - 2.1.4 : section Location dans le guide en jeu
   - 2.1.3 : écritures disque regroupées, virements récurrents qui survivent au redémarrage
   - 2.1.2 : barre et pourcentage de réparation sur l'objet loué
   - 2.1.1 : un objet loué à Raccommodage doit être rendu réparé
@@ -949,35 +951,29 @@ client/                    ← @Environment(CLIENT) uniquement
                              Row : point coloré + nomRp (blanc) + "— pseudoMc" (gris) + "● en ligne" si online
   BalanceHudOverlay.java   → Contient uniquement `cachedBalance` statique (int, init -1)
                              Mis à jour par NT_BALANCE / HDV_OPEN / HDV_RESULT. Plus de rendering ici.
-  HudEditorScreen.java     → Éditeur HUD (touche H). Deux modes :
-                               Mode PANEL : panneau centré en haut (PW=372px), grille 2 colonnes de cards.
-                                 Chaque card : preview widget, toggle ACTIVÉ/DÉSACTIVÉ, bouton OPTIONS ⚙.
-                                 Bouton "Placer les widgets" → bascule en mode LAYOUT.
-                               Mode LAYOUT : panneau caché, widgets activés draggables avec bordure or.
-                                 Bouton "Terminer" centré en haut. ESC → retour mode PANEL.
-                             WIDGETS (List<HudWidget>) statique — initialisé dans NouvelleTerreBridgeClient.
-                             Positions relatives (0.0-1.0), snap aux bords, sauvegarde sur close.
+  HudEditorScreen.java     → Éditeur HUD (touche H) — voir « Système HUD ». Trois modes :
+                             PLACEMENT (glisser, aligner, redimensionner sur le jeu),
+                             MODS (grille des widgets), OPTIONS (réglages d'un widget).
+                             WIDGETS (List<HudWidget>) statique, rempli par NouvelleTerreBridgeClient.
   ClientConfig.java        → Config client-only (config/nouvelle-terre-client.json)
-                             Champs : discordRPCEnabled, hudEnabled/balanceX/Y, coordsEnabled/X/Y/ShowDecimals,
-                             timeEnabled/X/Y/ShowIcon,
-                             fpsEnabled/X/Y/ShowPing, biomeEnabled/X/Y, notifEnabled/X/Y,
-                             dimensionEnabled/X/Y, effetsEnabled/X/Y
+                             `widgets` : Map id → WidgetState (enabled, x, y, taille, fond, ombre,
+                             options). Les anciens champs par widget restent pour la reprise
+                             (`ancienEtat`), ils ne sont plus écrits.
 
-client/hud/                ← Widgets HUD individuels
-  HudWidget.java           → Classe abstraite : id, label, anchorX/Y, enabled, getPixelX/Y (clamped),
-                             renderCheckbox() helper. loadFromConfig/saveToConfig abstraits.
-                             isDragOnly() → false par défaut (true = widget de position pure, pas rendu dans le HUD).
-  BalanceWidget.java       → Affiche cachedBalance + " ◆". Pas de paramètres.
-  CoordsWidget.java        → "XYZ x / y / z". Paramètre : coordsShowDecimals.
-  TimeWidget.java          → Heure Minecraft HH:MM. Paramètre : timeShowIcon (☀/☽).
-  FpsWidget.java           → FPS + ping optionnel. FPS mesuré via FpsWidget.onFrame() appelé dans HudRenderCallback.
-                             Paramètre : fpsShowPing.
-  BiomeWidget.java         → Biome courant (getKey().getPath(), premier caractère capitalisé).
-  DimensionWidget.java     → Dimension courante : "Monde" (vert), "Nether" (rouge), "End" (violet).
-  EffetsWidget.java        → Liste d'effets de potion actifs (max 5), chiffres romains + durée en secondes.
-                             Hauteur variable : Math.max(14, count * 12 + 6). Vert=bénéfique, rouge=négatif.
-  NotificationWidget.java  → Widget de position pour les toasts. isDragOnly()=true, render() vide.
-                             Aperçu mock dans la card de l'éditeur. Position lue par NotificationHud.
+client/hud/                ← Un widget ne décrit que son contenu, HudWidget fait le reste
+  HudWidget.java           → Base : position, taille, fond, ombre, options oui/non, persistance.
+                             À fournir : contentWidth / contentHeight / renderContent.
+  BalanceWidget.java       → Solde ◆
+  CoordsWidget.java        → Coordonnées (option : décimales)
+  TimeWidget.java          → Heure du monde (option : icône ☀ / ☽)
+  FpsWidget.java           → FPS coloré selon la fluidité (option : ping)
+  BiomeWidget.java         → Biome courant
+  DimensionWidget.java     → Dimension courante, colorée
+  DirectionWidget.java     → Direction regardée, N / NE / E… (option : degrés)
+  EffetsWidget.java        → Effets de potion et durée restante ; masqué s'il n'y en a aucun
+  ArmureWidget.java        → Pièces d'armure et objet en main avec leur durabilité en %
+  QuestWidget.java         → Quêtes actives et progression ; masqué s'il n'y en a aucune
+  NotificationWidget.java  → Emplacement des notifications (isDragOnly : ne dessine rien en jeu)
 
 market/
   MarketManager.java       → Singleton marche.json — CRUD annonces
@@ -1154,25 +1150,55 @@ CONFLIT_RESULT: bool ok | string msg
 - Solde peut passer négatif via `forceDeduct()` uniquement pour les pénalités crédit
 - `buildCasingMap` inclut les vendeurs HDV pour la liste joueurs connus dans dropdowns
 
-## Système HUD — décisions techniques
+## Système HUD — décisions techniques (refonte 2.2.0)
 
-- `BalanceHudOverlay.cachedBalance` statique, initialisé à `-1` (affiche `? ◆`), mis à jour depuis réseau
-- `NouvelleTerreBridge.sendBalanceToPlayer(player)` appelé : JOIN, kill reward, playtime reward, virement récurrent
-- Rendering HUD : single `HudRenderCallback` dans `NouvelleTerreBridgeClient` itère `HudEditorScreen.WIDGETS`
-- HUD masqué quand F3 actif : `NouvelleTerreBridgeClient.debugHudActive` (mis à false par `InGameHudMixin`, true par `DebugHudMixin`)
-- HUD masqué quand screen quelconque ouvert — SAUF `ChatScreen` (commandes/tchat) ET `HudEditorScreen`
-- Chat ouvert : widgets chevauchant la barre de saisie (< 15px du bas) masqués individuelement
-- `HudEditorScreen` rend les widgets lui-même en mode LAYOUT, sinon `HudRenderCallback` les rend
-- `HudWidget.getPixelX/Y` clamp automatiquement pour rester dans les bords de l'écran
-- Positions stockées en fractions `0.0–1.0` → indépendantes de la résolution
-- Preview widget dans card : anchorX/Y temporairement modifiés puis restaurés, scissor appliqué pour clipper
-- Widgets `isDragOnly()` (ex: NotificationWidget) : render() = no-op, aperçu mock dans card, zone fantôme en mode placement
-- Grille de cards scrollable (VISIBLE_ROWS=2, molette) — taille panneau constante quel que soit le nb de widgets
-- `FpsWidget.onFrame()` appelé dans le HudRenderCallback à chaque frame pour mesurer les FPS
-- Boutons des cards sans shadow (`drawText(..., false)`) pour aspect moins "bold"
-- Snap aux bords : si le widget passe à moins de 8px d'un bord pendant le drag, il se colle
-- `HudEditorScreen.removed()` → `saveAll()` → `ClientConfig.save()` — sauvegarde à la fermeture uniquement
-- Touche H par défaut (catégorie `key.categories.nouvelle-terre-bridge`), rebindable dans Contrôles
+Éditeur dans l'esprit des clients PvP modernes : on règle son HUD **sur le jeu**, pas dans
+un menu à part. Touche H par défaut, rebindable dans Contrôles.
+
+### Les widgets
+- **Un widget ne dessine que son contenu**, à partir de l'origine (`renderContent`).
+  `HudWidget.renderAt()` applique position, échelle, fond translucide et marges. Avant la
+  refonte chaque widget dessinait sa propre boîte : neuf copies du même cadre, et aucun
+  réglage commun possible.
+- Réglages communs à tous : `taille` (50 à 200 %), `fond`, `ombre` du texte. Réglages
+  propres : `option(cle, label, defaut)` dans le constructeur, lus par `opt(cle)` —
+  l'éditeur les affiche tout seul, sans code d'interface dans le widget.
+- `HudWidget.enEdition` est vrai pendant le rendu de l'éditeur : un widget qui n'a rien
+  à montrer en jeu (effets, quêtes, armure) affiche alors un **exemple**. On ne peut ni
+  placer ni régler un widget invisible. En jeu, `aAfficher()` le masque.
+- Position stockée en fraction `0.0–1.0` du coin haut-gauche, ramenée dans les bords à
+  la lecture. À l'écriture on ajoute un demi-pixel : la relecture tronque, et sans ça un
+  widget dérivait d'un pixel à chaque déplacement.
+
+### L'éditeur (`HudEditorScreen`)
+- **Placement** (à l'ouverture) : glisser un widget, **guides dorés** quand il s'aligne
+  sur un bord, le centre de l'écran ou un autre widget (`aimanter()`, 5 px d'accroche,
+  Maj pour le désactiver). Molette ou poignée en bas à droite pour la taille, clic droit
+  pour les options.
+- **MODS** (bouton central) : grille de cartes avec aperçu réel, interrupteur et
+  recherche au clavier.
+- **Options** : interrupteurs, curseur de taille, réinitialisation.
+- ⚠ Les zones cliquables des panneaux sont **enregistrées au rendu** (`zones`) et relues
+  au clic, rognées à la partie visible de la grille. Recalculer les positions côté clic
+  les désynchronise du défilement et de la recherche — le défaut qu'avait eu le HDV.
+- Le panneau est dessiné à `z = 300` : les icônes d'objets (widget Armure) ont une
+  profondeur propre et passaient sinon par-dessus le voile sombre.
+- Sauvegarde à la fermeture uniquement (`removed()`).
+
+### Affichage en jeu
+- Une seule couche (`RegisterGuiLayersEvent`) dans `NouvelleTerreBridgeClient` parcourt
+  `HudEditorScreen.WIDGETS`. Masqué sous F3 et quand un écran est ouvert, sauf le chat ;
+  chat ouvert, les widgets qui chevauchent la barre de saisie sont masqués un par un.
+- `BalanceHudOverlay.cachedBalance` (statique, `-1` = « ? ◆ ») est mis à jour par le
+  réseau ; `NouvelleTerreBridge.sendBalanceToPlayer()` l'envoie à chaque changement de solde.
+- `NotificationHud` dessine les notifications à la position du widget `notif`, et partage
+  `dessiner()` avec l'aperçu de l'éditeur pour que les deux soient identiques.
+
+### Reprise des anciens réglages
+Avant la 2.2.0 chaque widget avait ses champs dans `ClientConfig` (`coordsX`,
+`fpsShowPing`…). Tout vit maintenant dans `widgets`. Au premier lancement,
+`ClientConfig.ancienEtat(id)` relit les anciens champs : personne ne perd sa disposition.
+⚠ Ne pas supprimer ces champs tant que des joueurs peuvent venir d'une version antérieure.
 
 ## Système noms RP — décisions techniques
 

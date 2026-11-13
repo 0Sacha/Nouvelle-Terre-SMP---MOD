@@ -106,6 +106,8 @@ public class NouvelleTerreBridgeClient {
         HudEditorScreen.WIDGETS.add(new EffetsWidget());
         HudEditorScreen.WIDGETS.add(new NotificationWidget());
         HudEditorScreen.WIDGETS.add(new QuestWidget());
+        HudEditorScreen.WIDGETS.add(new com.nouvelleterrebridge.client.hud.ArmureWidget());
+        HudEditorScreen.WIDGETS.add(new com.nouvelleterrebridge.client.hud.DirectionWidget());
         HudEditorScreen.loadAll();
 
         registerNetworking();
@@ -133,7 +135,7 @@ public class NouvelleTerreBridgeClient {
 
                 int sh = mc.getWindow().getGuiScaledHeight();
                 for (HudWidget w : HudEditorScreen.WIDGETS) {
-                    if (!w.enabled || w.isDragOnly()) continue;
+                    if (!w.enabled || w.isDragOnly() || !w.aAfficher(mc)) continue;
                     // Chat ouvert → cacher les widgets qui chevauchent la barre de saisie
                     if (chatOpen && w.getPixelY(sh, mc) + w.getHeight(mc) > sh - 15) continue;
                     w.render(ctx, mc);
