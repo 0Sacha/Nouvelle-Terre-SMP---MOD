@@ -199,6 +199,7 @@ public class NouvelleTerreBridge {
         com.nouvelleterrebridge.economy.DailyBonusTracker.load();
 
         com.nouvelleterrebridge.service.ServiceNetworkHandler.register();
+        com.nouvelleterrebridge.location.LocationReseau.register();
         registerHdvNetworking();
         registerBankNetworking();
         registerQuestNetworking();
@@ -415,6 +416,7 @@ public class NouvelleTerreBridge {
         ServerAdminCommand.register(dispatcher);
         com.nouvelleterrebridge.commands.SauvegardeCommand.register(dispatcher);
         com.nouvelleterrebridge.commands.MaintenanceCommand.register(dispatcher);
+        com.nouvelleterrebridge.location.LocationReseau.commande(dispatcher);
     }
 
     // Envoie le solde au joueur dès qu'il est en jeu + refresh pool quêtes
@@ -616,6 +618,8 @@ public class NouvelleTerreBridge {
                         NtNet.versClient(player, ShopNetworking.SHOP_OPEN, buildShopOpenPacket(player));
                     case HubNetworking.ACTION_MARCHE ->
                         com.nouvelleterrebridge.service.ServiceNetworkHandler.ouvrir(player);
+                    case HubNetworking.ACTION_LOCATION ->
+                        com.nouvelleterrebridge.location.LocationReseau.ouvrir(player);
                     case HubNetworking.ACTION_QUETES     -> sendQuestOpen(player);
                     case HubNetworking.ACTION_PRODUCTION -> sendProductionOpen(player);
                     case HubNetworking.ACTION_REGISTRE   -> RegistreCommand.open(player);

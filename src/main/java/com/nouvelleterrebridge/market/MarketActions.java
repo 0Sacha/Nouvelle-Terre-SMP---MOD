@@ -160,6 +160,10 @@ public final class MarketActions {
         if (pricePerUnit <= 0 || pricePerUnit > PRIX_MAX)
             return "§cPrix invalide (entre 1 et " + EconomieCommand.fmt(PRIX_MAX) + " ◆ l'unité).";
 
+        // Un objet loué n'appartient pas à celui qui le porte
+        if (wanted.contains(com.nouvelleterrebridge.location.LocationManager.CLE))
+            return "§cCet objet est loué : il ne peut pas être vendu.";
+
         // Compter la quantité disponible dont le NBT correspond exactement
         HolderLookup.Provider registries = player.getServer().registryAccess();
         int available = 0;

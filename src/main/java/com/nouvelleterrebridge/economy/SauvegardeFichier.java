@@ -33,7 +33,7 @@ public final class SauvegardeFichier {
      * crédits, progression).
      */
     private static final String[] FICHIERS_SUIVIS = {
-        "shards.json", "marche.json", "leboncube.json",
+        "shards.json", "marche.json", "leboncube.json", "locations.json",
         "nouvelle-terre-credits.json", "nouvelle-terre-virements.json",
         "quetes.json", "player-levels.json", "production.json",
         "seuils-shop.json", "server-shop-prices.json"

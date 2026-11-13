@@ -33,7 +33,8 @@ public class HubScreen extends Screen {
 
     // ── Layout ────────────────────────────────────────────────────────────────
     private static final int PW_MAX  = 420;
-    private static final int PH_MAX  = 300;
+    // 10 entrées sur 3 colonnes = 4 rangées
+    private static final int PH_MAX  = 366;
     private static final int TOP_H   = 40;
     private static final int PAD     = 14;
     private static final int COLS    = 3;
@@ -49,6 +50,7 @@ public class HubScreen extends Screen {
         new Entry(HubNetworking.ACTION_HDV,        "Marché",     "Entre joueurs", "⇄"),
         new Entry(HubNetworking.ACTION_SHOP,       "Shop",       "Boutique du serveur", "🏛"),
         new Entry(HubNetworking.ACTION_MARCHE,     "LeBonCube",  "Services entre joueurs", "📰"),
+        new Entry(HubNetworking.ACTION_LOCATION,   "Location",   "Louer un objet", "⌛"),
         new Entry(HubNetworking.ACTION_BANK,       "Banque",     "Solde, virements", "◆"),
         new Entry(HubNetworking.ACTION_QUETES,     "Quêtes",     "Objectifs du jour", "⚔"),
         new Entry(HubNetworking.ACTION_PRODUCTION, "Production", "Ressources du serveur", "⛏"),

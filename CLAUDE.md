@@ -97,7 +97,8 @@ reste manuel). Ne jamais pousser sur `main` un build non testé en local.
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `2.0.1` (durcissement — voir « Durcissement 2.0.1 » ci-dessous)
+- Version actuelle : `2.1.0` (location d'objets — voir « Architecture Location »)
+  - 2.1.0 : location d'objets entre joueurs, avec verrou et caution
   - 2.0.1 : failles d'argent fermées, écriture atomique, sauvegardes quotidiennes
   - 2.0.0 : portage Minecraft 1.21.1 puis NeoForge natif (en prod sous `2.0.0+neoforge.7`)
   - 1.6.3 : correctif de la boucle d'inflation des recettes réversibles
@@ -544,6 +545,64 @@ et **toute la conversation** en lecture seule.
 existait toujours dans `leboncube.json` mais n'était plus consultable par les joueurs.
 `termineeLe` est transmis au client uniquement pour cet écran.
 
+## Architecture Location (objets loués entre joueurs, 2.1.0)
+
+Un joueur fait louer un objet à un autre, contre un loyer par jour réel. Tout se fait
+dans l'écran `LocationScreen` (Parchemin → Location, ou `/location`) : proposer, louer,
+rendre, récupérer. Données : `locations.json` (`location/LocationManager`).
+
+### Parcours
+- **Proposer** : le propriétaire choisit un objet de son inventaire, un loyer par jour et
+  une caution (au moins un jour de loyer). L'objet quitte son inventaire et vit dans
+  l'offre, comme une annonce du HDV.
+- **Louer** : le locataire paie le premier jour (versé au propriétaire) et la caution
+  (retenue sur `$Sequestre`, le même compte que LeBonCube). Il reçoit l'objet **étiqueté**.
+- **Chaque jour** : le loyer est prélevé tout seul (`tick`, une fois par minute).
+- **Rendre** : depuis l'écran, l'objet étant dans l'inventaire. La caution est rendue,
+  l'objet part dans les « retours » du propriétaire, qui le **récupère depuis l'écran**.
+- **Résilier** (propriétaire) : plus de loyer dû, l'objet se verrouille à la fin du jour
+  déjà payé et doit être rendu.
+- **Perdu** (locataire) : objet cassé ou introuvable, la caution part au propriétaire.
+
+### Le verrou
+L'étiquette est une clé `nt_location` (numéro du contrat) dans le composant `custom_data`
+de la pile : elle suit l'objet partout, inventaire, coffre ou sol.
+`LocationManager.estVerrouille()` est vrai dès que le contrat n'est plus à jour (loyer
+impayé, résilié arrivé à terme, perdu, ou contrat inconnu). `LocationVerrou` annule alors
+toute action faite avec l'objet : clic droit (objet, bloc, entité), clic gauche sur bloc,
+attaque, casse de bloc. Une armure ou un objet en main secondaire verrouillé est retiré
+de son emplacement toutes les deux secondes — il protégerait sinon sans qu'aucun clic ne
+passe par les events.
+
+Impayé : l'objet se verrouille aussitôt. Le prélèvement est retenté chaque minute, et le
+verrou saute dès qu'il passe. Après **24 h** (`GRACE_MS`), l'objet est repris dans
+l'inventaire du locataire s'il est connecté et l'a sur lui ; un jour de loyer est retenu
+sur la caution. Après **7 jours** (`ABANDON_MS`) sans avoir pu le reprendre, la caution
+part au propriétaire et le contrat passe « perdu » — il est **conservé**, pour que l'objet
+retourne à son propriétaire s'il réapparaît dans l'inventaire de n'importe quel joueur.
+
+⚠ **La caution existe parce que le verrou ne peut pas tout couvrir** : un objet d'un autre
+mod peut avoir ses propres actions hors de ces events, et un objet caché dans un coffre
+ne peut pas être repris. Ne pas rendre la caution facultative.
+
+### Pourquoi l'objet rendu est l'objet réel
+`cloreAvecRetour()` rend la pile **telle qu'elle est**, nettoyée de son étiquette et des
+deux lignes de description ajoutées à la location — et non une copie de l'original.
+⚠ Reconstituer l'original ouvrait une duplication : louer un contenant, le vider, le
+« rendre » plein. D'où trois règles qui vont ensemble :
+- seuls les objets **non empilables** se louent, et un contenant ou un sac garni est refusé ;
+- **enclume et meule refusent tout objet loué**, même à jour (sinon désenchantement contre
+  de l'XP, ou fusion dans un autre objet avant de rendre) ;
+- un objet loué ne peut pas être mis en vente au HDV (le Shop Serveur le refusait déjà :
+  il ne rachète que les piles vierges).
+L'usure reste normale : un outil loué revient abîmé.
+
+### Réseau
+`LocationNetworking` : `LOC_OPEN` / `LOC_ACTION` / `LOC_RESULT`, format détaillé dans le
+fichier. `LOC_ACTION` porte toujours `(action, id, prix, caution)`. Les durées sont
+envoyées en **temps restant**, pas en date : les horloges client et serveur ne concordent
+pas forcément.
+
 ## Architecture /server-admin (1.5.0)
 Écran de monitoring réservé au **niveau op 4** (`ServiceNetworkHandler.NIVEAU_ADMIN`) :
 trésorerie `$Serveur`, argent retenu en `$Sequestre`, masse monétaire, solde médian,
@@ -601,6 +660,7 @@ entre joueurs.
 | `/production` | Ouvre le GUI Production naturelle (tous les joueurs ; boutons admin si op 2, pas de sous-commandes) |
 | `/shop` | Ouvre le GUI Shop Serveur (achat / revente) |
 | `/leboncube` | Ouvre LeBonCube — annonces de services entre joueurs |
+| `/location` | Ouvre la location d'objets entre joueurs |
 | `/server-admin` | Monitoring économique + arbitrage des litiges (op 4 uniquement) |
 | `/nt-sauvegarde` | Liste les copies de l'économie ; `restaurer <fichier>` revient en arrière (op 4) |
 | `/nt-maintenance [on [msg] \| off]` | Ferme le serveur aux non-op, état persistant (op 4) |

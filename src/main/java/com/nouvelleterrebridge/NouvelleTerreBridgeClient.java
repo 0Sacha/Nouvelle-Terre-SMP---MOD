@@ -260,6 +260,25 @@ public class NouvelleTerreBridgeClient {
         NtNet.surClient(com.nouvelleterrebridge.network.HubNetworking.HUB_OPEN, (client, buf) ->
                 client.execute(() -> client.setScreen(new com.nouvelleterrebridge.client.HubScreen())));
 
+        NtNet.surClient(com.nouvelleterrebridge.network.LocationNetworking.LOC_OPEN, (client, buf) -> {
+                var etat = com.nouvelleterrebridge.client.LocationScreen.lire(buf);
+                client.execute(() -> {
+                    BalanceHudOverlay.cachedBalance = etat.balance();
+                    client.setScreen(new com.nouvelleterrebridge.client.LocationScreen(etat));
+                });
+            });
+
+        NtNet.surClient(com.nouvelleterrebridge.network.LocationNetworking.LOC_RESULT, (client, buf) -> {
+                boolean ok  = buf.readBoolean();
+                String  msg = buf.readUtf();
+                var etat = com.nouvelleterrebridge.client.LocationScreen.lire(buf);
+                client.execute(() -> {
+                    BalanceHudOverlay.cachedBalance = etat.balance();
+                    if (client.screen instanceof com.nouvelleterrebridge.client.LocationScreen s)
+                        s.handleResult(ok, msg, etat);
+                });
+            });
+
         NtNet.surClient(com.nouvelleterrebridge.network.ShopNetworking.SHOP_OPEN, (client, buf) -> {
                 int balance = buf.readInt();
                 var shopEntries = readShopEntries(buf);
