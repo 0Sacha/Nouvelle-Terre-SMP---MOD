@@ -45,8 +45,7 @@ jobs:
             cp "$FICHIER" notes-release.md
           else
             echo "::warning::Pas de $FICHIER — /changelog ne pourra pas publier cette version."
-            printf 'Build automatique depuis le commit `%s`.
-' "${{ steps.version.outputs.sha }}" > notes-release.md
+            echo "Build automatique depuis le commit ${{ steps.version.outputs.sha }}." > notes-release.md
           fi
 
       - name: Créer la Release GitHub

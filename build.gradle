@@ -63,8 +63,7 @@ java {
 }
 
 jar {
-	// Purge les anciens JAR : un reliquat d'un build précédent (autre version ou
-	// autre qualificatif +neoforge.N) s'y retrouverait sinon.
+	// Purge les anciens JAR : un reliquat d'une autre version s'y retrouverait sinon.
 	doFirst {
 		delete fileTree(dir: layout.buildDirectory.dir('libs').get().asFile, include: '*.jar')
 	}
