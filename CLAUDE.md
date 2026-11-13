@@ -97,7 +97,8 @@ reste manuel). Ne jamais pousser sur `main` un build non testé en local.
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `2.2.2` (refonte de l'éditeur HUD — voir « Système HUD »)
+- Version actuelle : `2.2.3` (refonte de l'éditeur HUD — voir « Système HUD »)
+  - 2.2.3 : Parchemin refait sur le modèle du Guide (liste + volet de détail, icônes d'objets)
   - 2.2.2 : menu du HUD refait (barre latérale, profils, filtres, cartes Activé/Désactivé)
   - 2.2.1 : Parchemin aligné sur le design des autres écrans
   - 2.2.0 : éditeur HUD refait (placement sur le jeu, guides, taille, grille MODS), widgets Armure et Direction
@@ -467,11 +468,13 @@ sinon les entrées déjà estampillées restent figées sur leurs mauvais prix.
 ## Parchemin (1.3.0)
 - Item `nouvelle-terre-bridge:parchemin` — terminal portatif, clic droit → `HubScreen`.
   Nom identique en fr_fr et en_us : « Parchemin » (traduire par « Scroll » cassait la DA RP).
-- `HubScreen` : même habillage que les autres écrans depuis la 2.2.1 (fond sombre, barre de
-  titre, accent or, solde en haut à droite). Il avait une DA « carte électronique » verte,
-  seul écran du mod à ne ressembler à aucun autre — **retirée sur demande, ne pas la remettre**.
-  10 cartes sur 5 colonnes (moins si la fenêtre est étroite) → Marché, Shop, LeBonCube,
-  Location, Banque, Quêtes, Production, Registre, Conflit, Guide.
+- `HubScreen` : construit comme le Guide depuis la 2.2.3 — cadre, liste des 10 entrées à
+  gauche, volet de détail à droite. **Survoler** une entrée la présente dans le volet (grande
+  icône, commande, à quoi elle sert) ; **un clic l'ouvre**, sans étape intermédiaire.
+  Les entrées portent une vraie icône d'objet : les symboles de la police ne faisaient que
+  quelques pixels à l'écran, ce que Sacha a jugé « moche ».
+  ⚠ Historique : DA « carte électronique » verte (retirée), puis grille de cartes à symboles
+  (2.2.1, rejetée). Ne revenir ni à l'une ni à l'autre.
 - Donné à la connexion et après un respawn (`donnerParcheminSiAbsent`), et récupérable
   gratuitement via le bandeau épinglé du Shop (`ACTION_CLAIM_PARCHEMIN`). **Non vendable.**
 - Le jet du Parchemin est bloqué par un `ItemTossEvent` dans `NouvelleTerreBridge`
