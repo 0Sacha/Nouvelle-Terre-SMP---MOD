@@ -260,6 +260,10 @@ public class NouvelleTerreBridgeClient {
         NtNet.surClient(com.nouvelleterrebridge.network.HubNetworking.HUB_OPEN, (client, buf) ->
                 client.execute(() -> client.setScreen(new com.nouvelleterrebridge.client.HubScreen())));
 
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(
+            (net.neoforged.neoforge.event.entity.player.ItemTooltipEvent e) ->
+                com.nouvelleterrebridge.client.LocationScreen.infobulle(e.getItemStack(), e.getToolTip()));
+
         NtNet.surClient(com.nouvelleterrebridge.network.LocationNetworking.LOC_OPEN, (client, buf) -> {
                 var etat = com.nouvelleterrebridge.client.LocationScreen.lire(buf);
                 client.execute(() -> {

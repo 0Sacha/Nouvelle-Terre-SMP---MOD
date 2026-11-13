@@ -64,6 +64,12 @@ public final class LocationManager {
 
     /** Clé de l'étiquette dans {@code custom_data} : numéro du contrat. */
     public static final String CLE = "nt_location";
+    /**
+     * Usure de l'objet au départ, recopiée sur la pile : le client en a besoin
+     * pour afficher l'objectif de réparation dans l'infobulle, n'importe où et
+     * sans aller-retour réseau.
+     */
+    public static final String CLE_USURE = "nt_location_usure";
 
     public static final long JOUR_MS = 24L * 60 * 60 * 1000;
     /** Délai laissé au locataire pour régulariser ou rendre avant la reprise. */
@@ -197,7 +203,10 @@ public final class LocationManager {
     }
 
     private static void etiqueter(ItemStack stack, Contrat c) {
-        CustomData.update(DataComponents.CUSTOM_DATA, stack, tag -> tag.putInt(CLE, c.id));
+        CustomData.update(DataComponents.CUSTOM_DATA, stack, tag -> {
+            tag.putInt(CLE, c.id);
+            tag.putInt(CLE_USURE, c.degatsDepart);
+        });
         ItemLore lore = stack.getOrDefault(DataComponents.LORE, ItemLore.EMPTY);
         lore = lore.withLineAdded(Component.literal("§6Objet loué §7— propriétaire : §f" + c.proprietaire));
         lore = lore.withLineAdded(Component.literal("§7À rendre depuis le Parchemin → §fLocation"));
@@ -210,6 +219,7 @@ public final class LocationManager {
         if (cd != null) {
             var tag = cd.copyTag();
             tag.remove(CLE);
+            tag.remove(CLE_USURE);
             if (tag.isEmpty()) stack.remove(DataComponents.CUSTOM_DATA);
             else stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
         }
@@ -560,6 +570,25 @@ public final class LocationManager {
         for (int i = 0; i < inv.getContainerSize(); i++)
             if (contratDe(inv.getItem(i)) == contratId) return inv.getItem(i);
         return ItemStack.EMPTY;
+    }
+
+    /**
+     * État de réparation d'un objet loué à Raccommodage : {durabilité actuelle,
+     * durabilité à atteindre pour le rendre}, en pourcentage. Null si l'objet
+     * n'est pas concerné (pas loué, sans durabilité, ou sans Raccommodage).
+     */
+    public static int[] reparation(ItemStack s) {
+        if (contratDe(s) == 0 || !s.isDamageableItem() || !aRaccommodage(s)) return null;
+        int max = s.getMaxDamage();
+        if (max <= 0) return null;
+        CustomData cd = s.get(DataComponents.CUSTOM_DATA);
+        int depart = cd == null ? 0 : cd.copyTag().getInt(CLE_USURE);
+        // Arrondi vers le bas pour l'actuel, vers le haut pour la cible : on
+        // n'affiche jamais « 100 % » tant qu'il manque un point.
+        int actuel = (int) Math.floor((max - s.getDamageValue()) * 100.0 / max);
+        int cible  = (int) Math.ceil((max - Math.min(depart, max)) * 100.0 / max);
+        if (s.getDamageValue() <= depart) actuel = Math.max(actuel, cible);
+        return new int[]{actuel, cible};
     }
 
     public static boolean aRaccommodage(ItemStack s) {

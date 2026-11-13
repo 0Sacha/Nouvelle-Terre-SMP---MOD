@@ -62,7 +62,12 @@ public class LocationScreen extends Screen {
 
     /** Bouton d'une ligne. {@code confirmer} = deuxième clic exigé (action sans retour). */
     private record Btn(String label, int couleur, int action, int id, boolean confirmer) {}
-    private record Ligne(ItemStack pile, String titre, String sous, String droite, List<Btn> btns) {}
+    /** {@code reparation} = {actuel %, cible %} pour un objet à Raccommodage que je loue, sinon null. */
+    private record Ligne(ItemStack pile, String titre, String sous, String droite, List<Btn> btns, int[] reparation) {
+        Ligne(ItemStack pile, String titre, String sous, String droite, List<Btn> btns) {
+            this(pile, titre, sous, droite, btns, null);
+        }
+    }
 
     // ── Couleurs (alignées sur les autres écrans) ─────────────────────────────
     private static final int C_BG      = 0xFF14161A;
@@ -192,10 +197,13 @@ public class LocationScreen extends Screen {
                                 : " §8· prochain loyer dans " + duree(c.resteMs()))
                             : "§cVerrouillé §8· " + (c.resilie() ? "à rendre" : "règle le loyer ou rends-le")
                                 + ", reprise dans " + duree(c.resteMs());
-                        lignes.add(new Ligne(pile(c.item(), ""), nom(c.item()), sous,
+                        // L'objet réel, s'il est sur moi : icône enchantée et état de réparation
+                        ItemStack reel = dansInventaire(c.id());
+                        lignes.add(new Ligne(reel.isEmpty() ? pile(c.item(), "") : reel, nom(c.item()), sous,
                             c.prixJour() + " ◆ / jour",
                             List.of(new Btn("Rendre", C_GREEN, LocationNetworking.ACTION_RENDRE, c.id(), false),
-                                    new Btn("Perdu", C_RED, LocationNetworking.ACTION_PERDU, c.id(), true))));
+                                    new Btn("Perdu", C_RED, LocationNetworking.ACTION_PERDU, c.id(), true)),
+                            reel.isEmpty() ? null : LocationManager.reparation(reel)));
                     } else {
                         String sous = switch (c.etat()) {
                             case LocationManager.ETAT_OK -> "§8Loué par §7" + c.locataire() + (c.resilie()
@@ -392,9 +400,58 @@ public class LocationScreen extends Screen {
 
             int texteW = bx - (gx + 50) - 8;
             ctx.drawString(font, truncate(l.titre(), texteW), gx + 50, ry + 9, C_WHITE, false);
-            ctx.drawString(font, truncate(l.sous(), texteW), gx + 50, ry + 24, C_DIM, false);
+            if (l.reparation() == null) {
+                ctx.drawString(font, truncate(l.sous(), texteW), gx + 50, ry + 24, C_DIM, false);
+            } else {
+                // Objet à Raccommodage : la barre remplace la deuxième ligne de texte,
+                // l'état de réparation étant ce qui décide si « Rendre » passera.
+                ctx.drawString(font, truncate(l.sous(), texteW), gx + 50, ry + 20, C_DIM, false);
+                renderReparation(ctx, gx + 50, ry + 33, Math.min(140, texteW - 110), l.reparation());
+            }
         }
         ctx.disableScissor();
+    }
+
+    /** Barre de durabilité avec repère de l'objectif à atteindre pour rendre l'objet. */
+    private void renderReparation(GuiGraphics ctx, int x, int y, int w, int[] rep) {
+        if (w < 30) return;
+        int actuel = rep[0], cible = rep[1];
+        boolean ok = actuel >= cible;
+        int couleur = ok ? C_GREEN : C_RED;
+        ctx.fill(x, y, x + w, y + 5, C_BG);
+        ctx.fill(x, y, x + w * Math.min(100, actuel) / 100, y + 5, couleur);
+        // Repère de l'objectif : un trait blanc qui dépasse de la barre
+        int rx = Math.min(x + w - 1, x + w * cible / 100);
+        ctx.fill(rx, y - 2, rx + 1, y + 7, C_WHITE);
+        String texte = ok ? "§a" + actuel + " % — peut être rendu"
+                          : "§c" + actuel + " % §8→ §f" + cible + " % §8pour le rendre";
+        ctx.drawString(font, texte, x + w + 8, y - 2, C_DIM, false);
+    }
+
+    /** La pile du contrat dans mon inventaire (sac, armure, main secondaire), ou vide. */
+    private ItemStack dansInventaire(int contratId) {
+        if (minecraft == null || minecraft.player == null) return ItemStack.EMPTY;
+        var inv = minecraft.player.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++)
+            if (LocationManager.contratDe(inv.getItem(i)) == contratId) return inv.getItem(i).copy();
+        return ItemStack.EMPTY;
+    }
+
+    /**
+     * Lignes ajoutées à l'infobulle d'un objet loué à Raccommodage, partout dans le
+     * jeu : le locataire voit où il en est sans ouvrir l'écran Location.
+     */
+    public static void infobulle(ItemStack stack, List<Component> lignes) {
+        int[] rep = LocationManager.reparation(stack);
+        if (rep == null) return;
+        int actuel = rep[0], cible = rep[1];
+        boolean ok = actuel >= cible;
+        int pleins = Math.max(0, Math.min(20, actuel / 5));
+        String barre = (ok ? "§a" : "§c") + "▮".repeat(pleins) + "§8" + "▮".repeat(20 - pleins);
+        lignes.add(Component.literal(barre + " " + (ok ? "§a" : "§c") + actuel + " %"));
+        lignes.add(Component.literal(ok
+            ? "§aAssez réparé pour être rendu"
+            : "§7À réparer jusqu'à §f" + cible + " % §7avant de le rendre"));
     }
 
     private int modaleX() { return winX + (winW - MODAL_W) / 2; }
