@@ -120,6 +120,17 @@ redémarrage reste manuel). Ne jamais y envoyer un build non testé en local.
 ligne `<!-- mod: Nom | lien | à quoi il sert -->` : le bot en fait la liste du message
 d'installation.
 
+### Temps de lancement du pack (mesuré le 15/11)
+Sur la machine de Sacha (i5-14600KF, 32 Go, SSD), le pack de test (151 mods) se lance en
+**1 min 30** : 6 s de recherche des mods, 14 s de démarrage, 38 s de chargement des mods,
+26 s de textures et modèles. Les 5 à 10 minutes rapportées viennent donc des machines des
+joueurs — en premier lieu la mémoire laissée par défaut dans le lanceur.
+- **Sacha ne veut retirer aucun mod** pour gagner du temps : ne pas le reproposer.
+- Le mod prévient à la connexion, une fois par lancement, si le jeu a moins de 5,5 Go
+  (`NouvelleTerreBridgeClient.signalerMemoireFaible`) : un modpack ne peut pas imposer ce réglage.
+- ModernFix et FerriteCore ont été ajoutés au **profil de test** le 15/11 pour mesurer le
+  gain ; à ajouter au modpack publié si le test est bon.
+
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
 - **Incrémenter la version avant chaque rebuild/push.**
