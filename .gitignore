@@ -32,3 +32,5 @@ Thumbs.db
 # État local de Claude Code
 .claude/scheduled_tasks.lock
 .claude/worktrees/
+# Sortie de compilation de l'éditeur (extension Java de VS Code)
+bin/

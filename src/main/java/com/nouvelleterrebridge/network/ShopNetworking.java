@@ -15,6 +15,7 @@ public final class ShopNetworking {
     public static final int ACTION_BUY             = 0;  // le joueur achète au serveur
     public static final int ACTION_SELL            = 1;  // le joueur revend au serveur
     public static final int ACTION_CLAIM_PARCHEMIN = 2;  // récupère un Parchemin gratuit
+    public static final int ACTION_SELL_ALL        = 3;  // revend tout l'inventaire rachetable (itemId et quantité ignorés)
 
     private ShopNetworking() {}
 }

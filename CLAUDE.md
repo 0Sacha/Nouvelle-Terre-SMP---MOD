@@ -123,7 +123,8 @@ d'installation.
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `2.2.3` (refonte de l'éditeur HUD — voir « Système HUD »)
+- Version actuelle : `2.3.0` (vente rapide — voir « Vente rapide »)
+  - 2.3.0 : « Tout vendre » au Shop Serveur, module de vente pour sacs à dos
   - 2.2.3 : Parchemin refait sur le modèle du Guide (liste + volet de détail, icônes d'objets)
   - 2.2.2 : menu du HUD refait (barre latérale, profils, filtres, cartes Activé/Désactivé)
   - 2.2.1 : Parchemin aligné sur le design des autres écrans
@@ -491,6 +492,46 @@ sinon les entrées déjà estampillées restent figées sur leurs mauvais prix.
   équitablement un objet enchanté ou abîmé.
 - L'argent d'achat va sur `$Serveur` ; le rachat le déduit via `forceDeduct` (compte système
   exclu des totaux, il peut passer négatif — c'est un puits comptable, pas une trésorerie).
+
+## Vente rapide (2.3.0)
+
+Demande de Sacha : écouler de grandes quantités sans passer par la fenêtre de quantité
+article par article. Deux moyens, qui passent tous deux par `ServerShopActions.encaisser()`
+— le seul endroit qui fait bouger le prix puis paie (rachat enregistré **avant** le calcul
+du prix, voir plus haut : ne pas dupliquer cette séquence ailleurs).
+
+### « Tout vendre » dans le Shop (onglet Vendre)
+- **Par ligne** : un bouton vend tout le stock de l'article en un clic, sans fenêtre
+  (`ACTION_SELL` avec la quantité en stock). Le bouton « Vendre » garde la fenêtre de quantité.
+- **Général** : à droite de la recherche, avec confirmation qui liste les plus gros montants
+  (`ACTION_SELL_ALL` → `vendreTout()`). Masqué pendant une recherche : il vend **tout
+  l'inventaire**, pas ce que le filtre laisse voir.
+- Les montants affichés sont des **estimations** (« ≈ ») : le vendeur encaisse son propre
+  impact sur le prix, donc le total réel est plus bas sur un gros volume.
+- L'écran relit l'inventaire à chaque tick tant que l'onglet Vendre est affiché.
+
+### Module de vente pour sacs à dos (`sac/ModuleVenteItem`)
+Amélioration de **Sophisticated Backpacks** (`nouvelle-terre-bridge:module_vente`), fabriquée
+à l'établi comme les autres (base de module + bloc d'émeraude, or, entonnoir, redstone). Le
+sac qui la porte revend seul, toutes les 5 s, tout ce qu'il contient de rachetable
+(`idVendable` : pile vierge **et** article au catalogue), au profit du joueur qui le porte.
+- **Commission de 10 %** (`ServerShopActions.COMMISSION_SAC`) sur le prix de rachat.
+- ⚠ **Seul un sac porté par un joueur vend** : `tick()` reçoit un porteur nul pour un sac
+  posé, et ne fait rien. À conserver — un sac posé sous une ferme, alimenté par des
+  entonnoirs, imprimerait des shards sans personne.
+- Pas de filtre : tout ce qui est rachetable part. Un filtre demanderait un onglet de
+  réglages (conteneur + écran côté Sophisticated Core) — non fait. L'interrupteur du module
+  permet de l'éteindre.
+- Un seul module par sac (conflit déclaré dans l'item).
+- Historique `/bank` : une seule ligne cumulée (`TransactionLog.cumuler`), sinon les ventes
+  répétées chasseraient tout le reste.
+- **Dépendance facultative** : `compileOnly` sur Sophisticated Core, pris sur le Maven de
+  Modrinth (version du pack). `sac/SacIntegration` est la seule classe que le reste du mod
+  référence, et `enregistrer()` n'est appelé que si `sophisticatedcore` est chargé — le mod
+  démarre sans. Si le pack change de version majeure de Sophisticated Core, mettre à jour
+  la version dans `build.gradle`.
+- Le modèle superpose le fond de module **du mod de sacs** (référencé, pas copié) et notre
+  losange or. Sans Sophisticated Backpacks, ni l'objet ni la recette n'existent.
 
 ## Parchemin (1.3.0, écran refait en 2.2.3)
 - Item `nouvelle-terre-bridge:parchemin` — terminal portatif, clic droit → `HubScreen`.
@@ -865,6 +906,11 @@ util/
   SauvegardeDifferee.java  → Regroupe les écritures des fichiers modifiés à haute fréquence
                              (production, quêtes, virements) : au plus une toutes les 5 s
 
+sac/                             ← Module de vente pour sacs à dos — voir « Vente rapide »
+  SacIntegration.java      → Enregistre le module si Sophisticated Core est présent ;
+                             seule classe du package que le reste du mod peut citer
+  ModuleVenteItem.java     → L'amélioration et son `Wrapper` (vente toutes les 5 s, sac porté)
+
 location/                        ← Location d'objets — voir « Architecture Location »
   LocationManager.java     → Singleton locations.json : offres, contrats, retours, étiquette
                              `nt_location`, loyers et reprises (`tick`, une fois par minute)
@@ -914,6 +960,7 @@ network/
                              sont pas enregistrés auprès de NeoForge.
   ShopNetworking.java      → Canaux : SHOP_OPEN (S→C) / SHOP_ACTION (C→S) / SHOP_RESULT (S→C)
                              Actions : ACTION_BUY(0) / ACTION_SELL(1) / ACTION_CLAIM_PARCHEMIN(2)
+                                       / ACTION_SELL_ALL(3)
 
 client/                    ← @Environment(CLIENT) uniquement
   NumberInput.java         → **Champ numérique partagé** — prix, quantités, montants.
@@ -1062,7 +1109,7 @@ listings[]: int count → (int id, string seller, string itemId, int qty, int pr
 
 ### Shop Serveur
 SHOP_OPEN  : int balance | entries[]
-SHOP_ACTION: int action | string itemId | int qty
+SHOP_ACTION: int action | string itemId | int qty   (SELL_ALL : itemId = "", qty = 0)
 SHOP_RESULT: bool ok | string msg | int balance | entries[]
 entries[]  : int count → (string itemId, int buyPrice, int sellPrice, long netFlow) × count
 

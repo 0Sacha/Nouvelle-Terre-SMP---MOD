@@ -8,6 +8,10 @@ import net.minecraft.world.item.Items;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.network.chat.Component;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * Achat et revente auprès du Shop Serveur ($Serveur).
@@ -105,24 +109,6 @@ public final class ServerShopActions {
             return String.format("§cTu n'as que §f%d§c exemplaire(s) de §f%s§c en état d'être vendu(s). "
                 + "§7(objets enchantés, renommés ou abîmés non rachetés)", disponible, nomItem);
 
-        // ⚠ Enregistrer le rachat AVANT de calculer le prix.
-        //
-        // L'ordre inverse rendait l'aller-retour achat/revente rentable : acheter
-        // faisait monter le prix, et la revente était payée à ce prix gonflé par
-        // l'achat du joueur lui-même. Au-delà de +82 % (les facteurs peuvent
-        // doubler), la marge de 55 % ne suffisait plus et la boucle imprimait des
-        // shards — 50 000 devenaient des millions en quelques minutes.
-        //
-        // En enregistrant d'abord, le vendeur encaisse son propre impact sur le
-        // marché : un aller-retour revient toujours à payer P puis récupérer
-        // 0,55 × P, soit une perte garantie, quels que soient les multiplicateurs.
-        ServerShopPriceManager.recordPurchase(itemId, qty);
-
-        int prixUnite = ServerShopPriceManager.getBuybackPrice(itemId);
-        // qty ≤ QTE_MAX et un prix de rachat reste très loin de la limite, mais le
-        // calcul se fait en long pour qu'un prix admin aberrant ne déborde jamais.
-        int total     = (int) Math.min(Integer.MAX_VALUE, (long) prixUnite * qty);
-
         int aRetirer = qty;
         for (int i = 0; i < player.getInventory().items.size() && aRetirer > 0; i++) {
             ItemStack s = player.getInventory().items.get(i);
@@ -133,15 +119,109 @@ public final class ServerShopActions {
             }
         }
 
-        // Le compte serveur peut passer négatif : c'est un puits comptable,
-        // exclu des totaux, pas une trésorerie à équilibrer.
-        eco.forceDeduct(COMPTE_SERVEUR, total);
-        eco.addShards(pseudo, total, "Revente au Shop Serveur");
-
+        int total = encaisser(pseudo, itemId, qty, 1.0, "Revente au Shop Serveur");
         TransactionLog.log(pseudo, TransactionLog.TYPE_SELL, qty + "x " + nomItem + " (Shop Serveur)", total);
 
         return String.format("§a✅ §f%dx %s §avendu pour §f%s ◆§a. Solde : §f%s ◆§a.",
             qty, nomItem, EconomieCommand.fmt(total), EconomieCommand.fmt(eco.getBalance(pseudo)));
+    }
+
+    /**
+     * Cœur de tout rachat : fait bouger le prix, puis paie. Renvoie le montant versé.
+     *
+     * ⚠ Enregistrer le rachat AVANT de calculer le prix.
+     *
+     * L'ordre inverse rendait l'aller-retour achat/revente rentable : acheter
+     * faisait monter le prix, et la revente était payée à ce prix gonflé par
+     * l'achat du joueur lui-même. Au-delà de +82 % (les facteurs peuvent
+     * doubler), la marge de 55 % ne suffisait plus et la boucle imprimait des
+     * shards — 50 000 devenaient des millions en quelques minutes.
+     *
+     * En enregistrant d'abord, le vendeur encaisse son propre impact sur le
+     * marché : un aller-retour revient toujours à payer P puis récupérer
+     * 0,55 × P, soit une perte garantie, quels que soient les multiplicateurs.
+     *
+     * @param part fraction du prix de rachat réellement versée (1.0 = tout)
+     */
+    private static int encaisser(String pseudo, String itemId, int qty, double part, String raison) {
+        ServerShopPriceManager.recordPurchase(itemId, qty);
+
+        int prixUnite = ServerShopPriceManager.getBuybackPrice(itemId);
+        // Calcul en long : ni une grosse quantité ni un prix admin aberrant ne déborde.
+        int total = (int) Math.min(Integer.MAX_VALUE, Math.round((long) prixUnite * qty * part));
+        if (total <= 0) return 0;
+
+        // Le compte serveur peut passer négatif : c'est un puits comptable,
+        // exclu des totaux, pas une trésorerie à équilibrer.
+        LocalEconomy eco = LocalEconomy.getInstance();
+        eco.forceDeduct(COMPTE_SERVEUR, total);
+        eco.addShards(pseudo, total, raison);
+        return total;
+    }
+
+    // ── Vente groupée ─────────────────────────────────────────────────────────
+
+    /**
+     * Identifiant de l'article si cette pile peut être rachetée telle quelle
+     * (vierge et au catalogue), sinon {@code null}.
+     */
+    public static String idVendable(ItemStack s) {
+        if (s.isEmpty() || !s.getComponentsPatch().isEmpty() || s.isDamaged()) return null;
+        String id = BuiltInRegistries.ITEM.getKey(s.getItem()).toString();
+        if (id.equals("nouvelle-terre-bridge:parchemin") || !estDebloque(id)) return null;
+        return id;
+    }
+
+    /** Vend d'un coup tout ce que l'inventaire contient de rachetable. */
+    public static String vendreTout(ServerPlayer player) {
+        Map<String, Integer> lot = new LinkedHashMap<>();
+        for (ItemStack s : player.getInventory().items) {
+            String id = idVendable(s);
+            if (id == null) continue;
+            lot.merge(id, s.getCount(), Integer::sum);
+            s.setCount(0);
+        }
+        if (lot.isEmpty()) return "§cRien à vendre — le serveur ne rachète que les objets vierges du catalogue.";
+
+        String pseudo = player.getName().getString();
+        int total = 0, unites = 0;
+        for (Map.Entry<String, Integer> e : lot.entrySet()) {
+            total  += encaisser(pseudo, e.getKey(), e.getValue(), 1.0, "Revente au Shop Serveur");
+            unites += e.getValue();
+        }
+        // Une seule ligne d'historique : une par article noierait le reste de /bank.
+        TransactionLog.log(pseudo, TransactionLog.TYPE_SELL,
+            "Vente groupée : " + unites + " objets (Shop Serveur)", total);
+
+        return String.format("§a✅ §f%d objets §a(%d articles) vendus pour §f%s ◆§a. Solde : §f%s ◆§a.",
+            unites, lot.size(), EconomieCommand.fmt(total),
+            EconomieCommand.fmt(LocalEconomy.getInstance().getBalance(pseudo)));
+    }
+
+    /**
+     * Part du prix de rachat retenue par le module de vente d'un sac à dos.
+     * Vendre sans passer par le Shop est un confort : il se paie, et la retenue
+     * freine aussi le revenu d'une ferme laissée tourner toute seule.
+     */
+    public static final double COMMISSION_SAC = 0.10;
+
+    /**
+     * Paie ce qu'un sac à dos équipé du module de vente vient d'écouler. Les objets
+     * ont déjà été retirés du sac par l'appelant ; {@code lot} = article → quantité,
+     * uniquement des articles validés par {@link #idVendable}.
+     */
+    public static void venteAutomatique(ServerPlayer player, Map<String, Integer> lot) {
+        String pseudo = player.getName().getString();
+        int total = 0;
+        for (Map.Entry<String, Integer> e : lot.entrySet())
+            total += encaisser(pseudo, e.getKey(), e.getValue(), 1.0 - COMMISSION_SAC, "Vente automatique (sac à dos)");
+        if (total <= 0) return;
+
+        // Cumulé sur la dernière ligne : le sac vend toutes les quelques secondes.
+        TransactionLog.cumuler(pseudo, TransactionLog.TYPE_SELL, "Vente automatique (sac à dos)", total);
+        player.displayClientMessage(
+            Component.literal("§a+" + EconomieCommand.fmt(total) + " ◆ §7— vente automatique du sac"), true);
+        com.nouvelleterrebridge.NouvelleTerreBridge.sendBalanceToPlayer(player);
     }
 
     /** Remet un Parchemin au joueur s'il n'en a plus. Toujours gratuit. */

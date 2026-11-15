@@ -156,6 +156,11 @@ public class NouvelleTerreBridge {
         // depuis l'intérieur d'un lambda jamais évalué à ce stade.
         NtNet.precharger();
 
+        // Module de vente pour sacs à dos : n'existe que si Sophisticated Core est là.
+        // La classe n'est touchée qu'ici, derrière le test, pour que le mod démarre sans.
+        if (net.neoforged.fml.ModList.get().isLoaded("sophisticatedcore"))
+            com.nouvelleterrebridge.sac.SacIntegration.enregistrer(ITEMS);
+
         ITEMS.register(modEventBus);
         modEventBus.addListener(this::onBuildCreativeTabs);
         modEventBus.addListener(NtNet::enregistrer);
@@ -223,6 +228,8 @@ public class NouvelleTerreBridge {
             event.accept(SHARD_100.get());
         } else if (event.getTabKey() == CreativeModeTabs.TOOLS_AND_UTILITIES) {
             event.accept(PARCHEMIN.get());
+            if (com.nouvelleterrebridge.sac.SacIntegration.module != null)
+                event.accept(com.nouvelleterrebridge.sac.SacIntegration.module.get());
         }
     }
 
@@ -595,6 +602,7 @@ public class NouvelleTerreBridge {
                     case ShopNetworking.ACTION_BUY  -> ServerShopActions.buy(player, itemId, quantity);
                     case ShopNetworking.ACTION_SELL -> ServerShopActions.sell(player, itemId, quantity);
                     case ShopNetworking.ACTION_CLAIM_PARCHEMIN -> ServerShopActions.claimParchemin(player);
+                    case ShopNetworking.ACTION_SELL_ALL -> ServerShopActions.vendreTout(player);
                     default -> "§cAction inconnue.";
                 };
 

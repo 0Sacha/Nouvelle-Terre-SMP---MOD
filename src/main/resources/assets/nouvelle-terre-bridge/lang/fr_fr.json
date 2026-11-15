@@ -5,5 +5,7 @@
   "item.nouvelle-terre-bridge.shard_20": "Billet de 20 ◆",
   "item.nouvelle-terre-bridge.shard_50": "Billet de 50 ◆",
   "item.nouvelle-terre-bridge.shard_100": "Billet de 100 ◆",
-  "item.nouvelle-terre-bridge.parchemin": "Parchemin"
+  "item.nouvelle-terre-bridge.parchemin": "Parchemin",
+  "item.nouvelle-terre-bridge.module_vente": "Module de vente",
+  "item.nouvelle-terre-bridge.module_vente.tooltip": "Vend tout seul au Shop Serveur ce que le sac contient\nUniquement les objets vierges du catalogue, sac porté\n10 % de commission sur chaque vente"
 }

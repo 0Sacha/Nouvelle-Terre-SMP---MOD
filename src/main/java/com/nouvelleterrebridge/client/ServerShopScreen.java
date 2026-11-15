@@ -82,6 +82,12 @@ public class ServerShopScreen extends Screen {
 
     private ShopEntry hovered = null;
     private ShopEntry selected = null;
+
+    // Vente rapide (onglet Vendre) : le bouton « Tout vendre » d'une ligne survolé au
+    // rendu, le bouton général et sa fenêtre de confirmation
+    private ShopEntry hoveredTout = null;
+    private boolean confirmTout = false;
+    private int toutX = 0, toutY = 0, toutW = 0;
     private final NumberInput qtyInput = new NumberInput(1, 1, 1);
 
     private String toastMsg = null;
@@ -137,6 +143,7 @@ public class ServerShopScreen extends Screen {
         balance  = newBalance;
         entries  = new ArrayList<>(newEntries);
         selected = null;
+        confirmTout = false;
         qtyInput.setBounds(1, 1);
         qtyInput.clear();
         refreshSellable();
@@ -162,11 +169,16 @@ public class ServerShopScreen extends Screen {
 
         renderTopBar(ctx, mx, my);
         hovered = null;
-        if (tab == Tab.ACHETER) renderBuyGrid(ctx, mx, my);
-        else                    renderSellGrid(ctx, mx, my);
+        hoveredTout = null;
+        // Une fenêtre ouverte masque la souris à la liste : rien ne se survole dessous
+        boolean fenetre = selected != null || confirmTout;
+        int lx = fenetre ? -1 : mx, ly = fenetre ? -1 : my;
+        if (tab == Tab.ACHETER) renderBuyGrid(ctx, lx, ly);
+        else                    renderSellGrid(ctx, lx, ly);
 
-        if (selected != null) renderModal(ctx, mx, my);
-        else if (hovered != null) renderTooltip(ctx, hovered, mx, my);
+        if (confirmTout) renderConfirmTout(ctx, mx, my);
+        else if (selected != null) renderModal(ctx, mx, my);
+        else if (hovered != null && hoveredTout == null) renderTooltip(ctx, hovered, mx, my);
 
         renderToast(ctx);
         super.render(ctx, mx, my, delta);
@@ -298,11 +310,36 @@ public class ServerShopScreen extends Screen {
     private void renderSellGrid(GuiGraphics ctx, int mx, int my) {
         renderSearch(ctx, mx, my);
         List<ShopEntry> list = sellList();
+        renderToutVendre(ctx, mx, my, list);
         renderGrid(ctx, mx, my, list, false);
         if (list.isEmpty())
             ctx.drawCenteredString(font,
                 "Rien à vendre — le serveur ne rachète que les objets vierges.",
                 winX + winW / 2, winY + winH / 2, C_DIM);
+    }
+
+    /** Valeur de tout ce que l'inventaire contient d'un article, au prix de rachat affiché. */
+    private long valeurStock(ShopEntry e) {
+        return (long) e.sellPrice() * sellable.getOrDefault(e.itemId(), 0);
+    }
+
+    /** Bouton général, à droite de la recherche : tout l'inventaire rachetable en une fois. */
+    private void renderToutVendre(GuiGraphics ctx, int mx, int my, List<ShopEntry> list) {
+        toutW = 0;
+        // Le bouton vend tout l'inventaire, pas seulement ce que la recherche laisse voir :
+        // on le retire pendant une recherche plutôt que de laisser croire le contraire.
+        if (list.isEmpty() || !query().isEmpty()) return;
+
+        long total = 0;
+        for (ShopEntry e : list) total += valeurStock(e);
+        String label = "Tout vendre  ≈ " + total + " ◆";
+        toutW = font.width(label) + 20;
+        toutX = winX + winW - PAD - toutW;
+        toutY = winY + TOP_H + PAD - 1;
+        boolean hov = mx >= toutX && mx < toutX + toutW && my >= toutY && my < toutY + 20;
+        ctx.fill(toutX, toutY, toutX + toutW, toutY + 20, hov ? C_GREEN : C_STRIP);
+        ctx.fill(toutX, toutY, toutX + toutW, toutY + 1, C_GREEN);
+        ctx.drawCenteredString(font, label, toutX + toutW / 2, toutY + 6, hov ? C_BG : C_GREEN);
     }
 
     private void renderSearch(GuiGraphics ctx, int mx, int my) {
@@ -334,7 +371,7 @@ public class ServerShopScreen extends Screen {
             boolean hov = mx >= gx && mx < gx + gw && my >= ry && my < ry + ROW_H
                        && my >= gy && my < gy + gh;
             if (hov) hovered = list.get(i);
-            renderRow(ctx, gx, ry, gw, list.get(i), hov, buying);
+            renderRow(ctx, gx, ry, gw, list.get(i), hov, buying, mx, my);
         }
         ctx.disableScissor();
     }
@@ -357,8 +394,12 @@ public class ServerShopScreen extends Screen {
         scroll = Math.max(0, Math.min(Math.round(ratio * maxScroll), maxScroll));
     }
 
-    /** Ligne du catalogue : icône à gauche, prix et bouton d'action à droite. */
-    private void renderRow(GuiGraphics ctx, int x, int y, int w, ShopEntry e, boolean hov, boolean buying) {
+    /**
+     * Ligne du catalogue : icône à gauche, prix et bouton d'action à droite.
+     * En vente, un second bouton écoule tout le stock de l'article en un clic.
+     */
+    private void renderRow(GuiGraphics ctx, int x, int y, int w, ShopEntry e, boolean hov, boolean buying,
+                           int mx, int my) {
         int accent = buying ? C_GOLD : C_GREEN;
         ctx.fill(x, y, x + w, y + ROW_H, hov ? C_HOVER : C_PANEL);
         if (hov) {
@@ -374,25 +415,42 @@ public class ServerShopScreen extends Screen {
         ctx.fill(x + 1, y + 1, x + 41, y + ROW_H - 1, C_BG);
         drawItemScaled(ctx, stackOf(e.itemId()), x + 21, y + ROW_H / 2, 2.0f);
 
+        int btnH = 22;
+        int btnY = y + (ROW_H - btnH) / 2;
+        int droite = x + w - 10;
+
+        // Bouton « Tout vendre » : seulement en vente, tout à droite
+        boolean surTout = false;
+        if (!buying) {
+            int tw = 82;
+            int tx0 = droite - tw;
+            surTout = hov && mx >= tx0 && mx < tx0 + tw && my >= btnY && my < btnY + btnH;
+            if (surTout) hoveredTout = e;
+            ctx.fill(tx0, btnY, tx0 + tw, btnY + btnH, surTout ? C_GREEN : C_STRIP);
+            ctx.fill(tx0, btnY, tx0 + tw, btnY + 1, C_GREEN);
+            ctx.drawCenteredString(font, "Tout vendre", tx0 + tw / 2, btnY + 7, surTout ? C_BG : C_GREEN);
+            droite = tx0 - 6;
+        }
+
+        int btnW = buying ? 82 : 62;
+        int btnX = droite - btnW;
+        boolean actif = hov && !surTout;
+        int prix = buying ? e.buyPrice() : e.sellPrice();
+        String price = prix + " ◆";
+        int prixX = btnX - font.width(price) - 14;
+        ctx.drawString(font, price, prixX, y + (ROW_H - font.lineHeight) / 2, accent, false);
+        ctx.fill(btnX, btnY, btnX + btnW, btnY + btnH, actif ? accent : C_STRIP);
+        if (!actif) { ctx.fill(btnX, btnY, btnX + btnW, btnY + 1, C_BORDER); ctx.fill(btnX, btnY + btnH - 1, btnX + btnW, btnY + btnH, C_BORDER); }
+        ctx.drawCenteredString(font, buying ? "Acheter" : "Vendre",
+            btnX + btnW / 2, btnY + 7, actif ? C_BG : C_MID);
+
         int tx = x + 50;
-        ctx.drawString(font, truncate(FrenchItemNames.toDisplay(e.itemId()), w - 200), tx, y + 9, C_WHITE, false);
+        ctx.drawString(font, truncate(FrenchItemNames.toDisplay(e.itemId()), prixX - tx - 8), tx, y + 9, C_WHITE, false);
         String sub = buying
             ? (e.netFlow() >= 64 ? "§cPrix en hausse — très demandé"
                                  : (e.netFlow() <= -64 ? "§aPrix en baisse — abondant" : "§8Prix stable"))
-            : "§8En stock : " + sellable.getOrDefault(e.itemId(), 0);
-        ctx.drawString(font, sub, tx, y + 22, C_DIM, false);
-
-        int btnW = 82, btnH = 22;
-        int btnX = x + w - btnW - 10;
-        int btnY = y + (ROW_H - btnH) / 2;
-        int prix = buying ? e.buyPrice() : e.sellPrice();
-        String price = prix + " ◆";
-        ctx.drawString(font, price, btnX - font.width(price) - 14,
-            y + (ROW_H - font.lineHeight) / 2, accent, false);
-        ctx.fill(btnX, btnY, btnX + btnW, btnY + btnH, hov ? accent : C_STRIP);
-        if (!hov) { ctx.fill(btnX, btnY, btnX + btnW, btnY + 1, C_BORDER); ctx.fill(btnX, btnY + btnH - 1, btnX + btnW, btnY + btnH, C_BORDER); }
-        ctx.drawCenteredString(font, buying ? "Acheter" : "Vendre",
-            btnX + btnW / 2, btnY + 7, hov ? C_BG : C_MID);
+            : "§8En stock : " + sellable.getOrDefault(e.itemId(), 0) + "  ·  ≈ " + valeurStock(e) + " ◆ le tout";
+        ctx.drawString(font, truncate(sub, prixX - tx - 8), tx, y + 22, C_DIM, false);
     }
 
     private void renderTooltip(GuiGraphics ctx, ShopEntry e, int mx, int my) {
@@ -453,6 +511,69 @@ public class ServerShopScreen extends Screen {
         ctx.pose().popPose();
     }
 
+    // ── Confirmation « Tout vendre » ──────────────────────────────────────────
+
+    private static final int CONF_W = 320, CONF_H = 214, CONF_LIGNES = 7;
+
+    private void renderConfirmTout(GuiGraphics ctx, int mx, int my) {
+        ctx.pose().pushPose();
+        ctx.pose().translate(0, 0, 300);
+
+        int ox = winX + (winW - CONF_W) / 2;
+        int oy = winY + (winH - CONF_H) / 2;
+        ctx.fill(winX, winY, winX + winW, winY + winH, 0xAA000000);
+        ctx.fill(ox, oy, ox + CONF_W, oy + CONF_H, C_SURFACE);
+        ctx.fill(ox, oy, ox + CONF_W, oy + 2, C_GREEN);
+        ctx.drawString(font, "Tout vendre au serveur ?", ox + 14, oy + 12, C_WHITE, false);
+
+        // Les plus gros montants d'abord : c'est eux qu'on regretterait d'avoir vendus
+        List<ShopEntry> list = new ArrayList<>(sellList());
+        list.sort(Comparator.comparingLong((ShopEntry e) -> valeurStock(e)).reversed());
+        long total = 0;
+        for (ShopEntry e : list) total += valeurStock(e);
+
+        int ly = oy + 32;
+        for (int i = 0; i < list.size() && i < CONF_LIGNES; i++) {
+            ShopEntry e = list.get(i);
+            boolean reste = i == CONF_LIGNES - 1 && list.size() > CONF_LIGNES;
+            if (reste) {
+                ctx.drawString(font, "… et " + (list.size() - i) + " autres articles", ox + 14, ly, C_DIM, false);
+            } else {
+                String montant = valeurStock(e) + " ◆";
+                ctx.drawString(font, truncate(sellable.getOrDefault(e.itemId(), 0) + "x "
+                    + FrenchItemNames.toDisplay(e.itemId()), CONF_W - 40 - font.width(montant)), ox + 14, ly, C_MID, false);
+                ctx.drawString(font, montant, ox + CONF_W - 14 - font.width(montant), ly, C_GREEN, false);
+            }
+            ly += 13;
+        }
+
+        int by = oy + CONF_H - 78;
+        ctx.fill(ox + 14, by, ox + CONF_W - 14, by + 1, C_BORDER);
+        ctx.drawString(font, "Total estimé", ox + 14, by + 8, C_WHITE, false);
+        String t = "≈ " + total + " ◆";
+        ctx.drawString(font, t, ox + CONF_W - 14 - font.width(t), by + 8, C_GOLD, false);
+        ctx.drawString(font, "§8Le prix baisse quand on vend beaucoup d'un coup.", ox + 14, by + 22, C_DIM, false);
+
+        int cbY = oy + CONF_H - 34;
+        drawWideButton(ctx, ox + 14, cbY, 120, "Annuler", C_RED, mx, my);
+        drawWideButton(ctx, ox + CONF_W - 134, cbY, 120, "Tout vendre", C_GREEN, mx, my);
+
+        ctx.pose().popPose();
+    }
+
+    private void handleConfirmToutClick(int mx, int my) {
+        int ox = winX + (winW - CONF_W) / 2;
+        int oy = winY + (winH - CONF_H) / 2;
+        if (mx < ox || mx > ox + CONF_W || my < oy || my > oy + CONF_H) { confirmTout = false; return; }
+        int cbY = oy + CONF_H - 34;
+        if (my < cbY || my >= cbY + 22) return;
+        if (mx >= ox + 14 && mx < ox + 134) confirmTout = false;
+        else if (mx >= ox + CONF_W - 134 && mx < ox + CONF_W - 14) {
+            confirmTout = false;
+            send(ShopNetworking.ACTION_SELL_ALL, "", 0);
+        }
+    }
+
     private void drawWideButton(GuiGraphics ctx, int x, int y, int w, String label, int color, int mx, int my) {
         boolean hov = mx >= x && mx < x + w && my >= y && my < y + 22;
         ctx.fill(x, y, x + w, y + 22, hov ? color : C_STRIP);
@@ -477,6 +598,7 @@ public class ServerShopScreen extends Screen {
     public boolean mouseClicked(double mx0, double my0, int btn) {
         int x = (int) mx0, y = (int) my0;
 
+        if (confirmTout) { handleConfirmToutClick(x, y); return true; }
         if (selected != null) { handleModalClick(x, y); return true; }
 
         if (x < winX || x > winX + winW || y < winY || y > winY + winH) { onClose(); return true; }
@@ -487,6 +609,19 @@ public class ServerShopScreen extends Screen {
             && x >= parcheminBtnX && x < parcheminBtnX + parcheminBtnW
             && y >= parcheminBtnY && y < parcheminBtnY + 20) {
             send(ShopNetworking.ACTION_CLAIM_PARCHEMIN, "nouvelle-terre-bridge:parchemin", 1);
+            return true;
+        }
+
+        if (tab == Tab.VENDRE && toutW > 0
+            && x >= toutX && x < toutX + toutW && y >= toutY && y < toutY + 20) {
+            confirmTout = true;
+            return true;
+        }
+
+        // « Tout vendre » d'une ligne : tout le stock de cet article, sans fenêtre
+        if (tab == Tab.VENDRE && hoveredTout != null) {
+            int stock = sellable.getOrDefault(hoveredTout.itemId(), 0);
+            if (stock > 0) send(ShopNetworking.ACTION_SELL, hoveredTout.itemId(), stock);
             return true;
         }
 
@@ -559,13 +694,14 @@ public class ServerShopScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mx, double my, double horizontalAmount, double amount) {
-        if (selected != null) return true;
+        if (selected != null || confirmTout) return true;
         scroll = Math.max(0, Math.min(scroll - (int) Math.signum(amount), maxScroll));
         return true;
     }
 
     @Override
     public boolean keyPressed(int key, int scan, int mod) {
+        if (key == 256 && confirmTout) { confirmTout = false; return true; }
         if (key == 256 && selected != null) { selected = null; return true; }
         if (selected != null && qtyInput.keyPressed(key)) return true;
         return super.keyPressed(key, scan, mod);
@@ -575,6 +711,17 @@ public class ServerShopScreen extends Screen {
     public boolean charTyped(char chr, int mod) {
         if (selected != null && qtyInput.charTyped(chr)) return true;
         return super.charTyped(chr, mod);
+    }
+
+    /**
+     * L'inventaire change sans que cet écran en soit prévenu (objet ramassé, vente
+     * dont la synchronisation arrive après la réponse) : on le relit en continu
+     * tant que l'onglet Vendre est affiché.
+     */
+    @Override
+    public void tick() {
+        super.tick();
+        if (tab == Tab.VENDRE) refreshSellable();
     }
 
     private void send(int action, String itemId, int quantity) {
