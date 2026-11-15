@@ -128,8 +128,10 @@ joueurs — en premier lieu la mémoire laissée par défaut dans le lanceur.
 - **Sacha ne veut retirer aucun mod** pour gagner du temps : ne pas le reproposer.
 - Le mod prévient à la connexion, une fois par lancement, si le jeu a moins de 5,5 Go
   (`NouvelleTerreBridgeClient.signalerMemoireFaible`) : un modpack ne peut pas imposer ce réglage.
-- ModernFix et FerriteCore ont été ajoutés au **profil de test** le 15/11 pour mesurer le
-  gain ; à ajouter au modpack publié si le test est bon.
+- **ModernFix + FerriteCore** (ajoutés au profil de test le 15/11) : lancement mesuré à
+  **47,5 s au lieu de 1 min 30** sur la même machine — chargement des mods 14 s au lieu de
+  38 s, textures et modèles 16 s au lieu de 26 s. À ajouter au modpack publié et au serveur.
+  Une partie du gain peut venir du disque déjà en cache (second lancement de la journée).
 
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
