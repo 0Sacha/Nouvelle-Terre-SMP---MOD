@@ -536,6 +536,12 @@ sac qui la porte revend seul, toutes les 5 s, tout ce qu'il contient de rachetab
   réglages (conteneur + écran côté Sophisticated Core) — non fait. L'interrupteur du module
   permet de l'éteindre.
 - Un seul module par sac (conflit déclaré dans l'item).
+- ⚠ **L'étiquette `sophisticatedbackpacks:upgrade` est obligatoire** : le sac refuse dans
+  ses emplacements de module tout objet qui ne la porte pas, même s'il implémente bien
+  l'interface des modules (`BackpackWrapper$1.isItemValid`). Notre module y est ajouté par
+  `data/sophisticatedbackpacks/tags/item/upgrade.json` (`required: false`, pour ne rien
+  casser sans le mod de sacs). Sans elle, le module se fabrique mais ne se pose pas —
+  constaté en jeu le 16/11.
 - Historique `/bank` : une seule ligne cumulée (`TransactionLog.cumuler`), sinon les ventes
   répétées chasseraient tout le reste.
 - **Dépendance facultative** : `compileOnly` sur Sophisticated Core, pris sur le Maven de
