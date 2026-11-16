@@ -536,6 +536,10 @@ sac qui la porte revend seul, toutes les 5 s, tout ce qu'il contient de rachetab
   réglages (conteneur + écran côté Sophisticated Core) — non fait. L'interrupteur du module
   permet de l'éteindre.
 - Un seul module par sac (conflit déclaré dans l'item).
+- **Où le trouver** (demande de Sacha, 16/11 : « galère de trouver les items de Nouvelle
+  Terre ») : le module est rangé dans l'onglet créatif **du mod de sacs**, avec les autres
+  modules, et tous les objets du mod ont leur propre onglet « Nouvelle Terre »
+  (`NouvelleTerreBridge.ONGLETS`). Tout nouvel objet du mod doit y être ajouté.
 - ⚠ **L'étiquette `sophisticatedbackpacks:upgrade` est obligatoire** : le sac refuse dans
   ses emplacements de module tout objet qui ne la porte pas, même s'il implémente bien
   l'interface des modules (`BackpackWrapper$1.isItemValid`). Notre module y est ajouté par

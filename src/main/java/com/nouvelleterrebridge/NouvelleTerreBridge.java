@@ -162,6 +162,7 @@ public class NouvelleTerreBridge {
             com.nouvelleterrebridge.sac.SacIntegration.enregistrer(ITEMS);
 
         ITEMS.register(modEventBus);
+        ONGLETS.register(modEventBus);
         modEventBus.addListener(this::onBuildCreativeTabs);
         modEventBus.addListener(NtNet::enregistrer);
         NeoForge.EVENT_BUS.register(this);
@@ -228,9 +229,37 @@ public class NouvelleTerreBridge {
             event.accept(SHARD_100.get());
         } else if (event.getTabKey() == CreativeModeTabs.TOOLS_AND_UTILITIES) {
             event.accept(PARCHEMIN.get());
-            if (com.nouvelleterrebridge.sac.SacIntegration.module != null)
-                event.accept(com.nouvelleterrebridge.sac.SacIntegration.module.get());
+        } else if (event.getTabKey().location().equals(ONGLET_SACS)
+                && com.nouvelleterrebridge.sac.SacIntegration.module != null) {
+            // Rangé avec les autres modules de sac : c'est là qu'un joueur le cherche
+            event.accept(com.nouvelleterrebridge.sac.SacIntegration.module.get());
         }
+    }
+
+    /** Onglet créatif de Sophisticated Backpacks, où vivent tous les modules de sac. */
+    private static final net.minecraft.resources.ResourceLocation ONGLET_SACS =
+        net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("sophisticatedbackpacks", "main");
+
+    /** Onglet du mod : tous ses objets au même endroit (inventaire créatif et JEI). */
+    private static final DeferredRegister<net.minecraft.world.item.CreativeModeTab> ONGLETS =
+        DeferredRegister.create(net.minecraft.core.registries.Registries.CREATIVE_MODE_TAB, MOD_ID);
+
+    static {
+        ONGLETS.register("principal", () -> net.minecraft.world.item.CreativeModeTab.builder()
+            .title(net.minecraft.network.chat.Component.literal("Nouvelle Terre"))
+            .icon(() -> new net.minecraft.world.item.ItemStack(PARCHEMIN.get()))
+            .displayItems((params, sortie) -> {
+                sortie.accept(PARCHEMIN.get());
+                sortie.accept(SHARD.get());
+                sortie.accept(SHARD_5.get());
+                sortie.accept(SHARD_10.get());
+                sortie.accept(SHARD_20.get());
+                sortie.accept(SHARD_50.get());
+                sortie.accept(SHARD_100.get());
+                if (com.nouvelleterrebridge.sac.SacIntegration.module != null)
+                    sortie.accept(com.nouvelleterrebridge.sac.SacIntegration.module.get());
+            })
+            .build());
     }
 
     /**
