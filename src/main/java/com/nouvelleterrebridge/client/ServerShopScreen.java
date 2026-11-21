@@ -89,8 +89,8 @@ public class ServerShopScreen extends Screen {
     private boolean confirmTout = false;
     private int toutX = 0, toutY = 0, toutW = 0;
     private boolean surToutGeneral = false;
-    /** Souris sur l'icône d'une ligne : seule zone qui affiche la fiche de l'article. */
-    private boolean surIcone = false;
+    /** Souris sur le bouton Acheter / Vendre d'une ligne : seule zone qui affiche la fiche de l'article. */
+    private boolean surBouton = false;
     private final NumberInput qtyInput = new NumberInput(1, 1, 1);
 
     private String toastMsg = null;
@@ -173,7 +173,7 @@ public class ServerShopScreen extends Screen {
         renderTopBar(ctx, mx, my);
         hovered = null;
         hoveredTout = null;
-        surIcone = false;
+        surBouton = false;
         // Une fenêtre ouverte masque la souris à la liste : rien ne se survole dessous
         boolean fenetre = selected != null || confirmTout;
         int lx = fenetre ? -1 : mx, ly = fenetre ? -1 : my;
@@ -184,9 +184,9 @@ public class ServerShopScreen extends Screen {
         else if (selected != null) renderModal(ctx, mx, my);
         else if (hoveredTout != null) renderInfoToutLigne(ctx, hoveredTout, mx, my);
         else if (surToutGeneral) renderInfoToutGeneral(ctx, mx, my);
-        // Fiche de l'article seulement sur son icône : sur toute la ligne, elle surgissait
-        // dès qu'on passait la souris et gênait la lecture (retour de Sacha, 21/11)
-        else if (hovered != null && surIcone) renderTooltip(ctx, hovered, mx, my);
+        // Fiche de l'article seulement sur le bouton Acheter / Vendre : sur toute la ligne, elle
+        // surgissait dès qu'on passait la souris et gênait la lecture (retour de Sacha, 21/11)
+        else if (hovered != null && surBouton) renderTooltip(ctx, hovered, mx, my);
 
         renderToast(ctx);
         super.render(ctx, mx, my, delta);
@@ -455,7 +455,6 @@ public class ServerShopScreen extends Screen {
         }
 
         ctx.fill(x + 1, y + 1, x + 41, y + ROW_H - 1, C_BG);
-        if (hov && mx >= x && mx < x + 41) surIcone = true;
         drawItemScaled(ctx, stackOf(e.itemId()), x + 21, y + ROW_H / 2, 2.0f);
 
         int btnH = 22;
@@ -478,6 +477,7 @@ public class ServerShopScreen extends Screen {
         int btnW = buying ? 82 : 62;
         int btnX = droite - btnW;
         boolean actif = hov && !surTout;
+        if (hov && mx >= btnX && mx < btnX + btnW && my >= btnY && my < btnY + btnH) surBouton = true;
         int prix = buying ? e.buyPrice() : e.sellPrice();
         String price = prix + " ◆";
         int prixX = btnX - font.width(price) - 14;
