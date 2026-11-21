@@ -89,7 +89,9 @@ GitHub Action crée une Release automatique à chaque push sur `main`.
 Le mod tourne sur le **client ET le serveur** — les joueurs doivent installer
 le JAR NeoForge côté client pour le GUI HDV/Bank/Registre.
 Le mod lui-même n'a besoin ni de Sinytra Connector ni de Forgified Fabric API. Le
-**pack** les garde pour trois mods Fabric-only (`lavender`, `LockAndBlock`, `mcef-fabric`).
+**pack** les garde pour les mods Fabric-only restants (`lavender`, `LockAndBlock`, `continuity`).
+MCEF est repassé en version NeoForge le 21/11 (`mcef-neoforge`) : les joueurs doivent supprimer
+l'ancien `mcef-fabric`.
 
 ⚠ **Tout ce qui arrive sur `main` part en production** : `.github/workflows/build.yml`
 compile, crée la Release, puis remplace le JAR dans `/mods` du serveur par SFTP (le
@@ -184,6 +186,8 @@ Pièges à connaître avant de toucher au pack :
   par Sinytra Connector, y compris des mods sans rapport.
 - **medicalmod** : pas de release 3.x sur GitHub (la `v2.4.1` est une build Fabric). Le jar
   vient d'un clone + `./gradlew build` de `main`.
+- **LittleTiles faisait planter le serveur** (21/11) : remplacé par **Chisels & Bits** (CurseForge
+  uniquement, Scena est inclus dans son jar). CreativeCore n'était là que pour LittleTiles.
 - **Simple Nicknames** remplace `FakenameFabric` sans reprendre ses données.
 - **Sculk Horde** : pas de build NeoForge 1.21.1. La branche `1.21.1` du dépôt officiel
   (`TeamPeril/Sculk-Horde`) est en développement — attendre leur release, ne pas forker.
