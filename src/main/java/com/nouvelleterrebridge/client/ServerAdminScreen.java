@@ -149,7 +149,7 @@ public class ServerAdminScreen extends Screen {
         ctx.drawString(font, "LITIGES — ARBITRAGE", px + PAD + 12, cy + 8, C_DIM, false);
 
         if (litiges.isEmpty()) {
-            ctx.drawCenteredString(font, "Aucun litige en cours.",
+            Texte.centre(ctx, font, "Aucun litige en cours.",
                 px + pw / 2, cy + listH / 2 - 4, C_DIM);
             super.render(ctx, mx, my, delta);
             return;
@@ -199,7 +199,7 @@ public class ServerAdminScreen extends Screen {
         boolean hov = mx >= x && mx < x + w && my >= y && my < y + 18;
         ctx.fill(x, y, x + w, y + 18, hov ? couleur : C_SURFACE);
         ctx.fill(x, y, x + w, y + 1, couleur);
-        ctx.drawCenteredString(font, label, x + w / 2, y + 5, hov ? C_WHITE : C_MID);
+        Texte.centre(ctx, font, label, x + w / 2, y + 5, hov ? C_WHITE : C_MID);
         bounds.add(new int[]{x, y, w, 18, action, id});
         return x;
     }

@@ -389,9 +389,9 @@ public class BankScreen extends Screen {
                     tx + tw / 2 - font.width(tab.label) / 2, tabY + 7, C_BG, false);
             } else if (hov) {
                 ctx.fill(tx, tabY, tx + tw, tabY + 22, C_HOVER);
-                ctx.drawCenteredString(font, tab.label, tx + tw / 2, tabY + 7, C_WHITE);
+                Texte.centre(ctx, font, tab.label, tx + tw / 2, tabY + 7, C_WHITE);
             } else {
-                ctx.drawCenteredString(font, tab.label, tx + tw / 2, tabY + 7, C_DIM);
+                Texte.centre(ctx, font, tab.label, tx + tw / 2, tabY + 7, C_DIM);
             }
             tx += tw + 4;
         }
@@ -496,7 +496,7 @@ public class BankScreen extends Screen {
         ctx.drawString(font, titre + " (" + list.size() + ")", x + 12, y + 8, C_DIM, false);
 
         if (list.isEmpty()) {
-            ctx.drawCenteredString(font, "Aucune", x + w / 2, y + h / 2, C_DIM);
+            Texte.centre(ctx, font, "Aucune", x + w / 2, y + h / 2, C_DIM);
             return;
         }
 
@@ -586,7 +586,7 @@ public class BankScreen extends Screen {
         lbScroll    = Math.max(0, Math.min(lbScroll, lbMaxScroll));
 
         if (visibles.isEmpty()) {
-            ctx.drawCenteredString(font, "Aucun joueur trouvé", px + pw / 2, cy + 20, C_DIM);
+            Texte.centre(ctx, font, "Aucun joueur trouvé", px + pw / 2, cy + 20, C_DIM);
             return;
         }
 
@@ -633,7 +633,7 @@ public class BankScreen extends Screen {
         int btnX = winX + winW - btnW - PAD;
         boolean btnHov = mx >= btnX && mx < btnX + btnW && my >= cy && my < cy + 22;
         ctx.fill(btnX, cy, btnX + btnW, cy + 22, btnHov ? 0xFF1A8050 : C_GREEN);
-        ctx.drawCenteredString(font, btnLabel, btnX + btnW / 2, cy + 7, C_WHITE);
+        Texte.centre(ctx, font, btnLabel, btnX + btnW / 2, cy + 7, C_WHITE);
         newLoanBtnX = btnX; newLoanBtnY = cy; newLoanBtnW = btnW;
         cy += 30;
 
@@ -699,20 +699,20 @@ public class BankScreen extends Screen {
             int ax = px + pw - bw * 2 - 16;
             boolean ah = mx >= ax && mx < ax + bw && my >= ay && my < ay + 20;
             ctx.fill(ax, ay, ax + bw, ay + 20, ah ? 0xFF1A8050 : C_GREEN);
-            ctx.drawCenteredString(font, "Accepter", ax + bw / 2, ay + 6, C_WHITE);
+            Texte.centre(ctx, font, "Accepter", ax + bw / 2, ay + 6, C_WHITE);
             creditBtnBounds.add(new int[]{ax, ay, bw, 20, BankNetworking.ACTION_LOAN_ACCEPT, r.id()});
             // Refuser
             int dx = px + pw - bw - 8;
             boolean dh = mx >= dx && mx < dx + bw && my >= ay && my < ay + 20;
             ctx.fill(dx, ay, dx + bw, ay + 20, dh ? 0xFF8B1030 : C_RED);
-            ctx.drawCenteredString(font, "Refuser", dx + bw / 2, ay + 6, C_WHITE);
+            Texte.centre(ctx, font, "Refuser", dx + bw / 2, ay + 6, C_WHITE);
             creditBtnBounds.add(new int[]{dx, ay, bw, 20, BankNetworking.ACTION_LOAN_DECLINE, r.id()});
         } else {
             // Annuler ma proposition
             int ax = px + pw - bw - 8;
             boolean ah = mx >= ax && mx < ax + bw && my >= ay && my < ay + 20;
             ctx.fill(ax, ay, ax + bw, ay + 20, ah ? 0xFF8B1030 : C_RED);
-            ctx.drawCenteredString(font, "Annuler", ax + bw / 2, ay + 6, C_WHITE);
+            Texte.centre(ctx, font, "Annuler", ax + bw / 2, ay + 6, C_WHITE);
             creditBtnBounds.add(new int[]{ax, ay, bw, 20, BankNetworking.ACTION_LOAN_DECLINE, r.id()});
         }
         return y + rowH + GAP;
@@ -758,17 +758,17 @@ public class BankScreen extends Screen {
         int abY = y + (rowH - 20) / 2;
         if (loan.repaid()) {
             ctx.fill(abX, abY, abX + abW, abY + 20, C_DARK);
-            ctx.drawCenteredString(font, "Rembourse", abX + abW / 2, abY + 6, C_DIM);
+            Texte.centre(ctx, font, "Rembourse", abX + abW / 2, abY + 6, C_DIM);
         } else if (asLender) {
             boolean hov = mx >= abX && mx < abX + abW && my >= abY && my < abY + 20;
             ctx.fill(abX, abY, abX + abW, abY + 20, hov ? 0xFF8B1030 : C_RED);
-            ctx.drawCenteredString(font, "Effacer la dette", abX + abW / 2, abY + 6, C_WHITE);
+            Texte.centre(ctx, font, "Effacer la dette", abX + abW / 2, abY + 6, C_WHITE);
             creditBtnBounds.add(new int[]{abX, abY, abW, 20, BankNetworking.ACTION_LOAN_FORGIVE, loan.id()});
         } else {
             boolean canRepay = balance >= loan.principal();
             boolean hov = canRepay && mx >= abX && mx < abX + abW && my >= abY && my < abY + 20;
             ctx.fill(abX, abY, abX + abW, abY + 20, canRepay ? (hov ? 0xFF1A8050 : C_GREEN) : C_DARK);
-            ctx.drawCenteredString(font, "Rembourser", abX + abW / 2, abY + 6,
+            Texte.centre(ctx, font, "Rembourser", abX + abW / 2, abY + 6,
                 canRepay ? C_WHITE : C_DIM);
             if (canRepay)
                 creditBtnBounds.add(new int[]{abX, abY, abW, 20, BankNetworking.ACTION_LOAN_REPAY, loan.id()});
@@ -851,7 +851,7 @@ public class BankScreen extends Screen {
             && my >= fy && my < fy + 26;
         ctx.fill(mx0 + PAD, fy, mx0 + mw - PAD, fy + 26,
             canCreate ? (cHov ? 0xFF1A8050 : C_GREEN) : C_DARK);
-        ctx.drawCenteredString(font, "Envoyer la proposition",
+        Texte.centre(ctx, font, "Envoyer la proposition",
             mx0 + mw / 2, fy + 9, canCreate ? C_WHITE : C_DIM);
         modalCreateBtnX = mx0 + PAD; modalCreateBtnY = fy; modalCreateBtnW = mw - PAD * 2;
     }
@@ -863,7 +863,7 @@ public class BankScreen extends Screen {
         ctx.fill(x, y, x + 1, y + 22, C_BORDER);
         ctx.fill(x + w - 1, y, x + w, y + 22, C_BORDER);
         ctx.drawString(font, "<", x + 5, y + 7, hL ? C_WHITE : C_DIM, false);
-        ctx.drawCenteredString(font, label, x + w / 2, y + 7, C_WHITE);
+        Texte.centre(ctx, font, label, x + w / 2, y + 7, C_WHITE);
         ctx.drawString(font, ">", x + w - 12, y + 7, hR ? C_WHITE : C_DIM, false);
     }
 
@@ -914,7 +914,7 @@ public class BankScreen extends Screen {
         boolean hov = canWithdraw && mx >= mx0 + PAD && mx < mx0 + mw - PAD && my >= fy && my < fy + 26;
         ctx.fill(mx0 + PAD, fy, mx0 + mw - PAD, fy + 26, canWithdraw ? (hov ? 0xFF1A8050 : C_GREEN) : C_DARK);
         String lbl = amount > balance ? "Solde insuffisant" : "Retirer" + (amount > 0 ? " " + fmt(amount) + " ◆" : "");
-        ctx.drawCenteredString(font, lbl, mx0 + mw / 2, fy + 9, canWithdraw ? C_WHITE : C_DIM);
+        Texte.centre(ctx, font, lbl, mx0 + mw / 2, fy + 9, canWithdraw ? C_WHITE : C_DIM);
         wConfirmBtnY = fy;
     }
 
@@ -967,7 +967,7 @@ public class BankScreen extends Screen {
         ctx.fill(mx0 + PAD, fy, mx0 + mw - PAD, fy + 26, canDeposit ? (hov ? 0xFF1A8050 : C_GREEN) : C_DARK);
         String lbl = enPoche == 0 ? "Aucun Shard en poche"
                                   : "Deposer" + (amount > 0 ? " " + fmt(amount) + " ◆" : "");
-        ctx.drawCenteredString(font, lbl, mx0 + mw / 2, fy + 9, canDeposit ? C_WHITE : C_DIM);
+        Texte.centre(ctx, font, lbl, mx0 + mw / 2, fy + 9, canDeposit ? C_WHITE : C_DIM);
         dConfirmBtnY = fy;
     }
 
@@ -1348,7 +1348,7 @@ public class BankScreen extends Screen {
                 boolean sendHov = canSend && mx >= c1x + 10 && mx < c1x + cardW - 10 && my >= fy && my < fy + 22;
                 trfSendBtnY = fy;
                 ctx.fill(c1x + 10, fy, c1x + cardW - 10, fy + 22, canSend ? (sendHov ? 0xFF1A8050 : C_GREEN) : C_DARK);
-                ctx.drawCenteredString(font, "Envoyer", c1x + cardW / 2, fy + 7, canSend ? C_WHITE : C_DIM);
+                Texte.centre(ctx, font, "Envoyer", c1x + cardW / 2, fy + 7, canSend ? C_WHITE : C_DIM);
             }
         }
 
@@ -1388,7 +1388,7 @@ public class BankScreen extends Screen {
                 boolean createHov = canCreate && mx >= c2x + 10 && mx < c2x + cardW - 10 && my >= fy && my < fy + 22;
                 recurCreateBtnY = fy;
                 ctx.fill(c2x + 10, fy, c2x + cardW - 10, fy + 22, canCreate ? (createHov ? 0xFF1A8050 : C_GREEN) : C_DARK);
-                ctx.drawCenteredString(font, "Creer", c2x + cardW / 2, fy + 7, canCreate ? C_WHITE : C_DIM);
+                Texte.centre(ctx, font, "Creer", c2x + cardW / 2, fy + 7, canCreate ? C_WHITE : C_DIM);
             }
         }
 
@@ -1421,7 +1421,7 @@ public class BankScreen extends Screen {
                 ctx.fill(cancelX, cancelBtnY + 13, cancelX + 54, cancelBtnY + 14, C_BORDER);
                 ctx.fill(cancelX, cancelBtnY, cancelX + 1, cancelBtnY + 14, C_BORDER);
                 ctx.fill(cancelX + 53, cancelBtnY, cancelX + 54, cancelBtnY + 14, C_BORDER);
-                ctx.drawCenteredString(font, "Annuler", cancelX + 27, cancelBtnY + 3, cancelHov ? C_WHITE : C_DIM);
+                Texte.centre(ctx, font, "Annuler", cancelX + 27, cancelBtnY + 3, cancelHov ? C_WHITE : C_DIM);
                 recurCancelBtnY.add(cancelBtnY);
             }
         }

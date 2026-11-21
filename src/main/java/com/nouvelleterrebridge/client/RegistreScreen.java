@@ -109,7 +109,7 @@ public class RegistreScreen extends Screen {
         ctx.fill(px, py + HEADER, px + pw, py + HEADER + 1, C_BORDER);
         HubBackButton.render(ctx, font, px + PAD, py + (HEADER - HubBackButton.H) / 2, mouseX, mouseY);
         int titleX = px + PAD + HubBackButton.W + 8;
-        ctx.drawString(font, "§lRegistre des personnages", titleX, py + 10, C_GOLD, false);
+        ctx.drawString(font, "Registre des personnages", titleX, py + 10, C_GOLD, false);
         long online = personnages.stream().filter(PersonnageData::enLigne).count();
         ctx.drawString(font, online + " en ligne · " + personnages.size() + " personnages",
             titleX, py + 24, C_DIM, false);
@@ -168,7 +168,7 @@ public class RegistreScreen extends Screen {
     private void renderLoading(GuiGraphics ctx) {
         ctx.fill(px, py, px + pw, py + HEADER, C_PANEL);
         ctx.fill(px, py + HEADER, px + pw, py + HEADER + 1, C_BORDER);
-        ctx.drawString(font, "§lRegistre", px + PAD, py + 14, C_GOLD, false);
+        ctx.drawString(font, "Registre", px + PAD, py + 14, C_GOLD, false);
 
         String msg = "Chargement de la fiche...";
         ctx.drawString(font, "§7" + msg,
@@ -190,8 +190,8 @@ public class RegistreScreen extends Screen {
 
         // Nom RP + dot statut
         int titleX = px + PAD + 62;
-        ctx.drawString(font, "§l" + detail.nomRp(), titleX, py + 10, C_WHITE, false);
-        int titleW = font.width("§l" + detail.nomRp());
+        ctx.drawString(font, detail.nomRp(), titleX, py + 10, C_WHITE, false);
+        int titleW = font.width(detail.nomRp());
         ctx.fill(titleX + titleW + 6, py + 13, titleX + titleW + 12, py + 19,
             detail.enLigne() ? C_GREEN : C_DIM);
 

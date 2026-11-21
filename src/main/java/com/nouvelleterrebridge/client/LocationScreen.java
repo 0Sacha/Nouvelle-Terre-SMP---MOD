@@ -315,7 +315,7 @@ public class LocationScreen extends Screen {
                 ctx.fill(tx, tabY, tx + tw, tabY + 22, C_GOLD);
                 ctx.drawString(font, t.label, tx + tw / 2 - font.width(t.label) / 2, tabY + 7, C_BG, false);
             } else {
-                ctx.drawCenteredString(font, t.label, tx + tw / 2, tabY + 7, hov ? C_WHITE : C_DIM);
+                Texte.centre(ctx, font, t.label, tx + tw / 2, tabY + 7, hov ? C_WHITE : C_DIM);
             }
             tx += tw + 4;
         }
@@ -340,7 +340,7 @@ public class LocationScreen extends Screen {
         survol = ItemStack.EMPTY;
 
         if (lignes.isEmpty()) {
-            ctx.drawCenteredString(font, vide(), winX + winW / 2, gy + gh / 2, C_DIM);
+            Texte.centre(ctx, font, vide(), winX + winW / 2, gy + gh / 2, C_DIM);
             maxScroll = 0;
             return;
         }
@@ -388,7 +388,7 @@ public class LocationScreen extends Screen {
                 boolean bh = libre && mx >= bx && mx < bx + bw && my >= by && my < by + BTN_H;
                 ctx.fill(bx, by, bx + bw, by + BTN_H, bh || attente ? btn.couleur() : C_STRIP);
                 ctx.fill(bx, by, bx + bw, by + 1, btn.couleur());
-                ctx.drawCenteredString(font, label, bx + bw / 2, by + 7, bh || attente ? C_BG : C_WHITE);
+                Texte.centre(ctx, font, label, bx + bw / 2, by + 7, bh || attente ? C_BG : C_WHITE);
                 btnBounds.add(new int[]{bx, by, bw});
                 btnCibles.add(btn);
                 bx -= 6;
@@ -515,7 +515,7 @@ public class LocationScreen extends Screen {
         boolean hov = mx >= x && mx < x + w && my >= y && my < y + 22;
         ctx.fill(x, y, x + w, y + 22, hov ? color : C_STRIP);
         ctx.fill(x, y, x + w, y + 1, color);
-        ctx.drawCenteredString(font, label, x + w / 2, y + 7, hov ? C_BG : C_WHITE);
+        Texte.centre(ctx, font, label, x + w / 2, y + 7, hov ? C_BG : C_WHITE);
     }
 
     private void renderToast(GuiGraphics ctx) {

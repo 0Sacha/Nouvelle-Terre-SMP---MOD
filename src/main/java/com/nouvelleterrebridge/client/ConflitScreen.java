@@ -153,7 +153,7 @@ public class ConflitScreen extends Screen {
             ? "⚔ Déclarer le conflit contre " + players.get(selectedIdx)
             : "Sélectionne un joueur";
         lbl = truncate(lbl, pw - PAD * 2 - 12);
-        ctx.drawCenteredString(font, lbl, px + pw / 2, declareBtnY + 8,
+        Texte.centre(ctx, font, lbl, px + pw / 2, declareBtnY + 8,
             canDeclare ? C_WHITE : C_DIM);
 
         super.render(ctx, mx, my, delta);

@@ -110,7 +110,7 @@ public class NumberInput {
         boolean hov = mx >= x && mx < x + w && my >= y && my < y + STEP_H;
         ctx.fill(x, y, x + w, y + STEP_H, hov ? C_HOVER : C_SURFACE);
         ctx.fill(x, y, x + w, y + 1, hov ? C_GOLD : C_BORDER);
-        ctx.drawCenteredString(tr, label, x + w / 2, y + (STEP_H - tr.lineHeight) / 2,
+        Texte.centre(ctx, tr, label, x + w / 2, y + (STEP_H - tr.lineHeight) / 2,
             hov ? C_GOLD : C_MID);
     }
 

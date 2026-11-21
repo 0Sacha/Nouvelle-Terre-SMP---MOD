@@ -33,7 +33,7 @@ public final class HubBackButton {
         ctx.fill(x, y + H - 1, x + W, y + H, hov ? C_GOLD : 0xFF2A2D38);
         ctx.fill(x, y, x + 1, y + H, hov ? C_GOLD : 0xFF2A2D38);
         ctx.fill(x + W - 1, y, x + W, y + H, hov ? C_GOLD : 0xFF2A2D38);
-        ctx.drawCenteredString(tr, "←", x + W / 2, y + (H - tr.lineHeight) / 2, hov ? C_GOLD : C_MID);
+        Texte.centre(ctx, tr, "←", x + W / 2, y + (H - tr.lineHeight) / 2, hov ? C_GOLD : C_MID);
     }
 
     /** Ouvre le hub si le clic tombe sur la flèche. @return true si le clic a été consommé. */

@@ -240,8 +240,8 @@ public class HudEditorScreen extends Screen {
 
         int ty = py + (ENTETE_H - 8) / 2;
         ctx.drawString(font, "◆", px + 14, ty, C_ACCENT, false);
-        ctx.drawString(font, "§lNOUVELLE", px + 26, ty, C_BLANC, false);
-        int tx = px + 26 + font.width("§lNOUVELLE") + 5;
+        ctx.drawString(font, "NOUVELLE", px + 26, ty, C_BLANC, false);
+        int tx = px + 26 + font.width("NOUVELLE") + 5;
         ctx.drawString(font, "TERRE", tx, ty, C_GRIS, false);
         tx += font.width("TERRE") + 22;
 
@@ -256,7 +256,7 @@ public class HudEditorScreen extends Screen {
         int fx = px + pw - 30, fy = py + 10;
         boolean hov = dans(mx, my, fx, fy, 20, 20);
         HudWidget.fondArrondi(ctx, fx, fy, 20, 20, hov ? C_ROUGE : C_CARTE);
-        ctx.drawCenteredString(font, "✕", fx + 10, fy + 6, hov ? C_BLANC : C_GRIS);
+        Texte.centre(ctx, font, "✕", fx + 10, fy + 6, hov ? C_BLANC : C_GRIS);
         zones.add(new Zone(fx, fy, 20, 20, this::onClose));
     }
 
@@ -267,7 +267,7 @@ public class HudEditorScreen extends Screen {
         boolean hov = dans(mx, my, x, y, w, 20);
         HudWidget.fondArrondi(ctx, x, y, w, 20, actif ? C_BARRE_H : (hov ? C_BARRE : C_CARTE));
         cadre(ctx, x, y, w, 20, actif ? C_GRIS : C_BORD);
-        ctx.drawCenteredString(font, t, x + w / 2, y + 6, actif || hov ? C_BLANC : C_GRIS);
+        Texte.centre(ctx, font, t, x + w / 2, y + 6, actif || hov ? C_BLANC : C_GRIS);
         zones.add(new Zone(x, y, w, 20, action));
         return x + w + 8;
     }
@@ -293,7 +293,7 @@ public class HudEditorScreen extends Screen {
             // Suppression : sur les autres profils seulement, enregistrée après → prioritaire
             if (!estActif && hov) {
                 boolean hovX = dans(mx, my, x + w - 16, y, 16, 18);
-                ctx.drawCenteredString(font, "✕", x + w - 8, y + 5, hovX ? HudWidget.C_RED : C_SOMBRE);
+                Texte.centre(ctx, font, "✕", x + w - 8, y + 5, hovX ? HudWidget.C_RED : C_SOMBRE);
                 zones.add(new Zone(x + w - 16, y, 16, 18, () -> supprimerProfil(nom)));
             }
             y += 21;
@@ -303,7 +303,7 @@ public class HudEditorScreen extends Screen {
         int by = bas - 20;
         boolean hov = dans(mx, my, x, by, w, 20);
         HudWidget.fondArrondi(ctx, x, by, w, 20, hov ? 0xFFF2B94F : C_ACCENT);
-        ctx.drawCenteredString(font, "§lDISPOSITION DU HUD", x + w / 2, by + 6, C_CREUX);
+        Texte.centre(ctx, font, "DISPOSITION DU HUD", x + w / 2, by + 6, C_CREUX);
         zones.add(new Zone(x, by, w, 20, () -> mode = Mode.PLACEMENT));
 
         by -= 26;
@@ -311,7 +311,7 @@ public class HudEditorScreen extends Screen {
         boolean hovN = !plein && dans(mx, my, x, by, w, 18);
         HudWidget.fondArrondi(ctx, x, by, w, 18, hovN ? C_BARRE : C_CREUX);
         cadre(ctx, x, by, w, 18, C_BORD);
-        ctx.drawCenteredString(font, plein ? "Maximum atteint" : "NOUVEAU PROFIL",
+        Texte.centre(ctx, font, plein ? "Maximum atteint" : "NOUVEAU PROFIL",
             x + w / 2, by + 5, plein ? C_SOMBRE : (hovN ? C_BLANC : C_GRIS));
         if (!plein) zones.add(new Zone(x, by, w, 18, HudEditorScreen::nouveauProfil));
 
@@ -347,7 +347,7 @@ public class HudEditorScreen extends Screen {
             boolean actif = cat.equals(categorie);
             boolean hov = dans(mx, my, cx, y0, cw, 18);
             HudWidget.fondArrondi(ctx, cx, y0, cw, 18, actif ? C_ACCENT : (hov ? C_BARRE_H : C_BARRE));
-            ctx.drawCenteredString(font, t, cx + cw / 2, y0 + 5, actif ? C_CREUX : (hov ? C_BLANC : C_GRIS));
+            Texte.centre(ctx, font, t, cx + cw / 2, y0 + 5, actif ? C_CREUX : (hov ? C_BLANC : C_GRIS));
             zones.add(new Zone(cx, y0, cw, 18, () -> { categorie = cat; scroll = 0; }));
             cx += cw + 6;
         }
@@ -372,7 +372,7 @@ public class HudEditorScreen extends Screen {
         scroll = Math.max(0, Math.min(scroll, maxScroll));
 
         if (liste.isEmpty())
-            ctx.drawCenteredString(font, "Aucun widget ne correspond.", gx + gw / 2, gy + gh / 2, C_SOMBRE);
+            Texte.centre(ctx, font, "Aucun widget ne correspond.", gx + gw / 2, gy + gh / 2, C_SOMBRE);
 
         ctx.enableScissor(gx, gy, gx + gw, gy + gh);
         boolean dansGrille = dans(mx, my, gx, gy, gw, gh);
@@ -402,16 +402,16 @@ public class HudEditorScreen extends Screen {
 
         // Aperçu réel du widget, à la place d'une icône
         w.renderApercu(ctx, mc, x + cw / 2, y + 28, cw - 20, 40);
-        ctx.drawCenteredString(font, w.label, x + cw / 2, y + 56, w.enabled ? C_BLANC : C_GRIS);
+        Texte.centre(ctx, font, w.label, x + cw / 2, y + 56, w.enabled ? C_BLANC : C_GRIS);
 
         // Rangée Options + placement
         int ry = y + 72, pwBtn = 22;
         boolean hovO = dansGrille && dans(mx, my, x, ry, cw - pwBtn, 19);
         boolean hovP = dansGrille && dans(mx, my, x + cw - pwBtn, ry, pwBtn, 19);
         ctx.fill(x, ry, x + cw - pwBtn, ry + 19, hovO ? C_BARRE_H : C_BARRE);
-        ctx.drawCenteredString(font, espace("OPTIONS"), x + (cw - pwBtn) / 2, ry + 6, hovO ? C_BLANC : C_GRIS);
+        Texte.centre(ctx, font, espace("OPTIONS"), x + (cw - pwBtn) / 2, ry + 6, hovO ? C_BLANC : C_GRIS);
         ctx.fill(x + cw - pwBtn + 1, ry, x + cw, ry + 19, hovP ? C_ACCENT : C_BARRE);
-        ctx.drawCenteredString(font, "✥", x + cw - pwBtn / 2, ry + 6, hovP ? C_CREUX : C_GRIS);
+        Texte.centre(ctx, font, "✥", x + cw - pwBtn / 2, ry + 6, hovP ? C_CREUX : C_GRIS);
 
         // Barre d'état, sur toute la largeur
         int by = y + 92;
@@ -419,7 +419,7 @@ public class HudEditorScreen extends Screen {
         int couleur = w.enabled ? (hovB ? C_VERT_H : C_VERT) : (hovB ? C_ROUGE_H : C_ROUGE);
         ctx.fill(x, by, x + cw, by + 19, couleur);
         ctx.fill(x + 1, by + 19, x + cw - 1, by + 20, couleur);
-        ctx.drawCenteredString(font, espace(w.enabled ? "ACTIVÉ" : "DÉSACTIVÉ"), x + cw / 2, by + 6, C_BLANC);
+        Texte.centre(ctx, font, espace(w.enabled ? "ACTIVÉ" : "DÉSACTIVÉ"), x + cw / 2, by + 6, C_BLANC);
 
         zone(x, ry, cw - pwBtn, 19, haut, bas, () -> ouvrirOptions(w, Mode.MODS));
         zone(x + cw - pwBtn, ry, pwBtn, 19, haut, bas, () -> { w.enabled = true; mode = Mode.PLACEMENT; });
@@ -523,7 +523,7 @@ public class HudEditorScreen extends Screen {
         boolean hov = dans(mx, my, x, y, w, 20);
         HudWidget.fondArrondi(ctx, x, y, w, 20, hov ? couleur : C_CARTE);
         if (!hov) ctx.fill(x + 1, y + 19, x + w - 1, y + 20, couleur);
-        ctx.drawCenteredString(font, label, x + w / 2, y + 6, hov && couleur == C_ACCENT ? C_CREUX : C_BLANC);
+        Texte.centre(ctx, font, label, x + w / 2, y + 6, hov && couleur == C_ACCENT ? C_CREUX : C_BLANC);
         zones.add(new Zone(x, y, w, 20, action));
     }
 
@@ -572,10 +572,10 @@ public class HudEditorScreen extends Screen {
         boolean bhov = saisi == null && dans(mx, my, bx, by, bw, bh);
         HudWidget.fondArrondi(ctx, bx, by, bw, bh, bhov ? C_ACCENT : 0xE0101216);
         if (!bhov) cadre(ctx, bx, by, bw, bh, C_ACCENT);
-        ctx.drawCenteredString(font, "§l" + espace("MODS"), width / 2, by + 8, bhov ? C_CREUX : C_ACCENT);
-        ctx.drawCenteredString(font, "Glisser : déplacer  ·  Molette : taille  ·  Clic droit : options",
+        Texte.centre(ctx, font, espace("MODS"), width / 2, by + 8, bhov ? C_CREUX : C_ACCENT);
+        Texte.centre(ctx, font, "Glisser : déplacer  ·  Molette : taille  ·  Clic droit : options",
             width / 2, by + bh + 8, C_GRIS);
-        ctx.drawCenteredString(font, "Maj : désactiver l'alignement  ·  Échap : revenir au menu",
+        Texte.centre(ctx, font, "Maj : désactiver l'alignement  ·  Échap : revenir au menu",
             width / 2, by + bh + 20, C_SOMBRE);
 
         // Étiquette du widget survolé, par-dessus tout

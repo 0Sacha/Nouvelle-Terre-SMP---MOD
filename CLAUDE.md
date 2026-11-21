@@ -138,7 +138,8 @@ joueurs — en premier lieu la mémoire laissée par défaut dans le lanceur.
 ## Convention de version
 - Format : `x.y.z` semver (dans `gradle.properties` → `mod_version`) — le suffixe `-beta` a été abandonné en 1.0.0
 - **Incrémenter la version avant chaque rebuild/push.**
-- Version actuelle : `2.3.0` (vente rapide — voir « Vente rapide »)
+- Version actuelle : `2.3.1` (vente rapide — voir « Vente rapide »)
+  - 2.3.1 : plus aucun texte gras ni ombré dans les écrans (`client/Texte`), infobulles du « Tout vendre »
   - 2.3.0 : « Tout vendre » au Shop Serveur, module de vente pour sacs à dos
   - 2.2.3 : Parchemin refait sur le modèle du Guide (liste + volet de détail, icônes d'objets)
   - 2.2.2 : menu du HUD refait (barre latérale, profils, filtres, cartes Activé/Désactivé)
@@ -1369,6 +1370,14 @@ Avant la 2.2.0 chaque widget avait ses champs dans `ClientConfig` (`coordsX`,
 - **Tab list** : `ServerPlayerEntityMixin.getPlayerListName()` lit le cache `nomsRP` côté serveur
   → `PlayerListS2CPacket(UPDATE_DISPLAY_NAME)` broadcast immédiat après fetchNomRP pour que tous les clients voient le nom RP
 - `URLEncoder.encode(secret, UTF_8)` dans les query params GET — les chars spéciaux (`=`, `+`, etc.) cassent `URI.create()` sinon
+
+## ⚠ Textes : jamais de gras ni d'ombre (demandé plusieurs fois par Sacha)
+- Texte centré : **`Texte.centre(ctx, font, …)`**, jamais `GuiGraphics.drawCenteredString`, qui
+  ajoute toujours une ombre portée — les petits libellés paraissent alors gras et brouillés,
+  surtout sur un bouton coloré. Texte aligné à gauche : `drawString(…, false)`.
+- Aucun code `§l` dans les écrans. Les 67 appels ombrés et 68 `§l` ont été retirés en 2.3.1 ;
+  signalé une première fois en 1.5.0 (LeBonCube), puis à nouveau sur le « Tout vendre ».
+- Les messages de chat des commandes (`EconomieCommand`…) gardent leur gras : hors écrans.
 
 ## Couleurs communes (HdvScreen / BankScreen)
 ```java
