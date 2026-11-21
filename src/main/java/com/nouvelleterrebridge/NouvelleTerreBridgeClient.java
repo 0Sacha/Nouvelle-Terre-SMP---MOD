@@ -159,6 +159,31 @@ public class NouvelleTerreBridgeClient {
             Minecraft client = Minecraft.getInstance();
             ServerData info = client.getCurrentServer();
             if (info != null) DiscordRPCManager.INSTANCE.onJoin(info.ip);
+            signalerMemoireFaible(client);
+        }
+
+        /** En dessous, le pack passe son temps à libérer de la mémoire : lancement et jeu ralentis. */
+        private static final long MEMOIRE_MINIMALE_MO = 5500;
+        private static boolean memoireSignalee = false;
+
+        /**
+         * Prévient, une fois par lancement, le joueur qui a laissé la mémoire par défaut de
+         * son lanceur. C'est la première cause des lancements de plusieurs minutes, et un
+         * modpack ne peut pas imposer ce réglage : seul le joueur peut le changer.
+         */
+        private static void signalerMemoireFaible(Minecraft client) {
+            long maxMo = Runtime.getRuntime().maxMemory() / (1024 * 1024);
+            if (memoireSignalee || maxMo >= MEMOIRE_MINIMALE_MO) return;
+            memoireSignalee = true;
+            String go = String.format(java.util.Locale.FRENCH, "%.1f", maxMo / 1024.0);
+            client.execute(() -> {
+                var chat = client.gui.getChat();
+                chat.addMessage(net.minecraft.network.chat.Component.literal(
+                    "§6[Nouvelle Terre] §eLe jeu n'a que §f" + go + " Go §ede mémoire : il se lance et tourne lentement."));
+                chat.addMessage(net.minecraft.network.chat.Component.literal(
+                    "§7Dans Modrinth : ouvre l'instance → roue dentée → §fJava et mémoire §7→ mets §f8 Go"
+                    + " §7(6 Go si ton PC n'a que 8 Go de RAM), puis relance le jeu."));
+            });
         }
 
         static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {

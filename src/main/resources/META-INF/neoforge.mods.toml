@@ -34,3 +34,11 @@ type="required"
 versionRange="[1.21.1,1.22)"
 ordering="NONE"
 side="BOTH"
+
+# Facultatif : le module de vente pour sacs à dos n'est enregistré que s'il est présent.
+[[dependencies.nouvelle_terre_bridge]]
+modId="sophisticatedcore"
+type="optional"
+versionRange="[1.5.1,)"
+ordering="AFTER"
+side="BOTH"

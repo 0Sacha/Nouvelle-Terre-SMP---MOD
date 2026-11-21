@@ -32,12 +32,21 @@ neoForge {
 
 repositories {
 	mavenCentral()
+	// Sophisticated Core n'est publié sur aucun dépôt Maven ouvert : on passe par celui de Modrinth.
+	maven {
+		url = "https://api.modrinth.com/maven"
+		content { includeGroup "maven.modrinth" }
+	}
 }
 
 dependencies {
 	// HTTP via java.net.http.HttpClient (JDK intégré - aucune dépendance externe)
 	// Cadmus n'a pas de build 1.21.1 à ce jour : intégration par réflexion suspendue
 	// (voir NouvelleTerreBridge, recherche de ModList.get().isLoaded("cadmus")).
+
+	// Module de vente pour sacs à dos (package `sac`). compileOnly : le mod démarre sans,
+	// l'objet n'est simplement pas enregistré. Version = celle du pack en production.
+	compileOnly "maven.modrinth:sophisticated-core:1.21.1-1.5.1.2341"
 }
 
 processResources {

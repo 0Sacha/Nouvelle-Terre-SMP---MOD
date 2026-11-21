@@ -35,6 +35,24 @@ public final class TransactionLog {
         }
     }
 
+    /**
+     * Comme {@link #log}, mais ajoute le montant à la dernière ligne si elle porte
+     * déjà ce type et ce libellé. Pour les gains répétés à haute fréquence, qui
+     * chasseraient sinon tout le reste de l'historique.
+     */
+    public static void cumuler(String player, int type, String label, int amount) {
+        Deque<Entry> q = logs.computeIfAbsent(player.toLowerCase(), k -> new ArrayDeque<>());
+        synchronized (q) {
+            Entry tete = q.peekFirst();
+            if (tete != null && tete.type() == type && tete.label().equals(label)) {
+                q.removeFirst();
+                amount += tete.amount();
+            }
+            q.addFirst(new Entry(type, label, amount, System.currentTimeMillis()));
+            while (q.size() > MAX) q.removeLast();
+        }
+    }
+
     public static List<Entry> getLast(String player, int n) {
         Deque<Entry> q = logs.get(player.toLowerCase());
         if (q == null) return List.of();
