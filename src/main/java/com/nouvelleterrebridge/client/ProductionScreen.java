@@ -201,7 +201,7 @@ public class ProductionScreen extends Screen {
         ctx.disableScissor();
 
         if (list.isEmpty())
-            ctx.drawCenteredString(font, "Aucun item ne correspond.",
+            Texte.centre(ctx, font, "Aucun item ne correspond.",
                 px + pw / 2, listY + listH / 2, C_DIM);
 
         // Scrollbar
@@ -357,7 +357,7 @@ public class ProductionScreen extends Screen {
             armed ? "Confirmer la suppression ?" : "Supprimer du catalogue",
             C_RED, mx, my, ProductionNetworking.ACTION_DELETE);
 
-        ctx.drawCenteredString(font, "Échap pour fermer", ox + mw / 2, oy + mh - 14, C_DIM);
+        Texte.centre(ctx, font, "Échap pour fermer", ox + mw / 2, oy + mh - 14, C_DIM);
         ctx.pose().popPose();
     }
 
@@ -366,7 +366,7 @@ public class ProductionScreen extends Screen {
         boolean hov = mx >= x && mx < x + w && my >= y && my < y + 22;
         ctx.fill(x, y, x + w, y + 22, hov ? color : C_SURFACE);
         ctx.fill(x, y, x + w, y + 1, color);
-        ctx.drawCenteredString(font, label, x + w / 2, y + 7, hov ? C_BG : color);
+        Texte.centre(ctx, font, label, x + w / 2, y + 7, hov ? C_BG : color);
         rowBtnBounds.add(new int[]{x, y, w, 22, action});
     }
 

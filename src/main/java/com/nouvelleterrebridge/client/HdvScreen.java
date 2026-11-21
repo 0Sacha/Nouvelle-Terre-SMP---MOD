@@ -312,9 +312,9 @@ public class HdvScreen extends Screen {
                 ctx.drawString(font, tab.label, tx + tw / 2 - font.width(tab.label) / 2, tabY + 7, C_BG, false);
             } else if (hov) {
                 ctx.fill(tx, tabY, tx + tw, tabY + 22, C_HOVER);
-                ctx.drawCenteredString(font, tab.label, tx + tw / 2, tabY + 7, C_WHITE);
+                Texte.centre(ctx, font, tab.label, tx + tw / 2, tabY + 7, C_WHITE);
             } else {
-                ctx.drawCenteredString(font, tab.label, tx + tw / 2, tabY + 7, C_DIM);
+                Texte.centre(ctx, font, tab.label, tx + tw / 2, tabY + 7, C_DIM);
             }
             tx += tw + 4;
         }
@@ -447,12 +447,12 @@ public class HdvScreen extends Screen {
             String emptyMsg = hasOwn
                 ? "Vos annonces sont visibles dans l'onglet 'Mon Shop'"
                 : "Aucun article disponible";
-            ctx.drawCenteredString(font, emptyMsg, cx + cw / 2, gridY + gridH / 2, C_DIM);
+            Texte.centre(ctx, font, emptyMsg, cx + cw / 2, gridY + gridH / 2, C_DIM);
         }
 
         String pg = items.size() + " article" + (items.size() > 1 ? "s" : "");
         if (gridMaxScroll > 0) pg += "  •  molette ou barre pour faire défiler";
-        ctx.drawCenteredString(font, pg, cx + cw / 2, winY + winH - 20, C_DIM);
+        Texte.centre(ctx, font, pg, cx + cw / 2, winY + winH - 20, C_DIM);
     }
 
     /**
@@ -539,7 +539,7 @@ public class HdvScreen extends Screen {
             y + (ROW_H - font.lineHeight) / 2, C_GOLD, false);
         ctx.fill(btnX, btnY, btnX + btnW, btnY + btnH, hov ? C_GOLD : C_STRIP);
         if (!hov) { ctx.fill(btnX, btnY, btnX + btnW, btnY + 1, C_BORDER); ctx.fill(btnX, btnY + btnH - 1, btnX + btnW, btnY + btnH, C_BORDER); }
-        ctx.drawCenteredString(font, "Acheter", btnX + btnW / 2, btnY + 7, hov ? C_BG : C_MID);
+        Texte.centre(ctx, font, "Acheter", btnX + btnW / 2, btnY + 7, hov ? C_BG : C_MID);
     }
 
     // ── Modal achat ───────────────────────────────────────────────────────────
@@ -608,9 +608,9 @@ public class HdvScreen extends Screen {
         ctx.fill(x + 10, btnY, x + 10 + half, btnY + 24, C_HOVER);
         ctx.fill(x + 10, btnY, x + 10 + half, btnY + 1, C_BORDER);
         ctx.fill(x + 10, btnY + 23, x + 10 + half, btnY + 24, C_BORDER);
-        ctx.drawCenteredString(font, "Annuler", x + 10 + half / 2, btnY + 8, C_MID);
+        Texte.centre(ctx, font, "Annuler", x + 10 + half / 2, btnY + 8, C_MID);
         ctx.fill(x + MODAL_W - 10 - half, btnY, x + MODAL_W - 10, btnY + 24, canAfford ? C_GOLD : C_DARK);
-        ctx.drawCenteredString(font, "Acheter", x + MODAL_W - 10 - half / 2, btnY + 8, canAfford ? C_BG : C_DIM);
+        Texte.centre(ctx, font, "Acheter", x + MODAL_W - 10 - half / 2, btnY + 8, canAfford ? C_BG : C_DIM);
         ctx.pose().popPose();
     }
 
@@ -672,12 +672,12 @@ public class HdvScreen extends Screen {
             ctx.drawString(font, badge, cx + cellW - bw, cy + 3, C_DIM, false);
 
             String name = truncate(FrenchItemNames.toDisplay(si.itemId()), cellW - 6);
-            ctx.drawCenteredString(font, name, cx + cellW / 2, cy + iconAreaH + 5, sel ? C_WHITE : C_MID);
+            Texte.centre(ctx, font, name, cx + cellW / 2, cy + iconAreaH + 5, sel ? C_WHITE : C_MID);
         }
         ctx.disableScissor();
 
         if (sellInv.isEmpty()) {
-            ctx.drawCenteredString(font, "Inventaire vide", winX + PAD + invW / 2, winY + TOP_H + (winH - TOP_H) / 2, C_DIM);
+            Texte.centre(ctx, font, "Inventaire vide", winX + PAD + invW / 2, winY + TOP_H + (winH - TOP_H) / 2, C_DIM);
         }
 
         ctx.fill(formX, winY + TOP_H + PAD, formX + formW, winY + winH - PAD, C_SURFACE);
@@ -694,7 +694,7 @@ public class HdvScreen extends Screen {
             ctx.drawString(font, stockLine, formX + 44, fy + 20, C_DIM, false);
         } else {
             ctx.fill(formX + 8, fy, formX + formW - 8, fy + 36, C_STRIP);
-            ctx.drawCenteredString(font, "<- Choisissez un item", formX + formW / 2, fy + 14, C_DARK);
+            Texte.centre(ctx, font, "<- Choisissez un item", formX + formW / 2, fy + 14, C_DARK);
         }
         fy += 46;
 
@@ -730,7 +730,7 @@ public class HdvScreen extends Screen {
         boolean canSell = selectedSellItem != null && sellPrice > 0 && sellQty > 0 && sellQty <= selectedSellItem.qty();
         int btnY = winY + winH - PAD - 28;
         ctx.fill(formX + 8, btnY, formX + formW - 8, btnY + 22, canSell ? C_GOLD : C_BORDER);
-        ctx.drawCenteredString(font, "Mettre en vente", formX + formW / 2, btnY + 7, canSell ? C_BG : C_DARK);
+        Texte.centre(ctx, font, "Mettre en vente", formX + formW / 2, btnY + 7, canSell ? C_BG : C_DARK);
     }
 
     // ── Onglet Mon Shop ───────────────────────────────────────────────────────
@@ -744,7 +744,7 @@ public class HdvScreen extends Screen {
         py += font.lineHeight + 10;
 
         if (mine.isEmpty()) {
-            ctx.drawCenteredString(font, "Vous n'avez aucune annonce.", winX + winW / 2, py + 50, C_DIM);
+            Texte.centre(ctx, font, "Vous n'avez aucune annonce.", winX + winW / 2, py + 50, C_DIM);
             return;
         }
 
@@ -780,7 +780,7 @@ public class HdvScreen extends Screen {
         int btnY = y + (ROW_H - btnH) / 2;
         ctx.fill(btnX, btnY, btnX + btnW, btnY + btnH, hov ? C_RED : C_STRIP);
         if (!hov) { ctx.fill(btnX, btnY, btnX + btnW, btnY + 1, C_BORDER); ctx.fill(btnX, btnY + btnH - 1, btnX + btnW, btnY + btnH, C_BORDER); }
-        ctx.drawCenteredString(font, "Retirer", btnX + btnW / 2, btnY + 7, hov ? C_WHITE : C_MID);
+        Texte.centre(ctx, font, "Retirer", btnX + btnW / 2, btnY + 7, hov ? C_WHITE : C_MID);
     }
 
     // ── Onglet Boutiques ──────────────────────────────────────────────────────

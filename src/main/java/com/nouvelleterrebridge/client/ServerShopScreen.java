@@ -88,6 +88,9 @@ public class ServerShopScreen extends Screen {
     private ShopEntry hoveredTout = null;
     private boolean confirmTout = false;
     private int toutX = 0, toutY = 0, toutW = 0;
+    private boolean surToutGeneral = false;
+    /** Souris sur le bouton Acheter / Vendre d'une ligne : seule zone qui affiche la fiche de l'article. */
+    private boolean surBouton = false;
     private final NumberInput qtyInput = new NumberInput(1, 1, 1);
 
     private String toastMsg = null;
@@ -170,6 +173,7 @@ public class ServerShopScreen extends Screen {
         renderTopBar(ctx, mx, my);
         hovered = null;
         hoveredTout = null;
+        surBouton = false;
         // Une fenêtre ouverte masque la souris à la liste : rien ne se survole dessous
         boolean fenetre = selected != null || confirmTout;
         int lx = fenetre ? -1 : mx, ly = fenetre ? -1 : my;
@@ -178,7 +182,11 @@ public class ServerShopScreen extends Screen {
 
         if (confirmTout) renderConfirmTout(ctx, mx, my);
         else if (selected != null) renderModal(ctx, mx, my);
-        else if (hovered != null && hoveredTout == null) renderTooltip(ctx, hovered, mx, my);
+        else if (hoveredTout != null) renderInfoToutLigne(ctx, hoveredTout, mx, my);
+        else if (surToutGeneral) renderInfoToutGeneral(ctx, mx, my);
+        // Fiche de l'article seulement sur le bouton Acheter / Vendre : sur toute la ligne, elle
+        // surgissait dès qu'on passait la souris et gênait la lecture (retour de Sacha, 21/11)
+        else if (hovered != null && surBouton) renderTooltip(ctx, hovered, mx, my);
 
         renderToast(ctx);
         super.render(ctx, mx, my, delta);
@@ -213,7 +221,7 @@ public class ServerShopScreen extends Screen {
                 ctx.fill(tx, tabY, tx + tw, tabY + 22, C_GOLD);
                 ctx.drawString(font, label, tx + tw / 2 - font.width(label) / 2, tabY + 7, C_BG, false);
             } else {
-                ctx.drawCenteredString(font, label, tx + tw / 2, tabY + 7, hov ? C_WHITE : C_DIM);
+                Texte.centre(ctx, font, label, tx + tw / 2, tabY + 7, hov ? C_WHITE : C_DIM);
             }
             tx += tw + 4;
         }
@@ -266,7 +274,7 @@ public class ServerShopScreen extends Screen {
         List<ShopEntry> list = buyList();
         renderGrid(ctx, mx, my, list, true);
         if (list.isEmpty())
-            ctx.drawCenteredString(font, "Aucun article au catalogue.",
+            Texte.centre(ctx, font, "Aucun article au catalogue.",
                 winX + winW / 2, winY + winH / 2 + BANNER_H / 2, C_DIM);
     }
 
@@ -299,7 +307,7 @@ public class ServerShopScreen extends Screen {
         ctx.fill(parcheminBtnX, parcheminBtnY, parcheminBtnX + btnW, parcheminBtnY + 20,
                  hov ? C_GREEN : C_STRIP);
         ctx.fill(parcheminBtnX, parcheminBtnY, parcheminBtnX + btnW, parcheminBtnY + 1, C_GREEN);
-        ctx.drawCenteredString(font, label,
+        Texte.centre(ctx, font, label,
             parcheminBtnX + btnW / 2, parcheminBtnY + 6, hov ? C_BG : C_GREEN);
     }
 
@@ -313,7 +321,7 @@ public class ServerShopScreen extends Screen {
         renderToutVendre(ctx, mx, my, list);
         renderGrid(ctx, mx, my, list, false);
         if (list.isEmpty())
-            ctx.drawCenteredString(font,
+            Texte.centre(ctx, font,
                 "Rien à vendre — le serveur ne rachète que les objets vierges.",
                 winX + winW / 2, winY + winH / 2, C_DIM);
     }
@@ -326,20 +334,54 @@ public class ServerShopScreen extends Screen {
     /** Bouton général, à droite de la recherche : tout l'inventaire rachetable en une fois. */
     private void renderToutVendre(GuiGraphics ctx, int mx, int my, List<ShopEntry> list) {
         toutW = 0;
+        surToutGeneral = false;
         // Le bouton vend tout l'inventaire, pas seulement ce que la recherche laisse voir :
         // on le retire pendant une recherche plutôt que de laisser croire le contraire.
         if (list.isEmpty() || !query().isEmpty()) return;
 
         long total = 0;
         for (ShopEntry e : list) total += valeurStock(e);
-        String label = "Tout vendre  ≈ " + total + " ◆";
+        String label = "Tout vendre  ≈ " + nb(total) + " ◆";
         toutW = font.width(label) + 20;
         toutX = winX + winW - PAD - toutW;
         toutY = winY + TOP_H + PAD - 1;
         boolean hov = mx >= toutX && mx < toutX + toutW && my >= toutY && my < toutY + 20;
+        surToutGeneral = hov;
         ctx.fill(toutX, toutY, toutX + toutW, toutY + 20, hov ? C_GREEN : C_STRIP);
         ctx.fill(toutX, toutY, toutX + toutW, toutY + 1, C_GREEN);
-        ctx.drawCenteredString(font, label, toutX + toutW / 2, toutY + 6, hov ? C_BG : C_GREEN);
+        Texte.centre(ctx, font, label, toutX + toutW / 2, toutY + 6, hov ? C_BG : C_GREEN);
+    }
+
+    /** Nombre avec espaces entre milliers : 12 345. */
+    private static String nb(long n) {
+        return String.format(java.util.Locale.FRENCH, "%,d", n).replace(' ', ' ').replace(' ', ' ');
+    }
+
+    /** Survol du « Tout vendre » d'une ligne : ce qui part, et ce que ça rapporte. */
+    private void renderInfoToutLigne(GuiGraphics ctx, ShopEntry e, int mx, int my) {
+        int stock = sellable.getOrDefault(e.itemId(), 0);
+        List<Component> lignes = new ArrayList<>();
+        lignes.add(Component.literal("§fVendre " + nb(stock) + " × " + FrenchItemNames.toDisplay(e.itemId())));
+        lignes.add(Component.literal("§aRapporte environ " + nb(valeurStock(e)) + " ◆"));
+        lignes.add(Component.literal("§7" + nb(e.sellPrice()) + " ◆ l'unité au prix actuel"));
+        if (stock > 64) lignes.add(Component.literal("§8Le prix baisse un peu au fil de la vente"));
+        ctx.renderTooltip(font, lignes, java.util.Optional.empty(), mx, my);
+    }
+
+    /** Survol du « Tout vendre » général : tout l'inventaire rachetable. */
+    private void renderInfoToutGeneral(GuiGraphics ctx, int mx, int my) {
+        List<ShopEntry> list = sellList();
+        long objets = 0, total = 0;
+        for (ShopEntry e : list) {
+            objets += sellable.getOrDefault(e.itemId(), 0);
+            total  += valeurStock(e);
+        }
+        List<Component> lignes = new ArrayList<>();
+        lignes.add(Component.literal("§fVendre " + nb(objets) + " objets (" + list.size()
+            + (list.size() > 1 ? " sortes)" : " sorte)")));
+        lignes.add(Component.literal("§aRapporte environ " + nb(total) + " ◆"));
+        lignes.add(Component.literal("§7Une confirmation détaille tout avant la vente"));
+        ctx.renderTooltip(font, lignes, java.util.Optional.empty(), mx, my);
     }
 
     private void renderSearch(GuiGraphics ctx, int mx, int my) {
@@ -428,20 +470,21 @@ public class ServerShopScreen extends Screen {
             if (surTout) hoveredTout = e;
             ctx.fill(tx0, btnY, tx0 + tw, btnY + btnH, surTout ? C_GREEN : C_STRIP);
             ctx.fill(tx0, btnY, tx0 + tw, btnY + 1, C_GREEN);
-            ctx.drawCenteredString(font, "Tout vendre", tx0 + tw / 2, btnY + 7, surTout ? C_BG : C_GREEN);
+            Texte.centre(ctx, font, "Tout vendre", tx0 + tw / 2, btnY + 7, surTout ? C_BG : C_GREEN);
             droite = tx0 - 6;
         }
 
         int btnW = buying ? 82 : 62;
         int btnX = droite - btnW;
         boolean actif = hov && !surTout;
+        if (hov && mx >= btnX && mx < btnX + btnW && my >= btnY && my < btnY + btnH) surBouton = true;
         int prix = buying ? e.buyPrice() : e.sellPrice();
         String price = prix + " ◆";
         int prixX = btnX - font.width(price) - 14;
         ctx.drawString(font, price, prixX, y + (ROW_H - font.lineHeight) / 2, accent, false);
         ctx.fill(btnX, btnY, btnX + btnW, btnY + btnH, actif ? accent : C_STRIP);
         if (!actif) { ctx.fill(btnX, btnY, btnX + btnW, btnY + 1, C_BORDER); ctx.fill(btnX, btnY + btnH - 1, btnX + btnW, btnY + btnH, C_BORDER); }
-        ctx.drawCenteredString(font, buying ? "Acheter" : "Vendre",
+        Texte.centre(ctx, font, buying ? "Acheter" : "Vendre",
             btnX + btnW / 2, btnY + 7, actif ? C_BG : C_MID);
 
         int tx = x + 50;
@@ -449,7 +492,7 @@ public class ServerShopScreen extends Screen {
         String sub = buying
             ? (e.netFlow() >= 64 ? "§cPrix en hausse — très demandé"
                                  : (e.netFlow() <= -64 ? "§aPrix en baisse — abondant" : "§8Prix stable"))
-            : "§8En stock : " + sellable.getOrDefault(e.itemId(), 0) + "  ·  ≈ " + valeurStock(e) + " ◆ le tout";
+            : "§8En stock : " + sellable.getOrDefault(e.itemId(), 0) + "  ·  ≈ " + nb(valeurStock(e)) + " ◆ le tout";
         ctx.drawString(font, truncate(sub, prixX - tx - 8), tx, y + 22, C_DIM, false);
     }
 
@@ -539,8 +582,8 @@ public class ServerShopScreen extends Screen {
             if (reste) {
                 ctx.drawString(font, "… et " + (list.size() - i) + " autres articles", ox + 14, ly, C_DIM, false);
             } else {
-                String montant = valeurStock(e) + " ◆";
-                ctx.drawString(font, truncate(sellable.getOrDefault(e.itemId(), 0) + "x "
+                String montant = nb(valeurStock(e)) + " ◆";
+                ctx.drawString(font, truncate(nb(sellable.getOrDefault(e.itemId(), 0)) + " × "
                     + FrenchItemNames.toDisplay(e.itemId()), CONF_W - 40 - font.width(montant)), ox + 14, ly, C_MID, false);
                 ctx.drawString(font, montant, ox + CONF_W - 14 - font.width(montant), ly, C_GREEN, false);
             }
@@ -550,7 +593,7 @@ public class ServerShopScreen extends Screen {
         int by = oy + CONF_H - 78;
         ctx.fill(ox + 14, by, ox + CONF_W - 14, by + 1, C_BORDER);
         ctx.drawString(font, "Total estimé", ox + 14, by + 8, C_WHITE, false);
-        String t = "≈ " + total + " ◆";
+        String t = "≈ " + nb(total) + " ◆";
         ctx.drawString(font, t, ox + CONF_W - 14 - font.width(t), by + 8, C_GOLD, false);
         ctx.drawString(font, "§8Le prix baisse quand on vend beaucoup d'un coup.", ox + 14, by + 22, C_DIM, false);
 
@@ -578,7 +621,7 @@ public class ServerShopScreen extends Screen {
         boolean hov = mx >= x && mx < x + w && my >= y && my < y + 22;
         ctx.fill(x, y, x + w, y + 22, hov ? color : C_STRIP);
         ctx.fill(x, y, x + w, y + 1, color);
-        ctx.drawCenteredString(font, label, x + w / 2, y + 7, hov ? C_BG : C_WHITE);
+        Texte.centre(ctx, font, label, x + w / 2, y + 7, hov ? C_BG : C_WHITE);
     }
 
     private void renderToast(GuiGraphics ctx) {

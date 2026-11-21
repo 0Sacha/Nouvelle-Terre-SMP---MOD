@@ -136,7 +136,7 @@ public class HubScreen extends Screen {
         ctx.fill(px + 1, py + 1, px + pw - 1, py + ENTETE_H, C_PANEL);
         ctx.fill(px, py + ENTETE_H, px + pw, py + ENTETE_H + 1, C_BORDER);
         ctx.renderItem(new ItemStack(NouvelleTerreBridge.PARCHEMIN.get()), px + PAD, py + 10);
-        ctx.drawString(font, "§lParchemin", px + PAD + 24, py + 8, C_GOLD, false);
+        ctx.drawString(font, "Parchemin", px + PAD + 24, py + 8, C_GOLD, false);
         ctx.drawString(font, "Terminal de Nouvelle Terre", px + PAD + 24, py + 21, C_MID, false);
 
         String bal = BalanceHudOverlay.cachedBalance < 0 ? "? ◆" : fmt(BalanceHudOverlay.cachedBalance) + " ◆";
@@ -203,7 +203,7 @@ public class HubScreen extends Screen {
         ctx.pose().pushPose();
         ctx.pose().translate(tx, y + 4, 0);
         ctx.pose().scale(1.5f, 1.5f, 1f);
-        ctx.drawString(font, "§l" + e.label(), 0, 0, C_WHITE, false);
+        ctx.drawString(font, e.label(), 0, 0, C_WHITE, false);
         ctx.pose().popPose();
         ctx.drawString(font, e.commande(), tx, y + 22, C_GOLD, false);
         dessinerParagraphe(ctx, e.accroche(), tx, y + 36, x + w - tx, C_MID);
@@ -222,7 +222,7 @@ public class HubScreen extends Screen {
         boolean hov = mx >= x && mx < x + w && my >= by && my < by + BTN_H;
         ctx.fill(x, by, x + w, by + BTN_H, hov ? C_GOLD : C_SURFACE);
         ctx.fill(x, by, x + w, by + 1, C_GOLD);
-        ctx.drawCenteredString(font, "Ouvrir " + e.label() + "  ›", x + w / 2, by + 7, hov ? C_BG : C_GOLD);
+        Texte.centre(ctx, font, "Ouvrir " + e.label() + "  ›", x + w / 2, by + 7, hov ? C_BG : C_GOLD);
     }
 
     /** Écrit un texte en le repliant sur la largeur donnée. @return l'ordonnée sous la dernière ligne */
